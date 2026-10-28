@@ -26,6 +26,7 @@ Keep utility-specific requirements in the relevant utility documentation.
 
 ## Implementation
 
+- Follow [the application package requirements](docs/PACKAGES.md) for directory structure, npm metadata, TypeScript settings, and import aliases.
 - Develop applications in TypeScript. Compile them to JavaScript before execution.
 - Use each application's `dist/` as the single runtime artifact for both local execution and npx.
 - Local start scripts and npm bin entries must execute the same compiled entry point. Do not run TypeScript source directly.
@@ -116,9 +117,9 @@ Run these commands from the repository root when relevant:
 npm --prefix packages/reHistory test
 npm --prefix packages/reHistory run typecheck
 npm --prefix packages/reHistory run build
-node packages/reHistory/dist/cli.js --help
+node packages/reHistory/dist/src/cli.js --help
 ```
 
 reHistory uses strict compilation with tsconfig.json and locked development dependencies.
-Its local start script builds first, then runs the same dist/cli.js entry point as the npm bin.
+Its local start script builds first, then runs the same dist/src/cli.js entry point as the npm bin.
 There is no repository-wide test, lint, or type-check command at present.

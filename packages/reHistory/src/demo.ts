@@ -2,9 +2,9 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { Repository, runGit, makePlan, applyPlan } from './engine.js';
-import { auditRepository, auditText } from './audit.js';
-import { exportPlan } from './export.js';
+import { Repository, runGit, makePlan, applyPlan } from '#rehistory/engine';
+import { auditRepository, auditText } from '#rehistory/audit';
+import { exportPlan } from '#rehistory/export';
 
 /** Accept explicit network URLs. Reject URL credentials and remote helpers. */
 export function validateDemoURL(value: string | undefined): string {
