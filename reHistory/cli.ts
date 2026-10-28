@@ -1,23 +1,34 @@
 #!/usr/bin/env node
 import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
+import { pathToFileURL } from 'node:url';
+import { realpathSync } from 'node:fs';
 import { Repository, makePlan, applyPlan, validateIdentity } from './engine.ts';
+import { auditRepository, auditText } from './audit.ts';
+import { exportDestination, exportPlan, verifyExport } from './export.ts';
+import { runDemo, validateDemoURL } from './demo.ts';
 
-// Метаданные репозитория и ошибки Git могут содержать управляющие символы терминала.
+// Метаданные Git и ошибки могут содержать управляющие символы терминала.
 function safe(value: unknown): string { return String(value).replace(/[\p{Cc}\p{Cf}]/gu, ch => ch === '\n' ? ch : '?'); }
 function print(value: unknown): void { console.log(safe(value)); }
 function help(): void {
-  print(`reHistory — переписывание текущей ветки и тегов её истории.
+  print(`reHistory — нормализация истории текущей ветки и её тегов.
+Node.js 24.12+, Git 2.39+. Прямой запуск: node /путь/reHistory/cli.ts [параметры]
 
-Запуск (Node.js 24+, Git 2.39+):
-  node /путь/к/toolchain/reHistory/cli.ts [--repo /путь/к/репозиторию] [--dry-run]
+  --repo PATH          Исходный репозиторий (по умолчанию текущий каталог).
+  --dry-run            Рассчитать план без записи; совместим с --export.
+  --audit              Аудит всего локального хранилища без изменений, без TTY.
+  --json               JSON-отчёт для --audit или --verify-export.
+  --export NEW_PATH    Нормализовать в новый bare-репозиторий, не меняя исходный.
+  --verify-export PATH Повторно проверить созданный экспорт без изменений.
+  --demo               Автоматический сценарий в новом отдельном каталоге.
+  --demo-remote URL    ОБЯЗАТЕЛЬНЫЙ пустой сервер для demo (HTTPS/SSH).
+  --demo-dir NEW_PATH  Новый каталог demo; по умолчанию — системный temp.
+  --help               Справка.
 
-  --repo PATH  Репозиторий (по умолчанию текущий каталог).
-  --dry-run    Только план: никаких записей в репозиторий.
-  --help       Эта справка.
-
-Все вопросы — на русском языке. Отмена: Ctrl+C или выбор «Нет».
-Скрипт никогда не выполняет push. Подробности: reHistory/README.md.`);
+Обычное переписывание и экспорт интерактивны. Push есть только в demo,
+только на явно указанный сервер, без force push. Публикация npm не выполняется.
+Подробности и восстановление: README.md и SECURITY.md пакета.`);
 }
 export function parseDate(value: string): number {
   if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
@@ -39,27 +50,67 @@ export function parseDate(value: string): number {
   return result;
 }
 
+export function parseArguments(args: string[]) {
+  let path = process.cwd();
+  let dryRun = false; let audit = false; let json = false; let demo = false;
+  let destination: string | undefined; let verify: string | undefined;
+  let remote: string | undefined; let demoDir: string | undefined; let explicitRepo = false;
+  const seen = new Set<string>();
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (seen.has(arg)) throw new Error(`Параметр указан повторно: ${arg}`);
+    seen.add(arg);
+    if (['--repo', '--export', '--verify-export', '--demo-remote', '--demo-dir'].includes(arg)) {
+      const value = args[++i];
+      if (!value || value.startsWith('--')) throw new Error(`Отсутствует значение ${arg}.`);
+      if (arg === '--repo') { path = value; explicitRepo = true; }
+      if (arg === '--export') destination = value;
+      if (arg === '--verify-export') verify = value;
+      if (arg === '--demo-remote') remote = value;
+      if (arg === '--demo-dir') demoDir = value;
+    } else if (arg === '--dry-run') dryRun = true;
+    else if (arg === '--audit') audit = true;
+    else if (arg === '--json') json = true;
+    else if (arg === '--demo') demo = true;
+    else throw new Error(`Неизвестный аргумент: ${arg}. Используйте --help.`);
+  }
+  if ([audit, Boolean(destination), Boolean(verify), demo].filter(Boolean).length > 1) throw new Error('Выберите один режим: --audit, --export, --verify-export или --demo.');
+  if (json && !audit && !verify) throw new Error('--json допустим только для аудита/проверки экспорта.');
+  if (dryRun && (audit || verify || demo)) throw new Error('--dry-run допустим только для обычного режима и экспорта.');
+  if (!demo && (remote || demoDir)) throw new Error('--demo-remote и --demo-dir требуют --demo.');
+  if ((demo || verify) && explicitRepo) throw new Error('--repo не используется вместе с demo/проверкой экспорта.');
+  if (demo) remote = validateDemoURL(remote);
+  return { path, dryRun, audit, json, demo, destination, verify, remote, demoDir };
+}
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
-  let path = process.cwd();
-  let dryRun = false;
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] === '--help' || args[i] === '-h') { help(); return; }
-    if (args[i] === '--dry-run') dryRun = true;
-    else if (args[i] === '--repo' && args[i + 1] && !args[i + 1].startsWith('--')) path = args[++i];
-    else throw new Error(`Неизвестный аргумент или отсутствующее значение: ${args[i]}. Используйте --help.`);
+  if (args.length === 1 && ['--help', '-h'].includes(args[0])) { help(); return; }
+  const mode = parseArguments(args);
+  if (Number(process.versions.node.split('.')[0]) < 24 || (Number(process.versions.node.split('.')[0]) === 24 && Number(process.versions.node.split('.')[1]) < 12)) throw new Error('Требуется Node.js 24.12 или новее.');
+  if (mode.demo) { runDemo({ remote: mode.remote!, directory: mode.demoDir, print }); return; }
+  if (mode.verify) {
+    const report = verifyExport(mode.verify);
+    if (mode.json) console.log(JSON.stringify(report, null, 2));
+    else print(`${report.ok ? 'ПРОВЕРКА УСПЕШНА' : 'ПРОВЕРКА НЕ ПРОЙДЕНА'}: ${report.repository}\nКоммитов: ${report.commits}; тегов: ${report.tags}; объектов: ${report.objects}\n${report.errors.join('\n')}`);
+    if (!report.ok) process.exitCode = 1;
+    return;
   }
-  if (Number(process.versions.node.split('.')[0]) < 24) throw new Error('Требуется Node.js 24 или новее.');
-  if (!stdin.isTTY || !stdout.isTTY) throw new Error('Для интерактивного запуска нужен терминал (TTY). Перенаправление ответов запрещено.');
-  const repo = new Repository(path);
+  const repo = new Repository(mode.path);
+  if (mode.audit) {
+    const report = auditRepository(repo);
+    if (mode.json) console.log(JSON.stringify(report, null, 2)); else print(auditText(report));
+    if (!report.complete) process.exitCode = 2;
+    return;
+  }
+  if (!stdin.isTTY || !stdout.isTTY) throw new Error('Для переписывания/экспорта нужен терминал (TTY). Автоматические ответы разрешены только внутри нового demo.');
   const state = repo.inspect();
-  print(`Репозиторий: ${repo.path}\nТекущая ветка: ${state.head.slice(11)}\nРежим: ${dryRun ? 'DRY-RUN — без записи' : 'применение после подтверждения'}`);
+  if (mode.destination) exportDestination(repo, mode.destination);
+  print(`Репозиторий: ${repo.path}\nВетка: ${state.head.slice(11)}\nРежим: ${mode.destination ? 'экспорт в новый bare-репозиторий' : 'переписывание на месте'}${mode.dryRun ? ' / DRY-RUN' : ''}`);
   print('На время работы закройте Git-интеграцию IDE и не запускайте другие операции Git.');
   const rl = createInterface({ input: stdin, output: stdout });
   rl.on('SIGINT', () => { rl.close(); });
   async function ask(question: string, fallback?: string): Promise<string> {
-    const value = (await rl.question(safe(`${question}${fallback !== undefined ? ` [${fallback}]` : ''}: `))).trim();
-    return value || fallback || '';
+    return (await rl.question(safe(`${question}${fallback !== undefined ? ` [${fallback}]` : ''}: `))).trim() || fallback || '';
   }
   async function choose(question: string, defaultYes: boolean): Promise<boolean> {
     for (;;) {
@@ -69,19 +120,28 @@ async function main(): Promise<void> {
       print('Выберите 1 или 2.');
     }
   }
+  async function newIdentity(): Promise<{ name: string; email: string }> {
+    for (;;) {
+      const name = await ask('Новое имя'); const email = await ask('Новый email');
+      try { validateIdentity(name, email); return { name, email }; }
+      catch (error) { print(error instanceof Error ? error.message : error); }
+    }
+  }
   try {
     let backupBranch: string | undefined;
-    if (await choose('Создать бекап-ветку и сохранить исходные ссылки всех затронутых тегов?', true)) {
-      const fallback = `rehistory-backup/${new Date().toISOString().replace(/[:.]/g, '-')}`;
-      for (;;) {
-        const candidate = await ask('Имя бекап-ветки', fallback);
-        try {
-          repo.git(['check-ref-format', `refs/heads/${candidate}`]);
-          if (state.refs.some(r => r.name === `refs/heads/${candidate}`)) throw new Error('Такая ветка уже существует.');
-          backupBranch = candidate; break;
-        } catch (error) { print(error instanceof Error ? error.message : error); }
-      }
-    } else print('Бекап не будет создан. Файл восстановления сохранит старые хеши, но не защитит объекты от будущего удаления сборщиком мусора Git.');
+    if (!mode.destination) {
+      if (await choose('Создать бекап-ветку и резервные ссылки затронутых тегов?', true)) {
+        const fallback = `rehistory-backup/${new Date().toISOString().replace(/[:.]/g, '-')}`;
+        for (;;) {
+          const candidate = await ask('Имя бекап-ветки', fallback);
+          try {
+            repo.git(['check-ref-format', `refs/heads/${candidate}`]);
+            if (state.refs.some(r => r.name === `refs/heads/${candidate}`)) throw new Error('Такая ветка уже существует.');
+            backupBranch = candidate; break;
+          } catch (error) { print(error instanceof Error ? error.message : error); }
+        }
+      } else print('Бекап отключён. JSON с хешами не защитит исходные объекты от будущего GC.');
+    } else print(`Каталог экспорта: ${mode.destination}\nИсходный репозиторий сохраняется целиком; бекап внутри экспорта не создаётся.`);
     let interval: number;
     for (;;) {
       const value = await ask('Интервал между коммитами, в секундах', '1');
@@ -93,33 +153,34 @@ async function main(): Promise<void> {
     const dateDefault = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
     let start: number;
     for (;;) {
-      try { start = parseDate(await ask('Дата первого коммита (ГГГГ-ММ-ДД, местная полночь; либо ISO с часовым поясом)', dateDefault)); break; }
+      try { start = parseDate(await ask('Дата первого коммита (ГГГГ-ММ-ДД, местная полночь; либо ISO с поясом)', dateDefault)); break; }
       catch (error) { print(error instanceof Error ? error.message : error); }
     }
-    let identity: { name: string; email: string } | undefined;
-    if (await choose('Заменить имя и email всех авторов и коммитеров текущей истории?', false)) {
-      for (;;) {
-        const name = await ask('Новое имя');
-        const email = await ask('Новый email');
-        try { validateIdentity(name, email); identity = { name, email }; break; }
-        catch (error) { print(error instanceof Error ? error.message : error); }
-      }
-    }
+    const identity = await choose('Заменить имя/email всех авторов и коммитеров текущей истории?', false) ? await newIdentity() : undefined;
+    const tagPolicy = await choose('Нормализовать даты annotated-тегов по датам конечных коммитов?', true) ? 'normalize' : 'preserve';
+    let tagIdentity: { name: string; email: string } | undefined;
+    if (identity) { if (await choose('Применить новое имя/email также к создателям annotated-тегов?', true)) tagIdentity = identity; }
+    else if (await choose('Заменить имя/email создателей annotated-тегов?', false)) tagIdentity = await newIdentity();
     print('Проверяю историю и рассчитываю новые объекты…');
-    const plan = makePlan(repo, { start, interval, identity, backupBranch });
-    print(`\nПЛАН\nКоммитов: ${plan.commits}\nИнтервал: ${interval} с\nНачало: ${new Date(start * 1000).toISOString()}\nКонец: ${new Date((start + (plan.commits - 1) * interval) * 1000).toISOString()}\nИмя/email: ${identity ? `${identity.name} <${identity.email}> (автор и коммитер)` : 'сохранить для каждого коммита'}\nБекап: ${backupBranch || 'отключён'}\nЗатронутые ссылки:`);
+    const plan = makePlan(repo, { start, interval, identity, backupBranch, tagPolicy, tagIdentity });
+    print(`\nПЛАН\nКоммитов: ${plan.commits}\nИнтервал: ${interval} с\nНачало: ${new Date(start * 1000).toISOString()}\nКонец: ${new Date((start + (plan.commits - 1) * interval) * 1000).toISOString()}\nИмя/email коммитов: ${identity ? `${identity.name} <${identity.email}>` : 'сохранить'}\nДаты annotated-тегов: ${tagPolicy === 'normalize' ? 'нормализовать' : 'СОХРАНИТЬ ИСХОДНЫЕ'}\nTagger: ${tagIdentity ? `${tagIdentity.name} <${tagIdentity.email}>` : 'сохранить'}\nБекап: ${mode.destination ? 'исходный репозиторий' : backupBranch || 'отключён'}\nВыбранные ссылки:`);
     for (const ref of plan.selected) print(`  ${ref.name}: ${ref.oid} → ${plan.mapping.get(ref.oid)}`);
-    print(`Удаляемых заголовков подписей/mergetag и подписей тегов: ${plan.stripped}.\nИзменение истории меняет хеши. Существующие копии, reflog и серверные данные могут сохранять старые даты.\nНе запускайте параллельно другие операции Git, IDE с автообновлением Git и сборку мусора.`);
-    if (dryRun) { print('\nDry-run завершён. Репозиторий не изменён, бекап не создан.'); return; }
-    if (plan.stripped && !await choose('Подписи станут недействительными и будут удалены. Продолжить?', false)) { print('Отменено.'); return; }
-    if (!await choose('Применить показанный план переписывания?', false)) { print('Отменено. Репозиторий не изменён.'); return; }
-    const result = applyPlan(plan);
-    print(`Готово. Переписано коммитов: ${plan.commits}.\nФайл восстановления: ${result.recovery}${result.backupPrefix ? `\nРезервные ссылки: ${result.backupPrefix}` : ''}\nPush не выполнялся.`);
+    print(`Удаляемых заголовков подписей/mergetag и подписей тегов: ${plan.stripped}.\nДаты искусственные и не устанавливают время фактической работы. Старые копии могут сохранять исходные данные.`);
+    if (mode.dryRun) { print('Dry-run завершён. Никаких записей, экспорта и бекапа не создано.'); return; }
+    if (plan.stripped && !await choose('Удалить недействительные подписи и mergetag?', false)) { print('Отменено.'); return; }
+    if (!await choose(mode.destination ? 'Создать и проверить показанный экспорт?' : 'Применить показанное переписывание?', false)) { print('Отменено.'); return; }
+    if (mode.destination) {
+      const result = exportPlan(plan, mode.destination);
+      print(`ЭКСПОРТ ПРОВЕРЕН: ${result.repository}\nКоммитов: ${result.commits}; тегов: ${result.tags}; объектов: ${result.objects}\nИсходный репозиторий не изменён. Push не выполнялся.`);
+    } else {
+      const result = applyPlan(plan);
+      print(`Готово. Переписано коммитов: ${plan.commits}.\nВосстановление: ${result.recovery}${result.backupPrefix ? `\nРезервные ссылки: ${result.backupPrefix}` : ''}\nPush не выполнялся.`);
+    }
   } finally { rl.close(); }
 }
-
-// Импорт модуля в тестах не должен запускать интерактивный диалог.
-import { pathToFileURL } from 'node:url';
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+// npm bin может быть символической ссылкой; сравниваем реальные пути.
+let entry = '';
+try { if (process.argv[1]) entry = pathToFileURL(realpathSync(process.argv[1])).href; } catch { /* импорт из stdin/eval */ }
+if (import.meta.url === entry) {
   main().catch(error => { console.error(safe(`Ошибка: ${error instanceof Error ? error.message : error}`)); process.exitCode = 1; });
 }
