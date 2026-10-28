@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { PassThrough, Writable } from 'node:stream';
 import { stripVTControlCharacters } from 'node:util';
 import type { ReadStream, WriteStream } from 'node:tty';
-import { TerminalPrompts, PromptCancelled, terminalStyle } from './prompts.ts';
+import { TerminalPrompts, PromptCancelled, terminalStyle } from './prompts.js';
 
 class Input extends PassThrough {
   isTTY = true;

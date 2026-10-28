@@ -22,7 +22,7 @@ export class TerminalPrompts {
   private style: ReturnType<typeof terminalStyle>;
   private active?: () => void;
   private closed = false;
-  constructor(input = stdin, output = stdout) { this.input = input; this.output = output; this.style = terminalStyle(output); }
+  constructor(input: ReadStream = stdin, output: WriteStream = stdout) { this.input = input; this.output = output; this.style = terminalStyle(output); }
   close(): void { this.closed = true; this.active?.(); }
   private check(): void {
     if (this.closed) throw new PromptCancelled();

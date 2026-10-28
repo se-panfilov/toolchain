@@ -29,7 +29,8 @@ The program does not remove these dates.
 
 macOS is the test platform.
 Linux and Windows do not have different test results.
-External packages and a build step are not necessary for the source program.
+Local development requires the locked build dependencies.
+The published package has no runtime dependencies.
 
 An interactive terminal is not necessary for the audit, export check, or demo.
 The interactive modes do not operate with `TERM=dumb`.
@@ -39,10 +40,24 @@ The interactive modes do not operate with `TERM=dumb`.
 Replace the example paths with your paths.
 Put paths that contain spaces in double quotes.
 
+Install build dependencies from the package directory:
+
+```sh
+cd /path/to/toolchain/packages/reHistory
+npm ci --ignore-scripts
+npm run build
+```
+
+Compile the application before execution.
+Local execution and npx use the same entry point, `dist/cli.js`.
+Rebuild after source changes.
+Use `npm start -- --help` to build and then run the local application.
+A build error stops this command before application startup.
+
 Without `--repo`, the program uses the current directory.
 
 ```sh
-node /path/to/toolchain/packages/reHistory/cli.ts --help
+node /path/to/toolchain/packages/reHistory/dist/cli.js --help
 ```
 
 ## Audit procedure
@@ -50,7 +65,7 @@ node /path/to/toolchain/packages/reHistory/cli.ts --help
 1. Start the audit.
 
    ```sh
-   node /path/to/toolchain/packages/reHistory/cli.ts --repo /path/to/project --audit
+   node /path/to/toolchain/packages/reHistory/dist/cli.js --repo /path/to/project --audit
    ```
 
 2. Read the report.
@@ -77,7 +92,7 @@ The audit does not get missing objects from the network.
 For a JSON report, use this command:
 
 ```sh
-node /path/to/toolchain/packages/reHistory/cli.ts --repo /path/to/project --audit --json
+node /path/to/toolchain/packages/reHistory/dist/cli.js --repo /path/to/project --audit --json
 ```
 
 The JSON fields include `refs`, `commits`, `tags`, `reflog`, `unreachable`, `metadata`, and `warnings`.
@@ -92,7 +107,7 @@ The dry-run gives a plan without writes.
 1. Start the dry-run.
 
    ```sh
-   node /path/to/toolchain/packages/reHistory/cli.ts --repo /path/to/project --dry-run
+   node /path/to/toolchain/packages/reHistory/dist/cli.js --repo /path/to/project --dry-run
    ```
 
 2. Enter the required values.
@@ -100,7 +115,7 @@ The dry-run gives a plan without writes.
 4. Start the program without `--dry-run`.
 
    ```sh
-   node /path/to/toolchain/packages/reHistory/cli.ts --repo /path/to/project
+   node /path/to/toolchain/packages/reHistory/dist/cli.js --repo /path/to/project
    ```
 
 5. Enter the required values again.
@@ -224,14 +239,14 @@ The destination parent directory must exist.
 1. Start the export dry-run.
 
    ```sh
-   node /path/to/toolchain/packages/reHistory/cli.ts --repo /path/to/project --export /path/to/export.git --dry-run
+   node /path/to/toolchain/packages/reHistory/dist/cli.js --repo /path/to/project --export /path/to/export.git --dry-run
    ```
 
 2. Do a check of the plan.
 3. Start the export without `--dry-run`.
 
    ```sh
-   node /path/to/toolchain/packages/reHistory/cli.ts --repo /path/to/project --export /path/to/export.git
+   node /path/to/toolchain/packages/reHistory/dist/cli.js --repo /path/to/project --export /path/to/export.git
    ```
 
 4. Select Yes only if the plan is correct.
@@ -282,7 +297,7 @@ The program does not change the source repository.
 Use this command for another check:
 
 ```sh
-node /path/to/toolchain/packages/reHistory/cli.ts --verify-export /path/to/export.git
+node /path/to/toolchain/packages/reHistory/dist/cli.js --verify-export /path/to/export.git
 ```
 
 Add `--json` for a JSON report.
@@ -314,7 +329,7 @@ The demo sends generated data to that server.
 3. Start the demo with a specified server URL.
 
    ```sh
-   node /path/to/toolchain/packages/reHistory/cli.ts --demo --demo-remote git@example.org:owner/empty-demo.git
+   node /path/to/toolchain/packages/reHistory/dist/cli.js --demo --demo-remote git@example.org:owner/empty-demo.git
    ```
 
 4. Read the result.
@@ -480,34 +495,46 @@ npx tx-rehistory --help
    cd /path/to/toolchain/packages/reHistory
    ```
 
-2. Do the tests.
+2. Install the locked build dependencies.
+
+   ```sh
+   npm ci --ignore-scripts
+   ```
+
+3. Do the tests.
 
    ```sh
    npm test
    ```
 
-3. Make the JavaScript build.
+4. Make the JavaScript build.
 
    ```sh
    npm run build
    ```
 
-4. Examine the package contents.
+5. Examine the package contents.
 
    ```sh
    npm pack --dry-run
    ```
 
-5. Make a local archive.
+6. Make a local archive.
 
    ```sh
    npm pack --pack-destination /path/to/package-directory
    ```
 
-The build uses `node:module.stripTypeScriptTypes`.
-This API can show an experimental warning.
-It does not do a TypeScript type check.
-The package contains JavaScript because Node.js does not strip TypeScript types in `node_modules`.
+The build uses the locked TypeScript compiler and tsconfig.json.
+Strict type checking and compilation occur before files enter `dist/`.
+The configuration uses ES2023, NodeNext modules, and Node.js types.
+A type error prevents output changes.
+The build checks output paths before and after compilation.
+Existing symbolic links, hard links, and special files at output paths stop the build.
+
+The local start command and npm bin use the same `dist/cli.js` file.
+The build also compiles tests into `dist/`.
+The package file allowlist excludes compiled tests and build tools.
 The `prepack` script makes the build.
 There are no install lifecycle scripts.
 
@@ -527,7 +554,9 @@ The program does not publish itself.
 ## Development checks
 
 ```sh
-node --test /path/to/toolchain/packages/reHistory/engine.test.ts /path/to/toolchain/packages/reHistory/features.test.ts /path/to/toolchain/packages/reHistory/prompts.test.ts
+cd /path/to/toolchain/packages/reHistory
+npm run typecheck
+npm test
 ```
 
 Tests use different temporary repositories.
@@ -536,7 +565,7 @@ A specified network URL is necessary for the product demo.
 
 ## Technical references
 
-- [Node.js TypeScript support](https://nodejs.org/api/typescript.html).
+- [TypeScript compiler configuration](https://www.typescriptlang.org/tsconfig/).
 - [Git ref transactions](https://git-scm.com/docs/git-update-ref).
 - [Git object inventory](https://git-scm.com/docs/git-cat-file).
 - [npm package fields](https://docs.npmjs.com/cli/configuring-npm/package-json/).

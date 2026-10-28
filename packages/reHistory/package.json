@@ -24,9 +24,14 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "node --test engine.test.ts features.test.ts prompts.test.ts",
-    "start": "node cli.ts",
+    "test": "npm run build && node --test build.test.mjs dist/engine.test.js dist/features.test.js dist/prompts.test.js",
+    "start": "npm run build && node dist/cli.js",
+    "typecheck": "tsc --project tsconfig.json --noEmit",
     "build": "node build.mjs",
     "prepack": "npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "typescript": "5.9.3"
   }
 }
