@@ -100,7 +100,7 @@ Keep utility-specific requirements in the relevant utility documentation.
 reHistory changes the current Git branch and its corresponding tags.
 Read its [README](reHistory/README.md) and [security notes](reHistory/SECURITY.md) before changing its behavior.
 Use its [terminology](reHistory/TERMINOLOGY.md) for reHistory documentation.
-Its [release guide](reHistory/NPX_RELEASE.md) describes manual npm publication preparation.
+Its README describes local npm archive preparation. Publication requires separate explicit authorization.
 
 Run these commands from the repository root when relevant:
 
