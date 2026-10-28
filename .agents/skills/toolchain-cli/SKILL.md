@@ -18,6 +18,7 @@ This skill does not grant permission to publish, push, or change real user data.
 5. Select checks that can demonstrate both the result and the relevant safety properties.
 
 For a new utility, use a separate directory under `packages/`.
+Check the npm package name and CLI command against the naming rule in AGENTS.md.
 Do not copy reHistory-specific Git restrictions into an unrelated utility.
 
 ## Implement in stages
