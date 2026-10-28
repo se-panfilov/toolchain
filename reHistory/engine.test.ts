@@ -1,17 +1,17 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync, readdirSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, readdirSync, readFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { Repository, makePlan, applyPlan, validateIdentity } from './engine.ts';
+import { Repository, makePlan, applyPlan, validateIdentity, runGit } from './engine.ts';
 import { parseDate } from './cli.ts';
 
 function fixture(t: { after: (fn: () => void) => void }, format?: string): Repository {
   const dir = mkdtempSync(join(tmpdir(), 'rehistory-test-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
-  const result = spawnSync('git', ['init', '-q', '-b', 'main', ...(format ? [`--object-format=${format}`] : []), dir]);
-  assert.equal(result.status, 0, result.stderr.toString());
+  // Создание фикстуры тоже изолировано от GIT_* и пользовательских шаблонов.
+  runGit(tmpdir(), ['init', '-q', '--template=', '-b', 'main', ...(format ? [`--object-format=${format}`] : []), dir]);
   const repo = new Repository(dir);
   repo.git(['config', 'user.name', 'Тестовый автор']);
   repo.git(['config', 'user.email', 'test@example.org']);
@@ -148,6 +148,7 @@ test('shallow, partial clone, grafts и дополнительные worktree б
   repo.git(['config', 'remote.origin.promisor', 'true']);
   assert.throws(() => makePlan(repo, options), /Partial clone/);
   repo.git(['config', '--unset', 'remote.origin.promisor']);
+  mkdirSync(join(repo.common, 'info'), { recursive: true });
   writeFileSync(join(repo.common, 'info', 'grafts'), '');
   assert.throws(() => makePlan(repo, options), /grafts/);
   rmSync(join(repo.common, 'info', 'grafts'));
@@ -178,6 +179,7 @@ test('удаляются подписи и mergetag, бинарное сообщ
 test('не исполняются локальные hooks; блокируется второй процесс', t => {
   const repo = fixture(t);
   const marker = join(repo.path, 'hook-ran');
+  mkdirSync(join(repo.common, 'hooks'), { recursive: true });
   const hook = join(repo.common, 'hooks', 'reference-transaction');
   writeFileSync(hook, `#!/bin/sh\ntouch '${marker}'\n`, { mode: 0o755 });
   const plan = makePlan(repo, options);
@@ -228,11 +230,27 @@ test('файл восстановления возвращает ветку и �
 
 test('переменные GIT_* не перенаправляют работу в другой репозиторий', t => {
   const repo = fixture(t);
-  const result = spawnSync(process.execPath, ['--input-type=module', '-e', `
+  const foreign = fixture(t);
+  const child = join(repo.common, 'routing-check.mjs');
+  writeFileSync(child, `
     import { Repository, makePlan } from ${JSON.stringify(new URL('./engine.ts', import.meta.url).href)};
-    const plan = makePlan(new Repository(process.argv[1]), { start: 1700000000, interval: 1 });
-    console.log(plan.commits);
-  `, repo.path], { env: { ...process.env, GIT_DIR: '/nonexistent/rehistory', GIT_WORK_TREE: '/nonexistent', GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'core.hooksPath', GIT_CONFIG_VALUE_0: '/nonexistent' } });
-  assert.equal(result.status, 0, result.stderr.toString());
-  assert.equal(result.stdout.toString().trim(), '1');
+    const repo = new Repository(process.argv[2]);
+    const plan = makePlan(repo, { start: 1700000000, interval: 1 });
+    console.log(JSON.stringify({ commits: plan.commits, common: repo.common }));
+  `);
+  const before = snapshot(repo);
+  const foreignBefore = snapshot(foreign);
+  // Отдельный .mjs и CWD фикстуры не зависят от package scope npm или eval.
+  // Внутренний контекст Node test runner не передаётся обычному дочернему CLI.
+  const childEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('NODE_TEST_')));
+  const result = spawnSync(process.execPath, [child, repo.path], {
+    cwd: repo.path, timeout: 30000,
+    // IDE может включать FORCE_COLOR: машинный JSON не должен получать ANSI-окраску.
+    env: { ...childEnv, FORCE_COLOR: '1', GIT_DIR: foreign.common, GIT_WORK_TREE: foreign.path, GIT_INDEX_FILE: join(foreign.common, 'index'), GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'core.hooksPath', GIT_CONFIG_VALUE_0: '/nonexistent' },
+  });
+  const diagnostic = `Node ${process.version}; status=${result.status}; signal=${result.signal}; error=${result.error?.message || 'нет'}\nstdout: ${result.stdout?.toString()}\nstderr: ${result.stderr?.toString()}`;
+  assert.equal(result.status, 0, diagnostic);
+  assert.deepEqual(JSON.parse(result.stdout.toString()), { commits: 1, common: repo.common }, diagnostic);
+  assert.deepEqual(snapshot(repo), before);
+  assert.deepEqual(snapshot(foreign), foreignBefore);
 });
