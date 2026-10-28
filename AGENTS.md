@@ -31,7 +31,7 @@ Keep utility-specific requirements in the relevant utility documentation.
 - Support macOS first. Prefer portable Node.js APIs and explicit platform checks.
 - Read package engine requirements before execution. The current reHistory minimum is Node.js 24.12.0.
 - Use syntax supported by native Node.js type stripping. Keep runtime imports explicit.
-- Give each new utility its own directory, documentation, and necessary package metadata.
+- Put all applications in `packages/`. Give each utility its own directory, documentation, and necessary package metadata.
 - Keep shared code small. Do not add a framework or workspace manager without a concrete need.
 - Prefer Node.js built-ins. Evaluate the need and security impact of each added dependency.
 - Follow `.editorconfig`. Edit source files instead of generated build output.
@@ -98,16 +98,16 @@ Keep utility-specific requirements in the relevant utility documentation.
 ## Current utility
 
 reHistory changes the current Git branch and its corresponding tags.
-Read its [README](reHistory/README.md) and [security notes](reHistory/SECURITY.md) before changing its behavior.
-Use its [terminology](reHistory/TERMINOLOGY.md) for reHistory documentation.
+Read its [README](packages/reHistory/README.md) and [security notes](packages/reHistory/SECURITY.md) before changing its behavior.
+Use its [terminology](packages/reHistory/TERMINOLOGY.md) for reHistory documentation.
 Its README describes local npm archive preparation. Publication requires separate explicit authorization.
 
 Run these commands from the repository root when relevant:
 
 ```sh
-npm --prefix reHistory test
-npm --prefix reHistory run build
-node reHistory/dist/cli.js --help
+npm --prefix packages/reHistory test
+npm --prefix packages/reHistory run build
+node packages/reHistory/dist/cli.js --help
 ```
 
 The build strips types. It does not perform a TypeScript type check.
