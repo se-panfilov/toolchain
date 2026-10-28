@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { PassThrough, Writable } from 'node:stream';
 import { stripVTControlCharacters } from 'node:util';
 import type { ReadStream, WriteStream } from 'node:tty';
-import { TerminalPrompts, PromptCancelled } from './prompts.ts';
+import { TerminalPrompts, PromptCancelled, terminalStyle } from './prompts.ts';
 
 class Input extends PassThrough {
   isTTY = true;
@@ -29,8 +29,10 @@ function fixture(t: { after: (fn: () => void) => void }) {
 test('чекбокс по умолчанию выбран; цифры не меняют ответ', async t => {
   const { input, output, prompts } = fixture(t);
   const answer = prompts.confirm('Применить?', false);
-  assert.match(stripVTControlCharacters(output.text), /\[ \] Да\n› \[x\] Нет/);
+  assert.match(stripVTControlCharacters(output.text), /☐ Да\n  › ☑ Нет/);
   assert(!output.text.includes('Выберите номер'));
+  assert(!output.text.includes('Enter'));
+  assert(!output.text.includes('пробел'));
   input.write('1\r');
   assert.equal(await answer, false);
   assert.equal(input.isRaw, false);
@@ -125,4 +127,17 @@ test('неподдерживаемый терминал отклоняется �
   input.isTTY = true; process.env.TERM = 'dumb';
   await assert.rejects(prompts.confirm('Применить?', false), /TERM=dumb/);
   assert.equal(input.isRaw, false); assert.equal(output.text, '');
+});
+
+
+test('цвета доступны только в TTY и отключаются NO_COLOR', t => {
+  const env = { TERM: process.env.TERM, NO_COLOR: process.env.NO_COLOR, FORCE_COLOR: process.env.FORCE_COLOR };
+  t.after(() => { for (const [key, value] of Object.entries(env)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; } });
+  process.env.TERM = 'xterm-256color'; delete process.env.NO_COLOR; delete process.env.FORCE_COLOR;
+  assert.match(terminalStyle({ isTTY: true }).accent('текст'), /\x1b\[36mтекст\x1b\[0m/);
+  assert.equal(terminalStyle({ isTTY: false }).accent('текст'), 'текст');
+  process.env.NO_COLOR = '1';
+  assert.equal(terminalStyle({ isTTY: true }).accent('текст'), 'текст');
+  delete process.env.NO_COLOR; process.env.FORCE_COLOR = '0';
+  assert.equal(terminalStyle({ isTTY: true }).accent('текст'), 'текст');
 });
