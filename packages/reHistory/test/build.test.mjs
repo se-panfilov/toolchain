@@ -1,4 +1,4 @@
-import { test } from 'node:test';
+import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, copyFileSync, writeFileSync, readFileSync, symlinkSync, linkSync, unlinkSync, rmSync, existsSync } from 'node:fs';
@@ -11,10 +11,11 @@ const metadata = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
 const modules = ['engine', 'audit', 'export', 'demo', 'prompts', 'cli', 'engine.test', 'features.test', 'prompts.test'];
 function fixture(t) {
   const directory = mkdtempSync(join(tmpdir(), 'tx-rehistory-compiler-test-'));
-  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  t.onTestFinished(() => rmSync(directory, { recursive: true, force: true }));
   mkdirSync(join(directory, 'scripts'));
   copyFileSync(join(root, 'scripts/build.mjs'), join(directory, 'scripts/build.mjs'));
   copyFileSync(join(root, 'tsconfig.json'), join(directory, 'tsconfig.json'));
+  copyFileSync(join(root, 'vite.config.mjs'), join(directory, 'vite.config.mjs'));
   for (const folder of ['src', 'test']) {
     mkdirSync(join(directory, folder));
     for (const name of modules.filter(name => name.endsWith('.test') === (folder === 'test'))) {
@@ -95,5 +96,20 @@ test('сборка сохраняет неизвестные файлы dist и 
   assert.equal(result.error, undefined);
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /Неизвестный файл в dist/);
+  assert.equal(readFileSync(file, 'utf8'), 'protected');
+});
+
+test('ошибка Vite после проверки типов сохраняет готовую сборку', t => {
+  const directory = fixture(t);
+  mkdirSync(join(directory, 'dist/src'), { recursive: true });
+  const file = join(directory, 'dist/src/cli.js');
+  writeFileSync(file, 'protected');
+  const config = join(directory, 'vite.config.mjs');
+  writeFileSync(config, readFileSync(config, 'utf8').replace('  build: {',
+    "  plugins: [{ name: 'fixture-failure', buildStart() { throw new Error('fixture-vite-failure'); } }],\n  build: {"));
+  const result = build(directory);
+  assert.equal(result.error, undefined);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /fixture-vite-failure/);
   assert.equal(readFileSync(file, 'utf8'), 'protected');
 });

@@ -339,7 +339,7 @@ The tests used synthetic repositories, including the isolated demo transport ada
 Gitleaks found no secrets in the utility files and generated JavaScript.
 This scan does not prove that all sensitive data is absent.
 
-## Compiled runtime migration
+## Earlier compiled runtime migration
 
 Local startup and the npm bin now use the same `dist/src/cli.js` entry point.
 The local start command builds before it starts the application.
@@ -372,7 +372,7 @@ The two build regression tests also passed on Node.js 26.5.1.
 A clean offline npm ci completed with installation scripts disabled.
 Its compiled runtime files matched the local build byte-for-byte.
 
-## Package layout and private imports
+## Earlier package layout and private imports
 
 Runtime source, tests, and build tools now have separate directories.
 The publication allowlist contains only six runtime modules and the required package documents.
@@ -390,3 +390,39 @@ The existing exclusive-access and partial-output failure limits remain applicabl
 All 58 tests passed on Node.js 24.12.0 after the layout and import changes.
 The three build safety tests also passed on Node.js 26.5.1.
 These include nested directory links and preservation of unknown output files.
+
+## Vite and Vitest migration
+
+The current build checks types with tsc --noEmit, then builds with Vite.
+Vite targets Node.js 24 and preserves the six ESM runtime modules.
+Source aliases use `@reHistory/*`. Vite resolves them before output publication.
+The installed modules use relative imports and Node.js built-ins.
+There is no runtime alias loader or runtime dependency.
+The build disables environment-file loading, public-directory copying, source maps, and minification.
+
+Output checks and temporary-directory isolation remain active for both build stages.
+A type error or Vite error preserves the previous output.
+The tests include an injected Vite failure after successful type checking.
+The build removes only known obsolete files, including earlier compiled tests.
+Unknown files stop the build without removal.
+The earlier filesystem trust and partial-publication limits remain applicable.
+
+All existing tests now use Vitest.
+Test-scoped cleanup replaces node:test cleanup without removing existing assertions.
+Real Git fixtures, byte comparisons, subprocess checks, and the isolated demo transport remain in use.
+Unit tests also cover dates, identities, signatures, and Git environment isolation through Vitest expect assertions.
+Tests run sequentially in isolated worker processes and restore changed process state.
+The watch command runs source-only unit and terminal tests.
+The complete test command builds first and also checks compiled subprocess behavior.
+
+Vite 8.3.5 and Vitest 5.0.5 are pinned development dependencies.
+The updated lockfile contains platform-specific optional packages and native build-tool bindings.
+The optional fsevents package declares an installation script.
+Installation scripts were disabled during dependency installation.
+These build and test dependencies do not enter the npm archive.
+The dependency audit reported zero known vulnerabilities for the new tree.
+This result does not prove the absence of dependency defects.
+
+The Vite migration passed all 78 tests on Node.js 24.12.0.
+The source-only unit command passed 30 tests.
+A clean offline install with scripts disabled produced identical runtime modules.

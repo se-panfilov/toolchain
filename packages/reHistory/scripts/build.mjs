@@ -4,13 +4,15 @@ import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, chmodSync, lstatSy
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { join, dirname } from 'node:path';
+import { build as viteBuild } from 'vite';
+import viteConfig from '../vite.config.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const out = join(root, 'dist');
 const runtime = ['engine', 'audit', 'export', 'demo', 'prompts', 'cli'];
 const tests = ['engine.test', 'features.test', 'prompts.test'];
-const expected = [...runtime.map(name => `src/${name}.js`), ...tests.map(name => `test/${name}.js`)].sort();
-const legacy = [...runtime, ...tests].map(name => `${name}.js`);
+const expected = runtime.map(name => `src/${name}.js`).sort();
+const legacy = [...[...runtime, ...tests].map(name => `${name}.js`), ...tests.map(name => `test/${name}.js`)];
 const directories = new Set(['src', 'test']);
 
 // Inspect every output path without following links. Unknown files need manual review.
@@ -35,18 +37,19 @@ function filesIn(directory, prefix = '', allowLegacy = false) {
   return files.sort();
 }
 
-function build() {
+async function build() {
   filesIn(out, '', true);
   // Compile into an isolated directory. A failed type check must not change dist.
   const staging = mkdtempSync(join(tmpdir(), 'tx-rehistory-build-'));
   try {
     const require = createRequire(import.meta.url);
     const compiler = require.resolve('typescript/lib/tsc.js');
-    const result = spawnSync(process.execPath, [compiler, '--project', join(root, 'tsconfig.json'), '--outDir', staging, '--pretty', 'false'], {
+    const result = spawnSync(process.execPath, [compiler, '--project', join(root, 'tsconfig.json'), '--noEmit', '--pretty', 'false'], {
       cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024,
     });
     if (result.error) throw new Error(`Не удалось запустить TypeScript: ${result.error.message}`);
     if (result.status !== 0) throw new Error(`Компиляция не выполнена. dist не изменён.\n${result.stdout}${result.stderr}`);
+    await viteBuild({ ...viteConfig, root, configFile: false, build: { ...viteConfig.build, outDir: staging } });
     const files = filesIn(staging);
     if (JSON.stringify(files) !== JSON.stringify(expected)) throw new Error('Неожиданный набор файлов сборки. Проверьте tsconfig.json.');
     // Recheck destinations after compilation. Never follow an existing output link.
@@ -68,7 +71,7 @@ function build() {
   }
 }
 
-try { build(); }
+try { await build(); }
 catch (error) {
   console.error(`Ошибка сборки: ${error instanceof Error ? error.message : String(error)}`);
   process.exitCode = 1;

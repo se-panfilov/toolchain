@@ -2,11 +2,11 @@
 import { stdin, stdout } from 'node:process';
 import { pathToFileURL } from 'node:url';
 import { realpathSync } from 'node:fs';
-import { Repository, makePlan, applyPlan, validateIdentity, defaultBackupBranch } from '#rehistory/engine';
-import { auditRepository, auditText } from '#rehistory/audit';
-import { exportDestination, exportPlan, verifyExport } from '#rehistory/export';
-import { runDemo, validateDemoURL } from '#rehistory/demo';
-import { TerminalPrompts, PromptCancelled, terminalStyle } from '#rehistory/prompts';
+import { Repository, makePlan, applyPlan, validateIdentity, defaultBackupBranch } from '@reHistory/engine';
+import { auditRepository, auditText } from '@reHistory/audit';
+import { exportDestination, exportPlan, verifyExport } from '@reHistory/export';
+import { runDemo, validateDemoURL } from '@reHistory/demo';
+import { TerminalPrompts, PromptCancelled, terminalStyle } from '@reHistory/prompts';
 
 // Git metadata and errors can contain terminal control characters.
 function safe(value: unknown): string { return String(value).replace(/[\p{Cc}\p{Cf}]/gu, ch => ch === '\n' ? ch : '?'); }
