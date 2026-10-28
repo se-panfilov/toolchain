@@ -26,11 +26,17 @@ Keep utility-specific requirements in the relevant utility documentation.
 
 ## Implementation
 
-- Prefer TypeScript that Node.js can execute directly without a compilation step.
+- Develop applications in TypeScript. Compile them to JavaScript before execution.
+- Use each application's `dist/` as the single runtime artifact for both local execution and npx.
+- Local start scripts and npm bin entries must execute the same compiled entry point. Do not run TypeScript source directly.
+- Give each application a maintained `tsconfig.json`. Use `strict`, `noEmitOnError`, and `forceConsistentCasingInFileNames`.
+- Set `rootDir` explicitly and `outDir` to `dist`. Exclude generated output and dependencies from compilation inputs.
+- Match `target`, `module`, and `moduleResolution` to the supported Node.js versions and package module format.
+- For Node.js ESM applications, use compatible `NodeNext` module and resolution settings. Ensure emitted imports resolve without a TypeScript loader.
 - Use Bash only when TypeScript and Node.js cannot reasonably perform the task. Explain the reason.
 - Support macOS first. Prefer portable Node.js APIs and explicit platform checks.
 - Read package engine requirements before execution. The current reHistory minimum is Node.js 24.12.0.
-- Use syntax supported by native Node.js type stripping. Keep runtime imports explicit.
+- Keep runtime imports explicit. Treat compilation as a type check, not only type stripping.
 - Put all applications in `packages/`. Give each utility its own directory, documentation, and necessary package metadata.
 - Name each application's npm package and CLI command `tx-` followed by its directory name in lowercase.
 - For example, `packages/reHistory` uses `tx-rehistory`. Keep the directory name unchanged.
@@ -82,8 +88,8 @@ Keep utility-specific requirements in the relevant utility documentation.
 - For documentation changes, check links, commands, scope, and consistency with source behavior.
 - Read package scripts before running them. Do not run network demos as smoke tests.
 - For npx preparation, inspect the actual archive and exercise its bin from a different directory.
-- Native TypeScript cannot run from `node_modules` through Node.js type stripping.
-- Build JavaScript for npm distribution while preserving direct TypeScript execution for local development.
+- Build and test the compiled application before delivery. Verify both local and packaged execution from `dist/`.
+- Stop local startup if its build fails. Do not run stale output after a compiler error.
 - Keep publication file allowlists narrow. Avoid installation hooks and unnecessary runtime dependencies.
 - Verify package name, version, engine requirements, bin, file modes, and archive contents before release.
 - Report changes, checks, security findings, fixes, and remaining limitations in Russian.
@@ -112,5 +118,7 @@ npm --prefix packages/reHistory run build
 node packages/reHistory/dist/cli.js --help
 ```
 
-The build strips types. It does not perform a TypeScript type check.
+The current reHistory build still strips types without a TypeScript type check.
+Its current start script runs TypeScript source directly, and it has no tsconfig.json.
+These are existing migration gaps. They do not meet the compilation requirements above.
 There is no repository-wide test, lint, or type-check command at present.
