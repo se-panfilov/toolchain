@@ -2,7 +2,7 @@
 
 Document date: 2026-10-29.
 This document gives the security controls and specified limits of reHistory.
-It is not an security certificate from another organization.
+It is not a security certificate from another organization.
 
 ## Conditions for use
 
@@ -273,3 +273,29 @@ The Russian help and a read-only audit completed correctly.
 The synthetic repository did not change during the audit.
 The offline publication dry-run completed without a registry write.
 The checks did not use account login or public publication.
+
+
+## Publication security audit: 2026-10-29
+
+The audit found two defects and added controls for them.
+The Git environment filter now removes variable names without case sensitivity.
+This prevents mixed-case Git routing variables from passing the filter on Windows.
+A platform-independent regression test examines this filter.
+A native Windows test is still necessary.
+
+The tag parser now rejects an incomplete signature block.
+It also rejects a mismatched end marker or text after a signature.
+The previous parser could discard message text after an ambiguous start marker.
+The new check stops plan creation before any repository write.
+Complete PGP and SSH signature blocks remain available for removal.
+Clear-signed message markers stop the operation because their contents are ambiguous.
+This check examines block structure, not cryptographic validity.
+
+The package has no runtime dependencies or installation hooks.
+The prepack hook builds six specified JavaScript modules.
+The archive file allowlist excludes source tests, Git data, credentials, and local editor files.
+
+Git calls have no time limit.
+A server or local Git command can therefore stop an operation from completing.
+Large repositories can also exceed the response or memory limits.
+These limits remain applicable to publication.

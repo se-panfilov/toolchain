@@ -26,7 +26,7 @@ const transport: DemoTransport = {
 
 /** Use the shared rewrite engine. Supply automatic answers only for a new demo copy. */
 export function runDemo(options: { remote: string; directory?: string; print?: (text: string) => void }, connection: DemoTransport = transport) {
-  const url = validateDemoURL(options.remote); // До любых записей на диск.
+  const url = validateDemoURL(options.remote); // Validate before any file write.
   const log = options.print || (() => {});
   // Make sure that the server is empty before demo creation. Do not push yet.
   if (runRemoteProbe(url, connection)) throw new Error('Demo требует пустой серверный репозиторий. Push не выполнялся.');
