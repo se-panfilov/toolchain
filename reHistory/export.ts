@@ -1,6 +1,6 @@
-import { existsSync, lstatSync, mkdirSync, realpathSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, realpathSync, readFileSync, readdirSync, writeFileSync, openSync, readSync, closeSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
-import { Repository, runGit, parts, field, type Plan, type Options } from './engine.ts';
+import { Repository, runGit, parts, field, validateIdentity, type Plan, type Options } from './engine.ts';
 import { inventory, objectClosure, stamp } from './audit.ts';
 
 export const manifestName = 'rehistory-export.json';
@@ -23,38 +23,181 @@ export function exportDestination(repo: Repository, destination: string): string
   return target;
 }
 function equalSet(a: string[], b: string[]): boolean { return JSON.stringify([...new Set(a)].sort()) === JSON.stringify([...new Set(b)].sort()); }
+function exactKeys(value: unknown, required: string[], optional: string[] = []): value is Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const keys = Object.keys(value);
+  return required.every(key => keys.includes(key)) && keys.every(key => required.includes(key) || optional.includes(key));
+}
+function validIdentity(value: unknown): boolean {
+  if (!exactKeys(value, ['name', 'email']) || typeof value.name !== 'string' || typeof value.email !== 'string') return false;
+  try { validateIdentity(value.name, value.email); return true; }
+  catch { return false; }
+}
 function loadManifest(path: string): Manifest {
   const file = join(path, manifestName);
   const stat = lstatSync(file);
   if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 64 * 1024 * 1024) throw new Error('Некорректный файл манифеста экспорта.');
-  const m = JSON.parse(readFileSync(file, 'utf8')) as Manifest;
-  const oid = (value: unknown) => typeof value === 'string' && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(value);
-  if (m.version !== 1 || typeof m.head !== 'string' || !m.head.startsWith('refs/heads/') || !Array.isArray(m.refs) || !m.refs.length || !m.refs.every(r => typeof r.name === 'string' && /^(refs\/heads\/|refs\/tags\/)/.test(r.name) && oid(r.oid)) || !Array.isArray(m.objects) || !m.objects.every(oid) || !Array.isArray(m.commitOrder) || !m.commitOrder.length || !m.commitOrder.every(oid) || !m.policy || !Number.isSafeInteger(m.policy.start) || !Number.isSafeInteger(m.policy.interval) || m.policy.interval < 1 || m.policy.interval > 31536000 || m.policy.start < 0 || m.policy.start + (m.commitOrder.length - 1) * m.policy.interval > 253402300799 || !['normalize', 'preserve'].includes(m.policy.tagPolicy)) throw new Error('Неподдерживаемая структура манифеста экспорта.');
+  const value: unknown = JSON.parse(readFileSync(file, 'utf8'));
+  const fail = () => { throw new Error('Неподдерживаемая структура манифеста экспорта.'); };
+  if (!exactKeys(value, ['version', 'head', 'refs', 'objects', 'commitOrder', 'policy'])) fail();
+  const m = value as Manifest;
+  const oid = (item: unknown) => typeof item === 'string' && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(item);
+  const ref = (item: unknown) => exactKeys(item, ['name', 'oid']) && typeof item.name === 'string'
+    && /^(refs\/heads\/|refs\/tags\/)/.test(item.name) && oid(item.oid);
+  const unique = (items: string[]) => new Set(items).size === items.length;
+  if (m.version !== 1 || typeof m.head !== 'string' || !m.head.startsWith('refs/heads/')) fail();
+  if (!Array.isArray(m.refs) || !m.refs.length || !m.refs.every(ref) || !unique(m.refs.map(r => r.name))) fail();
+  if (!Array.isArray(m.objects) || !m.objects.every(oid) || !unique(m.objects)) fail();
+  if (!Array.isArray(m.commitOrder) || !m.commitOrder.length || !m.commitOrder.every(oid) || !unique(m.commitOrder)) fail();
+  const width = m.commitOrder[0].length;
+  if (![...m.objects, ...m.commitOrder, ...m.refs.map(r => r.oid)].every(item => item.length === width)) fail();
+  if (!exactKeys(m.policy, ['start', 'interval', 'tagPolicy'], ['identity', 'tagIdentity'])) fail();
+  const { start, interval, tagPolicy, identity, tagIdentity } = m.policy;
+  if (!Number.isSafeInteger(start) || start < 0 || !Number.isSafeInteger(interval) || interval < 1 || interval > 31536000) fail();
+  const last = start + (m.commitOrder.length - 1) * interval;
+  if (!Number.isSafeInteger(last) || last > 253402300799 || !['normalize', 'preserve'].includes(tagPolicy)) fail();
+  if (identity !== undefined && !validIdentity(identity)) fail();
+  if (tagIdentity !== undefined && !validIdentity(tagIdentity)) fail();
   return m;
+}
+
+/** Check metadata and every nested path before Git reads the object store. */
+function checkExportFiles(root: string, manifest: Manifest): { errors: string[]; peeledRefs: Map<string, string> } {
+  const errors: string[] = [];
+  let peeledRefs = new Map<string, string>();
+  const check = (ok: boolean, message: string) => { if (!ok) errors.push(message); };
+  const refs = new Map(manifest.refs.map(ref => [ref.name, ref.oid]));
+  const objects = new Set(manifest.objects);
+  const directories = new Set(['objects', 'objects/info', 'objects/pack', 'refs', 'refs/heads', 'refs/tags']);
+  for (const name of refs.keys()) {
+    const parts = name.split('/');
+    for (let i = 1; i < parts.length; i++) directories.add(parts.slice(0, i).join('/'));
+  }
+  const metadata = new Set(['HEAD', 'config', 'packed-refs', manifestName]);
+  const packs = new Map<string, Set<string>>();
+  const width = manifest.commitOrder[0].length;
+  const loose = new RegExp(`^objects/([a-f0-9]{2})/([a-f0-9]{${width - 2}})$`);
+  const packed = new RegExp(`^objects/pack/(pack-[a-f0-9]{${width}})\\.(pack|idx)$`);
+  const read = (relative: string) => readFileSync(join(root, relative), 'utf8');
+  function visit(directory: string, prefix = ''): void {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
+      const path = join(directory, entry.name);
+      const stat = lstatSync(path);
+      if (stat.isSymbolicLink()) { check(false, `В экспорте есть символическая ссылка: ${relative}.`); continue; }
+      if (stat.isDirectory()) {
+        const allowed = directories.has(relative) || /^objects\/[a-f0-9]{2}$/.test(relative);
+        check(allowed, `Неожиданный служебный каталог: ${relative}.`);
+        if (allowed) visit(path, relative);
+        continue;
+      }
+      if (!stat.isFile()) { check(false, `Специальный файл в экспорте: ${relative}.`); continue; }
+      check(stat.nlink === 1, `В экспорте есть файл с общей hardlink: ${relative}.`);
+      const object = loose.exec(relative);
+      const pack = packed.exec(relative);
+      const allowed = metadata.has(relative) || refs.has(relative) || Boolean(object && objects.has(object[1] + object[2])) || Boolean(pack);
+      check(allowed, `Неожиданный служебный файл: ${relative}.`);
+      if (!allowed) continue;
+      if (pack) {
+        if (!packs.has(pack[1])) packs.set(pack[1], new Set());
+        packs.get(pack[1])!.add(pack[2]);
+        const hashBytes = width / 2;
+        const tailBytes = pack[2] === 'idx' ? hashBytes * 2 : hashBytes;
+        const footer = Buffer.alloc(tailBytes);
+        const fd = openSync(path, 'r');
+        let bytes = 0;
+        try { if (stat.size >= tailBytes) bytes = readSync(fd, footer, 0, tailBytes, stat.size - tailBytes); }
+        finally { closeSync(fd); }
+        check(bytes === tailBytes && footer.subarray(0, hashBytes).toString('hex') === pack[1].slice(5), `Неверное имя pack/idx: ${relative}.`);
+      }
+      if (refs.has(relative)) {
+        check(stat.size <= 8192 && read(relative) === `${refs.get(relative)}\n`, `Посторонние данные или неверная ссылка: ${relative}.`);
+      }
+      if (relative === 'HEAD') {
+        check(stat.size <= 8192 && read(relative) === `ref: ${manifest.head}\n`, 'Посторонние данные или неверная ссылка в HEAD.');
+      }
+      if (relative === 'config') {
+        check(stat.size <= 65536 && canonicalConfig(read(relative)), 'В config есть посторонние настройки, данные или неподдерживаемые значения.');
+      }
+      if (relative === 'packed-refs') {
+        const parsed = stat.size <= 64 * 1024 * 1024 ? parsePackedRefs(read(relative), refs, objects, width) : undefined;
+        check(parsed !== undefined, 'Посторонние данные или неверные packed-refs.');
+        if (parsed) peeledRefs = parsed;
+      }
+    }
+  }
+  const stat = lstatSync(root);
+  if (!stat.isDirectory() || stat.isSymbolicLink()) return { errors: ['Экспорт должен быть обычным каталогом без символической ссылки.'], peeledRefs };
+  visit(root);
+  for (const [name, files] of packs) check(files.has('pack') && files.has('idx'), `Неполная пара pack/idx: ${name}.`);
+  return { errors, peeledRefs };
+}
+
+function canonicalConfig(text: string): boolean {
+  const booleans = ['true', 'false', 'yes', 'no', 'on', 'off', '0', '1'];
+  const allowed: Record<string, string[]> = {
+    'core.repositoryformatversion': ['0', '1'], 'core.bare': ['true'], 'core.logallrefupdates': ['false'],
+    'core.filemode': booleans, 'core.ignorecase': booleans, 'core.symlinks': booleans,
+    'core.protectntfs': booleans, 'core.precomposeunicode': booleans, 'extensions.objectformat': ['sha1', 'sha256'],
+  };
+  let section = '';
+  const seen = new Set<string>();
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    const header = /^\s*\[(core|extensions)\]\s*$/i.exec(line);
+    if (header) { section = header[1].toLowerCase(); continue; }
+    const item = /^\s*([a-z]+)\s*=\s*([a-z0-9]+)\s*$/i.exec(line);
+    if (!item) return false;
+    const key = `${section}.${item[1].toLowerCase()}`;
+    if (seen.has(key) || !allowed[key]?.includes(item[2].toLowerCase())) return false;
+    seen.add(key);
+  }
+  return true;
+}
+
+function parsePackedRefs(text: string, refs: Map<string, string>, objects: Set<string>, width: number): Map<string, string> | undefined {
+  const lines = text.split('\n');
+  if (lines.pop() !== '') return;
+  if (lines[0]?.startsWith('#')) {
+    const header = /^# pack-refs with: (?:peeled|fully-peeled|sorted)(?: (?:peeled|fully-peeled|sorted))* ?$/.test(lines.shift()!);
+    if (!header) return;
+  }
+  const record = new RegExp(`^([a-f0-9]{${width}}) (refs/(?:heads|tags)/.+)$`);
+  const peeled = new RegExp(`^\\^[a-f0-9]{${width}}$`);
+  const seen = new Set<string>();
+  const peeledRefs = new Map<string, string>();
+  let tag: string | undefined;
+  for (const line of lines) {
+    if (peeled.test(line) && tag) {
+      if (!objects.has(line.slice(1))) return;
+      peeledRefs.set(tag, line.slice(1)); tag = undefined; continue;
+    }
+    const item = record.exec(line);
+    if (!item || refs.get(item[2]) !== item[1] || seen.has(item[2])) return;
+    seen.add(item[2]); tag = item[2].startsWith('refs/tags/') ? item[2] : undefined;
+  }
+  return peeledRefs;
 }
 
 /** Read the object inventory, graph, refs, and dates. Verify integrity without writes. */
 export function verifyExport(path: string) {
-  const repo = new Repository(path);
-  const manifest = loadManifest(repo.path);
-  const errors: string[] = [];
+  const absolute = resolve(path);
+  const manifest = loadManifest(absolute);
+  const { errors, peeledRefs } = checkExportFiles(absolute, manifest);
+  if (errors.length) {
+    return { ok: false, repository: absolute, commits: manifest.commitOrder.length,
+      tags: manifest.refs.filter(ref => ref.name.startsWith('refs/tags/')).length, objects: manifest.objects.length, errors };
+  }
+  const repo = new Repository(absolute);
   function check(ok: boolean, message: string): void { if (!ok) errors.push(message); }
   function attempt(fn: () => void): void { try { fn(); } catch (error) { errors.push(error instanceof Error ? error.message : String(error)); } }
+  const refObjects = new Map(manifest.refs.map(ref => [ref.name, ref.oid]));
+  for (const [name, target] of peeledRefs) attempt(() => {
+    const oid = refObjects.get(name)!;
+    check(repo.text(['rev-parse', '--verify', `${oid}^{}`]) === target, `Неверная peeled-ссылка в packed-refs: ${name}.`);
+  });
   check(repo.text(['rev-parse', '--is-bare-repository']) === 'true', 'Экспорт должен быть bare-репозиторием.');
   attempt(() => check(repo.text(['symbolic-ref', '-q', 'HEAD']) === manifest.head, 'HEAD не соответствует манифесту.'));
-  const allowed = new Set(['HEAD', 'config', 'objects', 'refs', 'packed-refs', manifestName]);
-  for (const entry of readdirSync(repo.path)) check(allowed.has(entry), `Неожиданный служебный файл/каталог: ${entry}.`);
-  function checkLinks(dir: string): void {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      const path = join(dir, entry.name);
-      const stat = lstatSync(path);
-      check(!stat.isSymbolicLink(), `В экспорте есть символическая ссылка: ${path}.`);
-      if (stat.isDirectory()) checkLinks(path);
-      else if (stat.isFile()) check(stat.nlink === 1, `В экспорте есть файл с общей hardlink: ${path}.`);
-      else if (!stat.isSymbolicLink()) check(false, `Специальный файл в экспорте: ${path}.`);
-    }
-  }
-  attempt(() => checkLinks(repo.path));
   const refs = repo.refs();
   check(refs.every(r => !r.symbolic), 'В экспорте есть неожиданные символические refs.');
   check(equalSet(refs.map(r => `${r.name} ${r.oid}`), manifest.refs.map(r => `${r.name} ${r.oid}`)), 'Набор refs не соответствует разрешённому набору.');
@@ -66,10 +209,6 @@ export function verifyExport(path: string) {
   check(repo.text(['rev-parse', '--is-shallow-repository']) === 'false', 'Экспорт оказался shallow.');
   check(!existsSync(join(repo.common, 'info', 'grafts')), 'В экспорте обнаружены grafts.');
   check(!repo.text(['reflog', 'show', '--all', '--format=%H']), 'В экспорте есть записи reflog.');
-  const config = repo.text(['config', '--local', '--list']);
-  check(!/^remote\.|^extensions\.partialclone(?:=|$)/mi.test(config), 'В экспорте обнаружена конфигурация remote/partial clone.');
-  const allowedConfig = new Set(['core.repositoryformatversion', 'core.filemode', 'core.bare', 'core.logallrefupdates', 'core.ignorecase', 'core.symlinks', 'core.protectntfs', 'core.precomposeunicode', 'extensions.objectformat']);
-  check(config.split('\n').filter(Boolean).every(line => allowedConfig.has(line.split('=')[0].toLowerCase())), 'В локальном config есть посторонние настройки.');
   check(equalSet(objects.filter(o => o.type === 'commit').map(o => o.oid), manifest.commitOrder), 'Набор коммитов не соответствует плану.');
   const times = new Map<string, number>();
   for (const [index, oid] of manifest.commitOrder.entries()) attempt(() => {
