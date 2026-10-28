@@ -11,8 +11,8 @@ export type Options = { interval: number; start: number; identity?: { name: stri
 export type ObjectData = { type: 'commit' | 'tag'; data: Buffer; oid: string };
 export type Plan = { repo: Repository; options: Options; refs: Ref[]; selected: Ref[]; objects: ObjectData[]; mapping: Map<string, string>; commits: number; stripped: number; head: string; headOid: string; commitOrder: string[] };
 
-// Git вызывается без shell. Убираем наследуемые перенаправления Git,
-// чтобы --repo всегда выбирал именно указанный репозиторий.
+// Call Git without a shell. Remove inherited Git routing variables.
+// This makes --repo select the specified repository.
 const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')));
 Object.assign(env, { GIT_NO_REPLACE_OBJECTS: '1', GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0', GIT_NO_LAZY_FETCH: '1', LC_ALL: 'C', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_SYSTEM: devNull, GIT_CONFIG_GLOBAL: devNull });
 export function runGit(path: string, args: string[], input?: Buffer | string, extraEnv: Record<string, string> = {}): Buffer {
@@ -105,8 +105,8 @@ export function makePlan(repo: Repository, options: Options): Plan {
     repo.git(['check-ref-format', `refs/heads/${options.backupBranch}`]);
     if (refs.some(r => r.name === `refs/heads/${options.backupBranch}`)) throw new Error('Бекап-ветка уже существует.');
   }
-  // --stdin обходит ограничение длины argv. Топологический порядок гарантирует,
-  // что родитель получит более раннюю дату даже при исходно неверных часах.
+  // Use --stdin to avoid the argument length limit.
+  // Put parents first, even if the original dates are incorrect.
   const commits = repo.text(['rev-list', '--topo-order', '--reverse', '--stdin'], selected.map(r => r.oid).join('\n') + '\n').split('\n').filter(Boolean);
   if (!commits.length) throw new Error('Нет коммитов для переписывания.');
   const last = options.start + (commits.length - 1) * options.interval;
@@ -182,7 +182,7 @@ export function applyPlan(plan: Plan): { recovery: string; backupPrefix?: string
     if (JSON.stringify(snapshot.refs) !== JSON.stringify(plan.refs) || snapshot.head !== plan.head || snapshot.headOid !== plan.headOid) throw new Error('Репозиторий изменился после построения плана. Запустите скрипт заново.');
     const id = randomUUID();
     const backupPrefix = options.backupBranch ? `refs/rehistory/backups/${id}` : undefined;
-    // Эксклюзивное создание исключает перезапись, включая цели символических ссылок.
+    // Create the file exclusively. Do not overwrite a file or a symbolic link.
     recovery = join(repo.common, `rehistory-recovery-${id}.json`);
     const recoveryFd = openSync(recovery, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600);
     try {
@@ -192,9 +192,9 @@ export function applyPlan(plan: Plan): { recovery: string; backupPrefix?: string
     for (const object of plan.objects) {
       if (repo.text(['hash-object', '-w', '-t', object.type, '--stdin'], object.data) !== object.oid) throw new Error('Контрольная сумма записанного объекта не совпала.');
     }
-    // Проверяем все исходные прямые ссылки, включая неизменяемые. no-deref
-    // исключает запись в постороннюю цель при подмене ссылки символической.
-    // Проверка старых хешей защищает от конкурирующего перемещения веток.
+    // Verify all original direct refs, including refs that stay unchanged.
+    // Use no-deref to prevent writes through a substituted symbolic ref.
+    // Compare old object IDs to detect concurrent branch changes.
     const commands = ['start'];
     const selectedNames = new Set(plan.selected.map(r => r.name));
     for (const ref of plan.refs.filter(r => !r.symbolic)) {
