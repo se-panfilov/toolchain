@@ -2,7 +2,7 @@
   "name": "rehistory",
   "version": "2.3.3",
   "description": "Интерактивная нормализация, аудит и проверяемый экспорт истории Git",
-  "private": true,
+  "private": false,
   "type": "module",
   "license": "MIT",
   "engines": {

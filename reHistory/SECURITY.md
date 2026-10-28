@@ -222,7 +222,6 @@ Do different tests for authentication and hosting behavior with a specified empt
 Signature tests used synthetic blocks, not complete cryptographic signature generation.
 
 Linux, Windows, and npm publication have no different test results.
-The initial source package has the publication guard `private: true`.
 The build does not do a TypeScript type check.
 
 ## Documentation change controls
@@ -256,7 +255,7 @@ The previous result of 46 tests is the implementation baseline.
 
 The publication guide gives manual steps in NPX_RELEASE.md.
 It does not publish a package automatically.
-The working package keeps its initial name, version, and private guard.
+The working package keeps its initial name and version.
 
 The guide uses a scoped name and the public npm registry.
 It uses browser authentication with 2FA instead of a publication token.
