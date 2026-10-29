@@ -1,4 +1,5 @@
 import { fileURLToPath } from 'node:url';
+
 import { nodeCliConfig } from '../../configs/vite.config.mjs';
 
 export default nodeCliConfig({

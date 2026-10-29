@@ -1,8 +1,8 @@
 import { spawnSync } from 'node:child_process';
-import { constants, existsSync, openSync, closeSync, unlinkSync, writeFileSync, fsyncSync, readdirSync, readSync, statSync, accessSync, realpathSync, mkdtempSync, rmSync, lstatSync } from 'node:fs';
-import { join, resolve, dirname, win32, posix } from 'node:path';
-import { randomUUID, createHash } from 'node:crypto';
+import { createHash,randomUUID } from 'node:crypto';
+import { accessSync, closeSync, constants, existsSync, fsyncSync, lstatSync,mkdtempSync, openSync, readdirSync, readSync, realpathSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { devNull, tmpdir } from 'node:os';
+import { dirname, join, posix,resolve, win32 } from 'node:path';
 import { deflateSync } from 'node:zlib';
 
 export const defaultBackupBranch = 'rehistory-backup/original';
@@ -342,7 +342,7 @@ export function writeObjects(repo: Repository, objects: ObjectData[]): void {
     const file = join(directory, 'metadata.pack');
     fd = openSync(file, 'wx', 0o600);
     const digest = createHash(format);
-    const write = (data: Buffer) => {
+    const write = (data: Buffer): void => {
       writeFileSync(fd!, data);
       digest.update(data);
     };

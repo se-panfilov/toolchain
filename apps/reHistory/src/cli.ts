@@ -1,14 +1,15 @@
 #!/usr/bin/env node
-import { setImmediate as nextTurn } from 'node:timers/promises';
-import { stdin, stdout } from 'node:process';
-import { pathToFileURL } from 'node:url';
 import { realpathSync } from 'node:fs';
-import { Repository, makePlan, applyPlan, validateIdentity, normalizeCommitMessage, terminalJSON, defaultBackupBranch, type Plan } from '@reHistory/engine';
-import { pushRemotes, preparePush, executePush } from '@reHistory/remote';
+import { stdin, stdout } from 'node:process';
+import { setImmediate as nextTurn } from 'node:timers/promises';
+import { pathToFileURL } from 'node:url';
+
 import { auditRepository, auditText } from '@reHistory/audit';
-import { exportDestination, exportPlan, verifyExport } from '@reHistory/export';
 import { runDemo, validateDemoURL } from '@reHistory/demo';
-import { TerminalPrompts, PromptCancelled, terminalStyle } from '@reHistory/prompts';
+import { applyPlan, defaultBackupBranch, makePlan, normalizeCommitMessage, type Plan,Repository, terminalJSON, validateIdentity } from '@reHistory/engine';
+import { exportDestination, exportPlan, verifyExport } from '@reHistory/export';
+import { PromptCancelled, TerminalPrompts, terminalStyle } from '@reHistory/prompts';
+import { executePush,preparePush, pushRemotes } from '@reHistory/remote';
 
 // Git metadata and errors can contain terminal control characters.
 function safe(value: unknown): string {
@@ -84,7 +85,18 @@ export function parseStart(date: string, time: string): number {
   return timestamp;
 }
 
-export function parseArguments(args: string[]) {
+export type Arguments = {
+  path: string;
+  dryRun: boolean;
+  audit: boolean;
+  json: boolean;
+  demo: boolean;
+  destination: string | undefined;
+  verify: string | undefined;
+  remote: string | undefined;
+  demoDir: string | undefined;
+};
+export function parseArguments(args: string[]): Arguments {
   let path = process.cwd();
   let dryRun = false;
   let audit = false;
@@ -165,8 +177,8 @@ async function main(): Promise<void> {
   if (state.refs.some((r) => r.name.startsWith('refs/codex/'))) print('refs/codex/* сохраняют старую историю; в экспорт не входят.', 'warning');
   print('Не запускайте другие операции Git до завершения.', 'warning');
   const prompts = new TerminalPrompts();
-  const ask = (question: string, initial?: string) => prompts.text(question, initial);
-  const choose = (question: string, defaultYes: boolean) => prompts.confirm(question, defaultYes);
+  const ask = (question: string, initial?: string): Promise<string> => prompts.text(question, initial);
+  const choose = (question: string, defaultYes: boolean): Promise<boolean> => prompts.confirm(question, defaultYes);
   async function newIdentity(): Promise<{ name: string; email: string }> {
     for (;;) {
       const name = await ask('Имя');

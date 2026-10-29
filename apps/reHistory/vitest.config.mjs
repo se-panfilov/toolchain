@@ -1,4 +1,5 @@
 import { fileURLToPath } from 'node:url';
+
 import { nodeTestConfig } from '../../configs/vitest.config.mjs';
 import viteConfig from './vite.config.mjs';
 

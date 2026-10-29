@@ -1,12 +1,12 @@
+import { randomUUID } from 'node:crypto';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { randomUUID } from 'node:crypto';
-import { Repository, runGit, makePlan, applyPlan } from '@reHistory/engine';
-import { auditRepository, auditText } from '@reHistory/audit';
-import { exportPlan } from '@reHistory/export';
 
-import { validateRemoteURL, networkGit } from '@reHistory/remote';
+import { auditRepository, auditText } from '@reHistory/audit';
+import { applyPlan,makePlan, Repository, runGit } from '@reHistory/engine';
+import { exportPlan } from '@reHistory/export';
+import { networkGit,validateRemoteURL } from '@reHistory/remote';
 
 /** Demo still requires a URL before any files or network calls. */
 export function validateDemoURL(value: string | undefined): string {
@@ -22,7 +22,16 @@ const transport: DemoTransport = {
 };
 
 /** Use the shared rewrite engine. Supply automatic answers only for a new demo copy. */
-export function runDemo(options: { remote: string; directory?: string; print?: (text: string) => void }, connection: DemoTransport = transport) {
+export type DemoResult = {
+  ok: boolean;
+  root: string;
+  source: string;
+  exported: ReturnType<typeof exportPlan>;
+  originalCommits: number;
+  serverNamespace: string;
+  remoteUnchangedAfterRewrite: boolean;
+};
+export function runDemo(options: { remote: string; directory?: string; print?: (text: string) => void }, connection: DemoTransport = transport): DemoResult {
   const url = validateDemoURL(options.remote); // Validate before any file write.
   const log = options.print || (() => {});
   // Make sure that the server is empty before demo creation. Do not push yet.
