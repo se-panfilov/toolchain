@@ -13,7 +13,7 @@ try {
   if (error.code !== 'ENOENT') throw error;
   mkdirSync(out);
 }
-for (const name of ['engine', 'audit', 'export', 'demo', 'cli']) {
+for (const name of ['engine', 'audit', 'export', 'demo', 'prompts', 'cli']) {
   const destination = join(out, `${name}.js`);
   try { if (!lstatSync(destination).isFile() || lstatSync(destination).isSymbolicLink() || lstatSync(destination).nlink !== 1) throw new Error('Файл сборки не должен быть символической ссылкой.'); }
   catch (error) { if (error.code !== 'ENOENT') throw error; }

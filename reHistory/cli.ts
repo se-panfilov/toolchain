@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
 import { pathToFileURL } from 'node:url';
 import { realpathSync } from 'node:fs';
@@ -7,6 +6,7 @@ import { Repository, makePlan, applyPlan, validateIdentity } from './engine.ts';
 import { auditRepository, auditText } from './audit.ts';
 import { exportDestination, exportPlan, verifyExport } from './export.ts';
 import { runDemo, validateDemoURL } from './demo.ts';
+import { TerminalPrompts, PromptCancelled } from './prompts.ts';
 
 // Метаданные Git и ошибки могут содержать управляющие символы терминала.
 function safe(value: unknown): string { return String(value).replace(/[\p{Cc}\p{Cf}]/gu, ch => ch === '\n' ? ch : '?'); }
@@ -108,19 +108,9 @@ async function main(): Promise<void> {
   print(`Репозиторий: ${repo.path}\nВетка: ${state.head.slice(11)}\nРежим: ${mode.destination ? 'экспорт в новый bare-репозиторий' : 'переписывание на месте'}${mode.dryRun ? ' / DRY-RUN' : ''}`);
   if (state.refs.some(r => r.name.startsWith('refs/codex/'))) print('Служебные refs/codex/* сохраняются без изменений и могут удерживать исходную историю. В экспорт они не входят.');
   print('На время работы закройте Git-интеграцию IDE и не запускайте другие операции Git.');
-  const rl = createInterface({ input: stdin, output: stdout });
-  rl.on('SIGINT', () => { rl.close(); });
-  async function ask(question: string, fallback?: string): Promise<string> {
-    return (await rl.question(safe(`${question}${fallback !== undefined ? ` [${fallback}]` : ''}: `))).trim() || fallback || '';
-  }
-  async function choose(question: string, defaultYes: boolean): Promise<boolean> {
-    for (;;) {
-      print(`${question}\n  1. Да${defaultYes ? ' (по умолчанию)' : ''}\n  2. Нет${!defaultYes ? ' (по умолчанию)' : ''}`);
-      const answer = await ask('Выберите номер', defaultYes ? '1' : '2');
-      if (answer === '1' || answer === '2') return answer === '1';
-      print('Выберите 1 или 2.');
-    }
-  }
+  const prompts = new TerminalPrompts();
+  const ask = (question: string, initial?: string) => prompts.text(question, initial);
+  const choose = (question: string, defaultYes: boolean) => prompts.confirm(question, defaultYes);
   async function newIdentity(): Promise<{ name: string; email: string }> {
     for (;;) {
       const name = await ask('Новое имя'); const email = await ask('Новый email');
@@ -155,7 +145,10 @@ async function main(): Promise<void> {
     let start: number;
     for (;;) {
       try { start = parseDate(await ask('Дата первого коммита (ГГГГ-ММ-ДД, местная полночь; либо ISO с поясом)', dateDefault)); break; }
-      catch (error) { print(error instanceof Error ? error.message : error); }
+      catch (error) {
+        if (error instanceof PromptCancelled) throw error;
+        print(error instanceof Error ? error.message : error);
+      }
     }
     const identity = await choose('Заменить имя/email всех авторов и коммитеров текущей истории?', false) ? await newIdentity() : undefined;
     const tagPolicy = await choose('Нормализовать даты annotated-тегов по датам конечных коммитов?', true) ? 'normalize' : 'preserve';
@@ -177,11 +170,14 @@ async function main(): Promise<void> {
       const result = applyPlan(plan);
       print(`Готово. Переписано коммитов: ${plan.commits}.\nВосстановление: ${result.recovery}${result.backupPrefix ? `\nРезервные ссылки: ${result.backupPrefix}` : ''}\nPush не выполнялся.`);
     }
-  } finally { rl.close(); }
+  } finally { prompts.close(); }
 }
 // npm bin может быть символической ссылкой; сравниваем реальные пути.
 let entry = '';
 try { if (process.argv[1]) entry = pathToFileURL(realpathSync(process.argv[1])).href; } catch { /* импорт из stdin/eval */ }
 if (import.meta.url === entry) {
-  main().catch(error => { console.error(safe(`Ошибка: ${error instanceof Error ? error.message : error}`)); process.exitCode = 1; });
+  main().catch(error => {
+    if (error instanceof PromptCancelled) { print('Отменено. Изменения не применены.'); process.exitCode = 130; }
+    else { console.error(safe(`Ошибка: ${error instanceof Error ? error.message : error}`)); process.exitCode = 1; }
+  });
 }
