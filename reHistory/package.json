@@ -21,7 +21,6 @@
     "README.md",
     "SECURITY.md",
     "TERMINOLOGY.md",
-    "NPX_RELEASE.md",
     "LICENSE"
   ],
   "scripts": {

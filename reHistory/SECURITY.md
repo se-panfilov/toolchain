@@ -251,11 +251,10 @@ The full implementation test suite was not repeated for comment and documentatio
 The previous result of 46 tests is the implementation baseline.
 
 
-## npx publication procedure checks
+## Earlier npx publication procedure checks
 
-The publication guide gives manual steps in NPX_RELEASE.md.
-It does not publish a package automatically.
-The working package keeps its initial name and version.
+These checks used a publication guide that is no longer included.
+They describe an earlier package state.
 
 The guide uses a scoped name and the public npm registry.
 It uses browser authentication with 2FA instead of a publication token.
@@ -334,3 +333,8 @@ The strict file profile can reject metadata created by ordinary Git maintenance.
 The verifier does not remove that metadata automatically.
 It does not inspect file contents for personal data or prove the actual time of work.
 The previous trust conditions and unsigned-manifest limitation still apply.
+
+The complete suite passed all 55 tests on Node.js 24.12.0 and 26.5.1 on macOS.
+The tests used synthetic repositories, including the isolated demo transport adapter.
+Gitleaks found no secrets in the utility files and generated JavaScript.
+This scan does not prove that all sensitive data is absent.
