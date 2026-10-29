@@ -4,19 +4,32 @@ Toolchain is an npm workspaces monorepository for local CLI utilities.
 Applications live in `apps/` and use `tx-<lowercase-directory-name>` for package and command names.
 The root package is private.
 
-| Path                | Purpose                                                                          |
-| ------------------- | -------------------------------------------------------------------------------- |
-| `apps/`             | Independently publishable CLI packages.                                          |
-| `configs/`          | Shared ESLint, Prettier, TypeScript, Vite, and Vitest settings.                  |
-| `package.json`      | Workspace definitions, shared development dependencies, and repository commands. |
-| `package-lock.json` | One locked dependency tree for all workspaces.                                   |
-| `docs/`             | Project requirements, writing rules, and verification records.                   |
+| Path                 | Purpose                                                                          |
+| -------------------- | -------------------------------------------------------------------------------- |
+| `apps/`              | Independently publishable CLI packages.                                          |
+| `configs/`           | Shared ESLint, Prettier, TypeScript, Vite, and Vitest settings.                  |
+| `package.json`       | Workspace definitions, shared development dependencies, and repository commands. |
+| `package-lock.json`  | One locked dependency tree for all workspaces.                                   |
+| `docs/`              | Project requirements, writing rules, and verification records.                   |
+| `.github/workflows/` | Test, build, and release workflows for GitHub Actions.                           |
+| `scripts/ci/`        | Application selection, archive checks, and release steps for the workflows.      |
+
+## GitHub Actions
+
+The repository has three workflows: Tests, Build, and Release.
+Each workflow can use all applications or one application, and has a dry-run mode.
+Release publishes new application versions to npm through trusted publishing.
+See the [GitHub Actions guide](docs/GITHUB_ACTIONS.md).
+
+**CAUTION: When you add, remove, or rename an application, update the `app` list in each workflow.**
+Then run `npm run check:workflows`.
 
 ## Development
 
 Do all work on a task branch. Do not work directly on `master` or `main`.
 You may commit task changes and push the task branch to the repository remote.
 When GitHub access is available, open a pull request for the task branch.
+AI agents never merge pull requests. A human makes the final decision on critical questions, including security. See [human decisions](AGENTS.md#human-decisions).
 Follow the [Git authorization rules](AGENTS.md#authorization-and-git) and [commit and pull request writing rules](docs/WRITING.md#commits-and-pull-requests).
 
 Use Node.js 24.12 or later.
@@ -32,7 +45,7 @@ npm run format
 npm run check
 ```
 
-The check command runs formatting checks, lint, and all workspace tests.
+The check command runs formatting checks, lint, the GitHub Actions list check, and all workspace tests.
 Each application test command builds and checks TypeScript before testing.
 Build output in each application's `dist/` is the runtime for local use and npx.
 
@@ -65,6 +78,7 @@ The CLI interface uses Russian.
 - [Agent instructions](AGENTS.md) define development and authorization rules.
 - [Workspace guide](docs/WORKSPACES.md) describes shared configuration and adding an application.
 - [Package requirements](docs/PACKAGES.md) define workspace layout, versions, TypeScript, and distribution.
+- [GitHub Actions](docs/GITHUB_ACTIONS.md) describes the test, build, and release workflows.
 - [Agent setup](docs/AI_AGENTS.md) describes vendor integration.
 - [Writing rules](docs/WRITING.md) apply ASD-STE100 writing principles.
 - [ESLint rules](docs/ESLINT.md) describe the CLI adaptations and migration checks.

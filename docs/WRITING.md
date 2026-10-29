@@ -47,6 +47,11 @@ Avoid unexplained technical terms in this section.
 Keep this section as short as possible, with one or two paragraphs.
 The `tl;dr` section uses these plain-language requirements. The rest of the pull request must follow ASD-STE100.
 
+Never add links to AI agent threads, chats, or sessions where a feature was discussed.
+This rule applies to repository files, commit messages, pull requests, issues, and review comments.
+Do not add commit trailers or attribution lines with such links.
+These links are often private, and they can expire. Write the necessary context in the text itself.
+
 Use the [pull request template](../.github/pull_request_template.md).
 Replace its instructions with the task details.
 Describe the final change and the completed checks.

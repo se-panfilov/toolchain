@@ -25,7 +25,8 @@ function fixture(t) {
   const run = (args = [], env = {}) =>
     spawnSync(process.execPath, [join(root, 'scripts/publish.mjs'), ...args], {
       cwd: tmpdir(),
-      env: { ...process.env, npm_execpath: npm, ...env },
+      // Windows environment variable names are case-insensitive. Remove every inherited spelling.
+      env: { ...Object.fromEntries(Object.entries(process.env).filter(([key]) => key.toUpperCase() !== 'NPM_EXECPATH')), npm_execpath: npm, ...env },
       encoding: 'utf8',
       timeout: 30000
     });
