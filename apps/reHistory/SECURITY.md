@@ -285,7 +285,7 @@ The dry-run script adds `--dry-run` to the final publish command.
 Publication defaults to the public npm registry and uses the user's npm authentication.
 The script does not change versions or Git refs.
 The standard pack command writes an archive in the application directory and can replace an archive with the same name.
-Publication uses the exact tx-rehistory-<version>.tgz file created by pack.
+Publication uses the exact `tx-rehistory-<version>.tgz` file created by pack.
 The helper passes that explicit file to the npm CLI with argument arrays and no shell.
 The helper accepts only --dry-run, requires an ordinary archive with one link, and propagates npm failure.
 Do not modify source files or the archive between checks and publication.
