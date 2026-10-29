@@ -6,11 +6,12 @@ import { Repository, makePlan, applyPlan, validateIdentity } from './engine.ts';
 import { auditRepository, auditText } from './audit.ts';
 import { exportDestination, exportPlan, verifyExport } from './export.ts';
 import { runDemo, validateDemoURL } from './demo.ts';
-import { TerminalPrompts, PromptCancelled } from './prompts.ts';
+import { TerminalPrompts, PromptCancelled, terminalStyle } from './prompts.ts';
 
 // Метаданные Git и ошибки могут содержать управляющие символы терминала.
 function safe(value: unknown): string { return String(value).replace(/[\p{Cc}\p{Cf}]/gu, ch => ch === '\n' ? ch : '?'); }
-function print(value: unknown): void { console.log(safe(value)); }
+const style = terminalStyle();
+function print(value: unknown, tone: keyof ReturnType<typeof terminalStyle> = 'plain'): void { console.log(style[tone](safe(value))); }
 function help(): void {
   print(`reHistory — нормализация истории текущей ветки и её тегов.
 Node.js 24.12+, Git 2.39+. Прямой запуск: node /путь/reHistory/cli.ts [параметры]
@@ -91,29 +92,35 @@ async function main(): Promise<void> {
   if (mode.verify) {
     const report = verifyExport(mode.verify);
     if (mode.json) console.log(JSON.stringify(report, null, 2));
-    else print(`${report.ok ? 'ПРОВЕРКА УСПЕШНА' : 'ПРОВЕРКА НЕ ПРОЙДЕНА'}: ${report.repository}\nКоммитов: ${report.commits}; тегов: ${report.tags}; объектов: ${report.objects}\n${report.errors.join('\n')}`);
+    else {
+      print(`${report.ok ? '✓ Экспорт проверен' : '✕ Проверка не пройдена'} · коммиты: ${report.commits} · теги: ${report.tags} · объекты: ${report.objects}`, report.ok ? 'success' : 'error');
+      print(report.repository, 'muted');
+      for (const error of report.errors) print(error, 'error');
+    }
     if (!report.ok) process.exitCode = 1;
     return;
   }
   const repo = new Repository(mode.path);
   if (mode.audit) {
     const report = auditRepository(repo);
-    if (mode.json) console.log(JSON.stringify(report, null, 2)); else print(auditText(report));
+    if (mode.json) console.log(JSON.stringify(report, null, 2));
+    else for (const line of auditText(report).split('\n')) print(line, line.startsWith('АУДИТ:') ? 'accent' : line.startsWith('Внимание:') ? 'warning' : 'plain');
     if (!report.complete) process.exitCode = 2;
     return;
   }
-  if (!stdin.isTTY || !stdout.isTTY) throw new Error('Для переписывания/экспорта нужен терминал (TTY). Автоматические ответы разрешены только внутри нового demo.');
+  if (!stdin.isTTY || !stdout.isTTY) throw new Error('Нужен интерактивный терминал (TTY).');
   const state = repo.inspect();
   if (mode.destination) exportDestination(repo, mode.destination);
-  print(`Репозиторий: ${repo.path}\nВетка: ${state.head.slice(11)}\nРежим: ${mode.destination ? 'экспорт в новый bare-репозиторий' : 'переписывание на месте'}${mode.dryRun ? ' / DRY-RUN' : ''}`);
-  if (state.refs.some(r => r.name.startsWith('refs/codex/'))) print('Служебные refs/codex/* сохраняются без изменений и могут удерживать исходную историю. В экспорт они не входят.');
-  print('На время работы закройте Git-интеграцию IDE и не запускайте другие операции Git.');
+  print(`reHistory · ${mode.destination ? 'экспорт' : 'переписывание'}${mode.dryRun ? ' · dry-run' : ''}`, 'accent');
+  print(`${repo.path} · ${state.head.slice(11)}`, 'muted');
+  if (state.refs.some(r => r.name.startsWith('refs/codex/'))) print('refs/codex/* сохраняют старую историю; в экспорт не входят.', 'warning');
+  print('Не запускайте другие операции Git до завершения.', 'warning');
   const prompts = new TerminalPrompts();
   const ask = (question: string, initial?: string) => prompts.text(question, initial);
   const choose = (question: string, defaultYes: boolean) => prompts.confirm(question, defaultYes);
   async function newIdentity(): Promise<{ name: string; email: string }> {
     for (;;) {
-      const name = await ask('Новое имя'); const email = await ask('Новый email');
+      const name = await ask('Имя'); const email = await ask('Email');
       try { validateIdentity(name, email); return { name, email }; }
       catch (error) { print(error instanceof Error ? error.message : error); }
     }
@@ -121,54 +128,62 @@ async function main(): Promise<void> {
   try {
     let backupBranch: string | undefined;
     if (!mode.destination) {
-      if (await choose('Создать бекап-ветку и резервные ссылки затронутых тегов?', true)) {
+      if (await choose('Создать бекап?', true)) {
         const fallback = `rehistory-backup/${new Date().toISOString().replace(/[:.]/g, '-')}`;
         for (;;) {
-          const candidate = await ask('Имя бекап-ветки', fallback);
+          const candidate = await ask('Ветка бекапа', fallback);
           try {
             repo.git(['check-ref-format', `refs/heads/${candidate}`]);
             if (state.refs.some(r => r.name === `refs/heads/${candidate}`)) throw new Error('Такая ветка уже существует.');
             backupBranch = candidate; break;
           } catch (error) { print(error instanceof Error ? error.message : error); }
         }
-      } else print('Бекап отключён. JSON с хешами не защитит исходные объекты от будущего GC.');
-    } else print(`Каталог экспорта: ${mode.destination}\nИсходный репозиторий сохраняется целиком; бекап внутри экспорта не создаётся.`);
+      } else print('Без бекапа восстановление не гарантируется.', 'warning');
+    } else print(`Экспорт → ${mode.destination}`, 'muted');
     let interval: number;
     for (;;) {
-      const value = await ask('Интервал между коммитами, в секундах', '1');
+      const value = await ask('Интервал, с', '1');
       interval = Number(value);
       if (/^\d+$/.test(value) && Number.isSafeInteger(interval) && interval >= 1 && interval <= 31536000) break;
-      print('Введите целое число от 1 до 31536000.');
+      print('Целое число: 1–31536000.');
     }
     const today = new Date();
     const dateDefault = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
     let start: number;
     for (;;) {
-      try { start = parseDate(await ask('Дата первого коммита (ГГГГ-ММ-ДД, местная полночь; либо ISO с поясом)', dateDefault)); break; }
+      try { start = parseDate(await ask('Дата первого коммита', dateDefault)); break; }
       catch (error) {
         if (error instanceof PromptCancelled) throw error;
         print(error instanceof Error ? error.message : error);
       }
     }
-    const identity = await choose('Заменить имя/email всех авторов и коммитеров текущей истории?', false) ? await newIdentity() : undefined;
-    const tagPolicy = await choose('Нормализовать даты annotated-тегов по датам конечных коммитов?', true) ? 'normalize' : 'preserve';
+    const identity = await choose('Заменить авторов и коммитеров?', false) ? await newIdentity() : undefined;
+    const tagPolicy = await choose('Нормализовать даты тегов?', true) ? 'normalize' : 'preserve';
     let tagIdentity: { name: string; email: string } | undefined;
-    if (identity) { if (await choose('Применить новое имя/email также к создателям annotated-тегов?', true)) tagIdentity = identity; }
-    else if (await choose('Заменить имя/email создателей annotated-тегов?', false)) tagIdentity = await newIdentity();
-    print('Проверяю историю и рассчитываю новые объекты…');
+    if (identity) { if (await choose('То же имя/email для тегов?', true)) tagIdentity = identity; }
+    else if (await choose('Заменить создателей тегов?', false)) tagIdentity = await newIdentity();
+    print('Готовлю план…');
     const plan = makePlan(repo, { start, interval, identity, backupBranch, tagPolicy, tagIdentity });
-    print(`\nПЛАН\nКоммитов: ${plan.commits}\nИнтервал: ${interval} с\nНачало: ${new Date(start * 1000).toISOString()}\nКонец: ${new Date((start + (plan.commits - 1) * interval) * 1000).toISOString()}\nИмя/email коммитов: ${identity ? `${identity.name} <${identity.email}>` : 'сохранить'}\nДаты annotated-тегов: ${tagPolicy === 'normalize' ? 'нормализовать' : 'СОХРАНИТЬ ИСХОДНЫЕ'}\nTagger: ${tagIdentity ? `${tagIdentity.name} <${tagIdentity.email}>` : 'сохранить'}\nБекап: ${mode.destination ? 'исходный репозиторий' : backupBranch || 'отключён'}\nВыбранные ссылки:`);
-    for (const ref of plan.selected) print(`  ${ref.name}: ${ref.oid} → ${plan.mapping.get(ref.oid)}`);
-    print(`Удаляемых заголовков подписей/mergetag и подписей тегов: ${plan.stripped}.\nДаты искусственные и не устанавливают время фактической работы. Старые копии могут сохранять исходные данные.`);
-    if (mode.dryRun) { print('Dry-run завершён. Никаких записей, экспорта и бекапа не создано.'); return; }
-    if (plan.stripped && !await choose('Удалить недействительные подписи и mergetag?', false)) { print('Отменено.'); return; }
-    if (!await choose(mode.destination ? 'Создать и проверить показанный экспорт?' : 'Применить показанное переписывание?', false)) { print('Отменено.'); return; }
+    print('\nПлан', 'accent');
+    print(`Коммиты: ${plan.commits} · шаг: ${interval} с · теги: ${plan.selected.filter(r => r.name.startsWith('refs/tags/')).length}`);
+    print(`${new Date(start * 1000).toISOString()} → ${new Date((start + (plan.commits - 1) * interval) * 1000).toISOString()}`);
+    print(`Автор и коммитер: ${identity ? `${identity.name} <${identity.email}>` : 'без изменений'}`);
+    print(`Теги: даты ${tagPolicy === 'normalize' ? 'нормализовать' : 'сохранить исходными'}; создатель ${tagIdentity ? `${tagIdentity.name} <${tagIdentity.email}>` : 'без изменений'}`);
+    print(mode.destination ? 'Исходник сохранится.' : `Бекап: ${backupBranch || 'нет'}`, 'muted');
+    for (const ref of plan.selected) print(`  ${ref.name}  ${ref.oid.slice(0, 12)} → ${plan.mapping.get(ref.oid)!.slice(0, 12)}`, 'muted');
+    if (plan.stripped) print(`Подписи и mergetag к удалению: ${plan.stripped}`, 'warning');
+    print('Даты условные; старые копии сохраняют исходную историю.', 'muted');
+    if (mode.dryRun) { print('Dry-run завершён. Без изменений.', 'success'); return; }
+    if (plan.stripped && !await choose('Удалить подписи и mergetag?', false)) { print('Отменено.'); return; }
+    if (!await choose(mode.destination ? 'Создать экспорт?' : 'Применить изменения?', false)) { print('Отменено.'); return; }
     if (mode.destination) {
       const result = exportPlan(plan, mode.destination);
-      print(`ЭКСПОРТ ПРОВЕРЕН: ${result.repository}\nКоммитов: ${result.commits}; тегов: ${result.tags}; объектов: ${result.objects}\nИсходный репозиторий не изменён. Push не выполнялся.`);
+      print(`✓ Экспорт проверен · коммиты: ${result.commits} · теги: ${result.tags}`, 'success');
+      print(result.repository, 'muted');
     } else {
       const result = applyPlan(plan);
-      print(`Готово. Переписано коммитов: ${plan.commits}.\nВосстановление: ${result.recovery}${result.backupPrefix ? `\nРезервные ссылки: ${result.backupPrefix}` : ''}\nPush не выполнялся.`);
+      print(`✓ Готово · коммиты: ${plan.commits}`, 'success');
+      print(`Восстановление: ${result.recovery}${result.backupPrefix ? `\nБекап-ссылки: ${result.backupPrefix}` : ''}`, 'muted');
     }
   } finally { prompts.close(); }
 }
@@ -177,7 +192,7 @@ let entry = '';
 try { if (process.argv[1]) entry = pathToFileURL(realpathSync(process.argv[1])).href; } catch { /* импорт из stdin/eval */ }
 if (import.meta.url === entry) {
   main().catch(error => {
-    if (error instanceof PromptCancelled) { print('Отменено. Изменения не применены.'); process.exitCode = 130; }
-    else { console.error(safe(`Ошибка: ${error instanceof Error ? error.message : error}`)); process.exitCode = 1; }
+    if (error instanceof PromptCancelled) { print('Отменено.', 'muted'); process.exitCode = 130; }
+    else { console.error(style.error(safe(`Ошибка: ${error instanceof Error ? error.message : error}`))); process.exitCode = 1; }
   });
 }
