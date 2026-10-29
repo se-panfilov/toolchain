@@ -65,3 +65,46 @@ Direct Node.js execution of `dist/cli.js` uses the last successful build.
 Native Linux and Windows checks were not performed.
 No real network demo, npm publication, or change to Toolchain Git refs was performed.
 Dependency and secret scans do not prove the absence of all defects or sensitive data.
+
+## Later package structure review
+
+The following checks apply after the package structure changes.
+They supersede earlier path examples for current development.
+
+Runtime source now belongs to `src/`, tests to `test/`, and build tools to `scripts/`.
+The runtime entry point is `dist/src/cli.js`.
+Tests execute from `dist/test/`.
+The npm archive excludes both tests and build tools.
+
+The package uses private `#rehistory/*` imports with compiled targets in package.json.
+The compiler has matching source mappings in tsconfig.json.
+The installed package resolves these aliases without source files or a custom loader.
+The package has an empty exports map because it supports a CLI rather than a public import API.
+Repository metadata records the configured origin and application directory.
+Repository availability was not verified. Check it before publication.
+
+The separate security review examined alias resolution, build paths, legacy output removal, metadata, and the actual archive.
+The runtime comparison reversed only import changes and the help path.
+It found no changes to application behavior against the task baseline.
+No dependencies were added or changed during this structure review.
+
+All 58 tests passed on Node.js 24.12.0 on macOS.
+Three build safety tests also passed on Node.js 26.5.1.
+These tests cover nested directory links and preservation of unknown output files.
+A clean offline install and build reproduced the six runtime modules byte-for-byte.
+The typecheck and local start checks passed.
+The archive contained exactly 11 expected regular files with matching bytes and permissions.
+Offline npm exec ran help and a read-only JSON audit outside the source directory.
+The archive's export implementation accepted valid output and rejected an unexpected nested file.
+The source and checked export remained unchanged.
+
+The new archive integrity value is:
+
+```text
+sha512-fnJueFcNUdFThK8nSmUtZ3J+xkYt76/H7djahbsKySS79tR9vzoqOKBCDy1EHvMMoXmeLnW0SEsMkdyRq2ftWg==
+```
+
+Gitleaks found no secrets in this archive's extracted files.
+The earlier archive integrity value remains a historical record.
+No package publication or real network demo was performed.
+The existing filesystem trust conditions and platform limits remain applicable.

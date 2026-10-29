@@ -4,11 +4,11 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSy
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
-import { Repository, runGit, makePlan, applyPlan } from './engine.js';
-import { auditRepository, stamp } from './audit.js';
-import { exportDestination, exportPlan, verifyExport, manifestName } from './export.js';
-import { runDemo, validateDemoURL } from './demo.js';
-import { parseArguments } from './cli.js';
+import { Repository, runGit, makePlan, applyPlan } from '#rehistory/engine';
+import { auditRepository, stamp } from '#rehistory/audit';
+import { exportDestination, exportPlan, verifyExport, manifestName } from '#rehistory/export';
+import { runDemo, validateDemoURL } from '#rehistory/demo';
+import { parseArguments } from '#rehistory/cli';
 
 function temp(t: { after: (fn: () => void) => void }): string {
   const path = mkdtempSync(join(tmpdir(), 'rehistory-features-'));
@@ -273,7 +273,7 @@ test('конкурирующее изменение source останавлив�
 
 test('demo: URL обязателен; опасные URL и несовместимые параметры отвергаются', t => {
   const root = temp(t); const directory = join(root, 'must-not-exist');
-  const cli = spawnSync(process.execPath, [new URL('./cli.js', import.meta.url).pathname, '--demo', '--demo-dir', directory]);
+  const cli = spawnSync(process.execPath, [new URL('../src/cli.js', import.meta.url).pathname, '--demo', '--demo-dir', directory]);
   assert.equal(cli.status, 1); assert.match(cli.stderr.toString(), /обязателен/); assert.equal(existsSync(directory), false);
   for (const url of ['', '/tmp/server.git', 'file:///tmp/server.git', 'ext::sh -c id', 'http://example.org/repo', 'https://token@example.org/repo', 'https://example.org/repo?secret=1', 'ssh://-bad@example.org/repo', 'https://example.org/a\n']) assert.throws(() => validateDemoURL(url));
   assert.equal(validateDemoURL('git@example.org:owner/repo.git'), 'ssh://git@example.org/owner/repo.git');
@@ -322,7 +322,7 @@ test('вне demo сетевые и файловые Git-транспорты з
 
 test('CLI запускается через символическую ссылку, как npm bin', t => {
   const root = temp(t); const link = join(root, 'tx-rehistory.js');
-  symlinkSync(new URL('./cli.js', import.meta.url).pathname, link);
+  symlinkSync(new URL('../src/cli.js', import.meta.url).pathname, link);
   const result = spawnSync(process.execPath, [link, '--help']);
   assert.equal(result.status, 0, result.stderr.toString());
   assert.match(result.stdout.toString(), /--demo-remote/);

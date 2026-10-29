@@ -341,10 +341,10 @@ This scan does not prove that all sensitive data is absent.
 
 ## Compiled runtime migration
 
-Local startup and the npm bin now use the same `dist/cli.js` entry point.
+Local startup and the npm bin now use the same `dist/src/cli.js` entry point.
 The local start command builds before it starts the application.
 A compiler error stops startup instead of executing stale output.
-Direct `node dist/cli.js` execution uses the last successful build.
+Direct `node dist/src/cli.js` execution uses the last successful build.
 Rebuild after source changes.
 
 The build uses strict TypeScript checks with noEmitOnError and NodeNext module resolution.
@@ -371,3 +371,22 @@ All 57 tests passed on Node.js 24.12.0 on macOS after this migration.
 The two build regression tests also passed on Node.js 26.5.1.
 A clean offline npm ci completed with installation scripts disabled.
 Its compiled runtime files matched the local build byte-for-byte.
+
+## Package layout and private imports
+
+Runtime source, tests, and build tools now have separate directories.
+The publication allowlist contains only six runtime modules and the required package documents.
+The npm bin and local start command use `dist/src/cli.js`.
+Private imports map `#rehistory/*` directly to compiled modules inside the same package.
+The compiler has corresponding source mappings. Runtime execution does not use source files or custom loaders.
+The empty exports map identifies this package as a CLI without a public import API.
+It does not prevent direct filesystem access to package files.
+
+The build checks nested output directories before writes.
+It rejects unknown files instead of removing them.
+After successful compilation, it removes only known flat files from the earlier generated layout.
+The existing exclusive-access and partial-output failure limits remain applicable.
+
+All 58 tests passed on Node.js 24.12.0 after the layout and import changes.
+The three build safety tests also passed on Node.js 26.5.1.
+These include nested directory links and preservation of unknown output files.

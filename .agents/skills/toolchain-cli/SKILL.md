@@ -20,6 +20,7 @@ This skill does not grant permission to publish, push, or change real user data.
 For a new utility, use a separate directory under `packages/`.
 Check the npm package name and CLI command against the naming rule in AGENTS.md.
 Inspect tsconfig.json and package scripts against the compilation requirements in AGENTS.md.
+Check structure, metadata, TypeScript options, and package-local aliases against [the package requirements](../../../docs/PACKAGES.md).
 Verify that local startup and npm bin entries use the same compiled entry point in `dist/`.
 Do not copy reHistory-specific Git restrictions into an unrelated utility.
 
