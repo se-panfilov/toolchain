@@ -30,6 +30,16 @@ Keep utility-specific requirements in the relevant utility documentation.
 - Network demos require a user-specified server URL and explicit authorization to run that demo.
 - Do not infer authorization to send data from a request to implement a demo.
 
+### Branch synchronization
+
+- Before updating a PR branch from `master` or `main`, check for conflicts without changing the branch.
+- Prefer rebase when practical. Use merge when it is simpler.
+- Do not rewrite published history or force-push without explicit authorization.
+- Update the branch only if the operation can complete without conflicts.
+- If conflicts are detected or arise, stop. Do not resolve conflicts, choose file versions, or continue the rebase or merge.
+- Leave conflict resolution to a human. Report the affected branch, operation, and conflicting paths when communication is available.
+- Preserve the working files, index, and operation state. Do not abort, reset, or discard work without human instructions.
+
 ## Human decisions
 
 A human makes the final decision on critical questions. An agent can prepare analysis, options, and a recommendation.
@@ -148,6 +158,7 @@ If the decision is unclear, keep the safer state and ask.
 
 - Write documentation and code comments in English.
 - Apply [the project writing rules](docs/WRITING.md), based on ASD-STE100 Issue 9.
+- Do not name or link to applications used as examples. See [external examples](docs/WRITING.md#external-examples).
 - Start every pull request description with a `tl;dr` section. Use short, plain language for readers with little subject knowledge.
 - Keep `tl;dr` as short as possible, with a maximum of two paragraphs.
 - Apply ASD-STE100 to all other pull request text, including the title, and to commit messages. See [the writing rules](docs/WRITING.md#commits-and-pull-requests).
