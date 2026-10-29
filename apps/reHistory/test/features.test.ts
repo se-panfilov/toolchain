@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { auditRepository, stamp } from '@reHistory/audit';
 import { parseArguments } from '@reHistory/cli';
@@ -324,7 +325,7 @@ test('конкурирующее изменение source останавлив�
 test('demo: URL обязателен; опасные URL и несовместимые параметры отвергаются', (t) => {
   const root = temp(t);
   const directory = join(root, 'must-not-exist');
-  const cli = spawnSync(process.execPath, [new URL('../dist/src/cli.js', import.meta.url).pathname, '--demo', '--demo-dir', directory]);
+  const cli = spawnSync(process.execPath, [fileURLToPath(new URL('../dist/src/cli.js', import.meta.url)), '--demo', '--demo-dir', directory]);
   assert.equal(cli.status, 1);
   assert.match(cli.stderr.toString(), /обязателен/);
   assert.equal(existsSync(directory), false);
@@ -412,7 +413,7 @@ test('вне явного сетевого адаптера сетевые и ф
 test('CLI запускается через символическую ссылку, как npm bin', (t) => {
   const root = temp(t);
   const link = join(root, 'tx-rehistory.js');
-  symlinkSync(new URL('../dist/src/cli.js', import.meta.url).pathname, link);
+  symlinkSync(fileURLToPath(new URL('../dist/src/cli.js', import.meta.url)), link);
   const result = spawnSync(process.execPath, [link, '--help']);
   assert.equal(result.status, 0, result.stderr.toString());
   assert.match(result.stdout.toString(), /--demo-remote/);

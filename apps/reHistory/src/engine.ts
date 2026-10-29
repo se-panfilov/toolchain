@@ -38,6 +38,8 @@ export function withoutGitEnvironment(source: Record<string, string | undefined>
   // Windows environment variable names are case-insensitive.
   return Object.fromEntries(Object.entries(source).filter(([key]) => !key.toUpperCase().startsWith('GIT_')));
 }
+// Git for Windows rejects os.devNull (\\.\nul) as a config path. The reserved name nul always selects the null device.
+const gitNullConfig = process.platform === 'win32' ? 'nul' : devNull;
 const env = withoutGitEnvironment(process.env);
 Object.assign(env, {
   GIT_NO_REPLACE_OBJECTS: '1',
@@ -46,8 +48,8 @@ Object.assign(env, {
   GIT_NO_LAZY_FETCH: '1',
   LC_ALL: 'C',
   GIT_CONFIG_NOSYSTEM: '1',
-  GIT_CONFIG_SYSTEM: devNull,
-  GIT_CONFIG_GLOBAL: devNull
+  GIT_CONFIG_SYSTEM: gitNullConfig,
+  GIT_CONFIG_GLOBAL: gitNullConfig
 });
 /** Resolve only absolute PATH entries. Never search the current directory implicitly. */
 export function findGitExecutable(pathValue: string, platform = process.platform, probe?: (candidate: string) => string | undefined): string {

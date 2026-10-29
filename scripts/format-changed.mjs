@@ -9,7 +9,9 @@ import { getFileInfo } from 'prettier';
 
 const root = realpathSync(fileURLToPath(new URL('../', import.meta.url)));
 const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.toUpperCase().startsWith('GIT_')));
-Object.assign(env, { GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_SYSTEM: devNull, GIT_CONFIG_GLOBAL: devNull, GIT_OPTIONAL_LOCKS: '0', NO_COLOR: '1', FORCE_COLOR: '0' });
+// Git for Windows rejects os.devNull (\\.\nul) as a config path. The reserved name nul always selects the null device.
+const gitNullConfig = process.platform === 'win32' ? 'nul' : devNull;
+Object.assign(env, { GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_SYSTEM: gitNullConfig, GIT_CONFIG_GLOBAL: gitNullConfig, GIT_OPTIONAL_LOCKS: '0', NO_COLOR: '1', FORCE_COLOR: '0' });
 const safe = (value) => String(value).replace(/[\p{Cc}\p{Cf}]/gu, (character) => (character === '\n' ? character : '?'));
 
 function run(program, args) {
