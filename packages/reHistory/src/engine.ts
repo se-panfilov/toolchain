@@ -14,6 +14,7 @@ export type Options = {
   backupBranch?: string;
   tagPolicy?: 'normalize' | 'preserve';
   tagIdentity?: { name: string; email: string };
+  commitMessage?: string;
 };
 export type ObjectData = { type: 'commit' | 'tag'; data: Buffer; oid: string };
 export type Plan = {
@@ -201,6 +202,13 @@ export function validateIdentity(name: string, email: string): void {
   if (!name.trim() || /[<>\p{Cc}\p{Cf}]/u.test(name) || name.length > 200) throw new Error('Имя должно содержать 1–200 символов без <, > и управляющих символов.');
   if (email.length > 254 || !/^[^\s<>@\p{Cc}\p{Cf}]+@[^\s<>@\p{Cc}\p{Cf}]+$/u.test(email)) throw new Error('Введите email вида name@example.org без пробелов и управляющих символов.');
 }
+/** Keep a conventional final newline and reject hidden terminal controls. */
+export function normalizeCommitMessage(value: string): Buffer {
+  if (!value.trim() || Buffer.byteLength(value, 'utf8') > 65536 || /[\p{Cc}\p{Cf}]/u.test(value.replace(/[\n\t]/g, ''))) {
+    throw new Error('Сообщение: непустой текст до 64 КиБ без управляющих символов.');
+  }
+  return Buffer.from(value.endsWith('\n') ? value : `${value}\n`, 'utf8');
+}
 function identity(header: Buffer, timestamp: number, replacement?: Options['identity']): Buffer {
   const text = header.toString('latin1');
   const match = /^(author|committer|tagger) (.*) (-?\d+) ([+-]\d{4})$/.exec(text);
@@ -224,6 +232,7 @@ export function stripTagSignature(message: Buffer): { message: Buffer; stripped:
 }
 
 export function makePlan(repo: Repository, options: Options): Plan {
+  const replacementMessage = options.commitMessage === undefined ? undefined : normalizeCommitMessage(options.commitMessage);
   if (!Number.isSafeInteger(options.interval) || options.interval < 1 || options.interval > 31536000) throw new Error('Интервал: целое число от 1 до 31536000 секунд.');
   if (options.identity) validateIdentity(options.identity.name, options.identity.email);
   if (options.tagIdentity) validateIdentity(options.tagIdentity.name, options.tagIdentity.email);
@@ -270,6 +279,7 @@ export function makePlan(repo: Repository, options: Options): Plan {
         stripped++;
         continue;
       }
+      if (replacementMessage !== undefined && key === 'encoding') continue;
       if (key === 'parent') {
         const parent = mapping.get(h.subarray(7).toString('ascii'));
         if (!parent) throw new Error('Родитель коммита отсутствует в плане.');
@@ -278,7 +288,7 @@ export function makePlan(repo: Repository, options: Options): Plan {
         updated.push(identity(h, options.start + index * options.interval, options.identity));
       } else updated.push(h);
     }
-    add(old, 'commit', assemble(updated, message));
+    add(old, 'commit', assemble(updated, replacementMessage ?? message));
   }
   const dates = new Map(commits.map((old, index) => [old, options.start + index * options.interval]));
   const active = new Set<string>();

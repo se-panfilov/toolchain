@@ -38,7 +38,8 @@ Close Git tools that can change the same repository.
 Changed dates do not show the time of the work.
 Other copies can keep the initial dates.
 Files, messages, tag names, and submodules can also contain dates.
-The program does not remove these dates.
+The program does not examine file contents for these dates.
+You can replace commit messages with one selected message.
 
 ## Requirements
 
@@ -153,6 +154,8 @@ Enter these values at the program questions:
 | Commit identity change | No                          | Change all selected authors and committers if you select Yes. |
 | Tag date change        | Yes                         | Set each annotated tag date to its target commit date.        |
 | Tagger identity change | No                          | Enter a different name and email address.                     |
+| Commit message change  | No                          | Replace all selected commit messages with one UTF-8 message.  |
+| Final push             | No                          | Offer a separate server operation after a local rewrite.      |
 | Permission to write    | No                          | Write only after a specified Yes.                             |
 
 If you change the commit identity, the initial tagger choice is Yes.
@@ -223,7 +226,13 @@ Tags that point to blobs or trees also keep their values.
 A tag is different from a branch.
 A tag on a shared ancestor can change although another branch stays with no changes.
 
-The program keeps trees, file contents, messages, empty commits, and the order of parent links.
+The program keeps trees, file contents, empty commits, and the order of parent links.
+It keeps commit messages unless you select their replacement.
+The replacement is nonempty UTF-8 text with a final newline.
+Input is limited to 64 KiB and cannot contain hidden control characters.
+The engine also accepts line breaks and tabs.
+The terminal question accepts one line.
+Old encoding headers are removed when messages change.
 It puts each parent before its child in the date sequence.
 Each pair of adjacent commits has the selected interval.
 A parent and child can have a larger interval in a merge graph.
@@ -248,8 +257,56 @@ It shows 12 characters of each object ID.
 Git operations and recovery files use complete object IDs.
 
 The normal mode does not change working files or the index.
-It does not send data to a server.
+It sends no data unless you separately select the final push.
 It does not remove reflog entries or old objects.
+
+## Optional push procedure
+
+The push question appears after a successful local rewrite.
+It does not appear after a dry-run, export, audit, or demo.
+The initial answer is No.
+No server request occurs when you keep this answer.
+
+1. Select Yes at `Сделать push?`.
+2. Select a configured remote if there is more than one.
+3. Examine the destination URL and the complete list of refs.
+4. Select Yes at `Отправить ветку и теги?` to send them.
+
+The first Yes permits a read of server refs.
+The second Yes permits the push.
+Both questions initially select No.
+A missing remote stops this optional step.
+The program does not add a remote.
+
+The push contains the current branch and its selected tags.
+For the branch upstream remote, the destination is its configured upstream branch.
+Otherwise, the destination has the current branch name.
+Backup refs, other branches, and other tags are excluded.
+The program does not delete server refs or update remote-tracking refs.
+
+Each destination has an explicit `--force-with-lease=<ref>:<expected-object-id>`.
+The server branch must be absent, already rewritten, or part of the selected initial history.
+An existing server tag must match its initial or rewritten object ID.
+Unknown server changes stop preparation.
+A later server change stops the atomic push.
+There is no fallback without atomic support or leases.
+
+The remote must have one HTTPS or SSH push URL.
+SCP syntax, such as `git@host:owner/repo.git`, keeps its home-relative path.
+URL substitutions, embedded credentials, redirects, and ambiguous paths are rejected.
+Credential helpers and password prompts are disabled.
+Use an existing SSH key or agent for authenticated push.
+SSH configuration remains part of the trust boundary.
+
+Hooks, automatic tag following, submodule pushes, mirror pushes, and inherited push options are disabled.
+Local ref or configuration changes after preparation stop the push.
+A push failure does not undo the completed local rewrite.
+After a connection error, examine the server before another attempt.
+The server might have accepted a push before its response was lost.
+
+A push does not erase server backups, old objects, other refs, or other clones.
+Git LFS hooks do not run.
+Transfer external LFS objects separately if your repository uses them.
 
 ## Export procedure
 
@@ -392,7 +449,7 @@ It rejects file, git, HTTP, and ext protocols.
 
 An SSH key and a known host key are necessary.
 It uses `BatchMode=yes`.
-HTTPS authentication must operate without global Git credential helpers.
+HTTPS authentication must operate without credential helpers or password prompts.
 The program keeps TLS checks and rejects HTTPS redirects.
 Atomic push must be available on the server.
 

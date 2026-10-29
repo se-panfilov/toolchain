@@ -35,11 +35,47 @@ Command options disable these functions:
 - Hooks and fsmonitor.
 - Replace objects and automatic signatures.
 - Automatic maintenance and garbage collection.
-- Network and file transports except through the demo adapter.
+- Network and file transports outside the explicit HTTPS/SSH network adapter.
 
-Only HTTPS and SSH are available through the demo adapter.
-The source does not give remote helpers or a remote URL to other modes.
+Only HTTPS and SSH are available through the network adapter.
+The demo requires its explicit URL.
+The final push requires separate confirmation after a local rewrite.
+Other operations cannot use network transports.
 The audit cannot start a lazy fetch for a missing object.
+
+## Optional push controls
+
+The final push is disabled by default and exists only after a successful local rewrite.
+It has separate permission for server inspection and server writes.
+It sends only the rewritten branch and selected tags.
+It does not send backup refs or use automatic tag discovery.
+
+Every ref has an explicit expected server object ID.
+The initial server branch must belong to the selected initial history or match the rewritten head.
+The server tag must match its initial or rewritten object ID.
+Missing refs use an empty expected value.
+Atomic push prevents partial ref updates when a lease or server policy fails.
+Servers without atomic support are rejected.
+
+The program checks local refs and the effective configuration digest before sending.
+Refspecs use object IDs, so a later local ref change cannot change the sent commits.
+The configured upstream determines the branch destination only for its selected remote.
+Multiple upstream branches or push URLs are rejected.
+Git URL substitutions are rejected before the server read.
+
+The network adapter rejects inline credentials and nonstandard paths.
+It preserves the distinction between home-relative SCP paths and absolute SSH URL paths.
+It requires TLS checks and rejects HTTP redirects.
+It disables credential helpers, askpass programs, and interactive authentication.
+SSH uses BatchMode and connection keepalive limits.
+The trusted SSH configuration can still select keys, proxies, and external SSH programs.
+
+Push options disable hooks, signatures, automatic tag following, submodule pushes, and mirror mode.
+Configured push options are cleared.
+A server failure leaves the local rewrite intact.
+A lost response can leave the final server state uncertain.
+Examine the server before a retry.
+Neither atomic push nor message replacement erases other copies or server objects.
 
 ## Input controls
 
@@ -116,7 +152,10 @@ Use the lock procedure in the README after a process error.
 
 ## Object controls
 
-The new commits keep trees, file contents, messages, and parent order.
+The new commits keep trees, file contents, and parent order.
+Messages stay unchanged unless the user selects their replacement.
+Replacement messages use UTF-8 without an inherited encoding header.
+The export verifier checks replacement bytes and rejects encoding headers.
 A parent date is before its child date.
 The author date and committer date are equal.
 
@@ -168,7 +207,7 @@ The program does not send changed history, backup refs, or the export after the 
 
 SSH uses BatchMode and the configured host key controls.
 HTTPS keeps TLS verification and rejects redirects.
-Global Git credential helpers and interactive login are unavailable.
+Git credential helpers, askpass programs, and interactive login are unavailable.
 
 If a push completes before a later error, the program keeps that server data.
 The program does not undo completed push operations.
@@ -287,7 +326,7 @@ Clear-signed message markers stop the operation because their contents are ambig
 This check examines block structure, not cryptographic validity.
 
 The package has no runtime dependencies or installation hooks.
-The prepack hook builds six specified JavaScript modules.
+The prepack hook builds seven specified JavaScript modules.
 The archive file allowlist excludes source tests, Git data, credentials, and local editor files.
 
 Git calls have no time limit.
@@ -372,7 +411,7 @@ Its compiled runtime files matched the local build byte-for-byte.
 ## Earlier package layout and private imports
 
 Runtime source, tests, and build tools now have separate directories.
-The publication allowlist contains only six runtime modules and the required package documents.
+The publication allowlist contains only seven runtime modules and the required package documents.
 The npm bin and local start command use `dist/src/cli.js`.
 Private imports map `#rehistory/*` directly to compiled modules inside the same package.
 The compiler has corresponding source mappings. Runtime execution does not use source files or custom loaders.
@@ -391,7 +430,7 @@ These include nested directory links and preservation of unknown output files.
 ## Vite and Vitest migration
 
 The current build checks types with tsc --noEmit, then builds with Vite.
-Vite targets Node.js 24 and preserves the six ESM runtime modules.
+Vite targets Node.js 24 and preserves the seven ESM runtime modules.
 Source aliases use `@reHistory/*`. Vite resolves them before output publication.
 The installed modules use relative imports and Node.js built-ins.
 There is no runtime alias loader or runtime dependency.

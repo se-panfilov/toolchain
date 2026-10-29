@@ -6,40 +6,18 @@ import { Repository, runGit, makePlan, applyPlan } from '@reHistory/engine';
 import { auditRepository, auditText } from '@reHistory/audit';
 import { exportPlan } from '@reHistory/export';
 
-/** Accept explicit network URLs. Reject URL credentials and remote helpers. */
+import { validateRemoteURL, networkGit } from '@reHistory/remote';
+
+/** Demo still requires a URL before any files or network calls. */
 export function validateDemoURL(value: string | undefined): string {
   if (!value) throw new Error('Для demo обязателен --demo-remote URL. Ничего не создано.');
-  if (/[\s\p{Cc}\p{Cf}]/u.test(value)) throw new Error('URL demo содержит пробелы или управляющие символы.');
-  const normalized = /^[A-Za-z0-9][A-Za-z0-9._-]*@[A-Za-z0-9.-]+:[A-Za-z0-9._~/-]+$/.test(value) ? `ssh://${value.replace(':', '/')}` : value;
-  let url: URL;
-  try {
-    url = new URL(normalized);
-  } catch {
-    throw new Error('Укажите HTTPS/SSH URL или git@host:owner/repo.git.');
-  }
-  if (
-    !['https:', 'ssh:'].includes(url.protocol) ||
-    !/^[A-Za-z0-9][A-Za-z0-9.-]*$/.test(url.hostname) ||
-    url.password ||
-    url.search ||
-    url.hash ||
-    !/^\/[A-Za-z0-9._~/-]+$/.test(url.pathname) ||
-    url.pathname.split('/').includes('..') ||
-    (url.protocol === 'https:' && url.username) ||
-    (url.username && !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(url.username))
-  )
-    throw new Error('Demo принимает только HTTPS/SSH URL без токенов, паролей, query, fragment и нестандартных путей.');
-  return url.href;
+  return validateRemoteURL(value);
 }
 export type DemoTransport = { refs: (repo: Repository, url: string) => string; push: (repo: Repository, url: string, refspecs: string[]) => void };
-const networkArgs = ['-c', 'protocol.https.allow=always', '-c', 'protocol.ssh.allow=always', '-c', 'http.sslVerify=true', '-c', 'http.followRedirects=false'];
-const networkEnv = { GIT_SSH_COMMAND: 'ssh -oBatchMode=yes' };
 const transport: DemoTransport = {
-  refs(repo, url) {
-    return repo.text([...networkArgs, 'ls-remote', '--refs', url], undefined, networkEnv);
-  },
-  push(repo, url, refspecs) {
-    repo.git([...networkArgs, 'push', '--atomic', '--', url, ...refspecs], undefined, networkEnv);
+  refs: (repo, url) => networkGit(repo, ['ls-remote', '--refs', url]).toString('utf8').trim(),
+  push: (repo, url, refspecs) => {
+    networkGit(repo, ['push', '--atomic', '--', url, ...refspecs]);
   }
 };
 
