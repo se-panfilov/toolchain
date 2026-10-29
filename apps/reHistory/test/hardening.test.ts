@@ -1,18 +1,19 @@
-import { test } from 'vitest';
-import { setImmediate as nextTurn } from 'node:timers/promises';
-import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, copyFileSync, openSync, closeSync, ftruncateSync, utimesSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { closeSync, copyFileSync, existsSync, ftruncateSync, mkdtempSync, openSync, readFileSync, rmSync, utimesSync,writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { setImmediate as nextTurn } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
-import { Repository, runGit, makePlan, applyPlan, writeObjects, findGitExecutable, terminalJSON } from '@reHistory/engine';
-import { preparePush, networkGit, type PushTransport } from '@reHistory/remote';
-import { exportPlan, verifyExport } from '@reHistory/export';
-import { auditRepository } from '@reHistory/audit';
 
-function fixture(t: { onTestFinished: (fn: () => void) => void }) {
+import { auditRepository } from '@reHistory/audit';
+import { applyPlan, findGitExecutable, makePlan, Repository, runGit, terminalJSON,writeObjects } from '@reHistory/engine';
+import { exportPlan, verifyExport } from '@reHistory/export';
+import { networkGit, preparePush, type PushTransport } from '@reHistory/remote';
+import { test } from 'vitest';
+
+function fixture(t: { onTestFinished: (fn: () => void) => void }): { root: string; repo: Repository } {
   const root = mkdtempSync(join(tmpdir(), 'rehistory-hardening-'));
   t.onTestFinished(() => rmSync(root, { recursive: true, force: true }));
   runGit(root, ['init', '-q', '--template=', '-b', 'main', join(root, 'source')]);
@@ -84,7 +85,7 @@ for (const kind of ['clean', 'process', 'smudge']) {
     const marker = join(root, 'filter-ran');
     const script = join(root, 'filter.cjs');
     writeFileSync(script, `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'ran'); process.stdout.write(require('node:fs').readFileSync(0));`);
-    const quote = (value: string) => "'" + value.replace(/'/g, "'\\''") + "'";
+    const quote = (value: string): string => "'" + value.replace(/'/g, "'\\''") + "'";
     repo.git(['config', `filter.fixture.${kind}`, `${quote(process.execPath)} ${quote(script)}`]);
     utimesSync(join(repo.path, 'data'), new Date(), new Date(Date.now() + 10000));
     assert.throws(() => makePlan(repo, settings), /Git-фильтры не поддерживаются/);
@@ -204,7 +205,7 @@ test('status не запускает clean-фильтр внутри иници�
   repo.git(['update-index', '--add', '--cacheinfo', `160000,${child.text(['rev-parse', 'HEAD'])},sub`]);
   repo.git(['commit', '-q', '-m', 'gitlink']);
   const marker = join(root, 'sub-filter-ran');
-  const quote = (value: string) => "'" + value.replace(/'/g, "'\\''") + "'";
+  const quote = (value: string): string => "'" + value.replace(/'/g, "'\\''") + "'";
   child.git(['config', 'filter.fixture.clean', `touch ${quote(marker)}`]);
   utimesSync(join(path, 'data'), new Date(), new Date(Date.now() + 10000));
   assert.throws(() => makePlan(repo, settings), /Git-фильтры/);

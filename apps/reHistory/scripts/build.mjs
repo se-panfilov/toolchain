@@ -1,10 +1,12 @@
 import { spawnSync } from 'node:child_process';
+import { chmodSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, unlinkSync,writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync, chmodSync, lstatSync, readdirSync, rmSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { dirname,join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { join, dirname } from 'node:path';
+
 import { build as viteBuild } from 'vite';
+
 import viteConfig from '../vite.config.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));

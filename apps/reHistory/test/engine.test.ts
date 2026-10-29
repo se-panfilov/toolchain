@@ -1,11 +1,12 @@
-import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync, readdirSync, readFileSync, mkdirSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { mkdirSync,mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { spawnSync } from 'node:child_process';
-import { Repository, makePlan, applyPlan, validateIdentity, runGit, defaultBackupBranch, withoutGitEnvironment, stripTagSignature } from '@reHistory/engine';
+
 import { parseDate, parseStart } from '@reHistory/cli';
+import { applyPlan, defaultBackupBranch, makePlan, Repository, runGit, stripTagSignature,validateIdentity, withoutGitEnvironment } from '@reHistory/engine';
+import { test } from 'vitest';
 
 function fixture(t: { onTestFinished: (fn: () => void) => void }, format?: string): Repository {
   const dir = mkdtempSync(join(tmpdir(), 'rehistory-test-'));
@@ -188,7 +189,7 @@ test('удаляются подписи и mergetag, бинарное сообщ
 
 test('снятие подписи сохраняет произвольные байты сообщения и идемпотентно', () => {
   let seed = 0x51a7;
-  const next = () => {
+  const next = (): number => {
     seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
     return seed;
   };
