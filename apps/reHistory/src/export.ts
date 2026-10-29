@@ -1,8 +1,9 @@
-import { existsSync, lstatSync, mkdirSync, realpathSync, readFileSync, readdirSync, writeFileSync, openSync, readSync, closeSync, mkdtempSync, rmSync, constants } from 'node:fs';
+import { closeSync, constants,existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, readSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
-import { Repository, runGit, parts, field, validateIdentity, normalizeCommitMessage, writeObjects, readMetadataBatches, type Plan, type Options } from '@reHistory/engine';
+
 import { inventory, objectClosure, stamp } from '@reHistory/audit';
+import { field, normalizeCommitMessage, type Options,parts, type Plan, readMetadataBatches, Repository, runGit, validateIdentity, writeObjects } from '@reHistory/engine';
 
 export const manifestName = 'rehistory-export.json';
 type Manifest = {
@@ -53,14 +54,14 @@ function loadManifest(path: string): Manifest {
   const stat = lstatSync(file);
   if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 64 * 1024 * 1024) throw new Error('Некорректный файл манифеста экспорта.');
   const value: unknown = JSON.parse(readFileSync(file, 'utf8'));
-  const fail = () => {
+  const fail = (): never => {
     throw new Error('Неподдерживаемая структура манифеста экспорта.');
   };
   if (!exactKeys(value, ['version', 'head', 'refs', 'objects', 'commitOrder', 'policy'])) fail();
   const m = value as Manifest;
-  const oid = (item: unknown) => typeof item === 'string' && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(item);
-  const ref = (item: unknown) => exactKeys(item, ['name', 'oid']) && typeof item.name === 'string' && /^(refs\/heads\/|refs\/tags\/)/.test(item.name) && oid(item.oid);
-  const unique = (items: string[]) => new Set(items).size === items.length;
+  const oid = (item: unknown): boolean => typeof item === 'string' && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(item);
+  const ref = (item: unknown): boolean => exactKeys(item, ['name', 'oid']) && typeof item.name === 'string' && /^(refs\/heads\/|refs\/tags\/)/.test(item.name) && oid(item.oid);
+  const unique = (items: string[]): boolean => new Set(items).size === items.length;
   if (m.version !== 1 || typeof m.head !== 'string' || !m.head.startsWith('refs/heads/')) fail();
   if (!Array.isArray(m.refs) || !m.refs.length || !m.refs.every(ref) || !unique(m.refs.map((r) => r.name))) fail();
   if (!Array.isArray(m.objects) || !m.objects.every(oid) || !unique(m.objects)) fail();
@@ -89,7 +90,7 @@ function loadManifest(path: string): Manifest {
 function checkExportFiles(root: string, manifest: Manifest): { errors: string[]; peeledRefs: Map<string, string> } {
   const errors: string[] = [];
   let peeledRefs = new Map<string, string>();
-  const check = (ok: boolean, message: string) => {
+  const check = (ok: boolean, message: string): void => {
     if (!ok) errors.push(message);
   };
   const refs = new Map(manifest.refs.map((ref) => [ref.name, ref.oid]));
@@ -105,7 +106,7 @@ function checkExportFiles(root: string, manifest: Manifest): { errors: string[];
   const width = manifest.commitOrder[0].length;
   const loose = new RegExp(`^objects/([a-f0-9]{2})/([a-f0-9]{${width - 2}})$`);
   const packed = new RegExp(`^objects/pack/(pack-[a-f0-9]{${width}})\\.(pack|idx)$`);
-  const read = (relative: string) => readFileSync(join(root, relative), 'utf8');
+  const read = (relative: string): string => readFileSync(join(root, relative), 'utf8');
   function visit(directory: string, prefix = ''): void {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
       const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
@@ -205,10 +206,10 @@ function canonicalConfig(text: string): boolean {
 
 function parsePackedRefs(text: string, refs: Map<string, string>, objects: Set<string>, width: number): Map<string, string> | undefined {
   const lines = text.split('\n');
-  if (lines.pop() !== '') return;
+  if (lines.pop() !== '') return undefined;
   if (lines[0]?.startsWith('#')) {
     const header = /^# pack-refs with: (?:peeled|fully-peeled|sorted)(?: (?:peeled|fully-peeled|sorted))* ?$/.test(lines.shift()!);
-    if (!header) return;
+    if (!header) return undefined;
   }
   const record = new RegExp(`^([a-f0-9]{${width}}) (refs/(?:heads|tags)/.+)$`);
   const peeled = new RegExp(`^\\^[a-f0-9]{${width}}$`);
@@ -217,13 +218,13 @@ function parsePackedRefs(text: string, refs: Map<string, string>, objects: Set<s
   let tag: string | undefined;
   for (const line of lines) {
     if (peeled.test(line) && tag) {
-      if (!objects.has(line.slice(1))) return;
+      if (!objects.has(line.slice(1))) return undefined;
       peeledRefs.set(tag, line.slice(1));
       tag = undefined;
       continue;
     }
     const item = record.exec(line);
-    if (!item || refs.get(item[2]) !== item[1] || seen.has(item[2])) return;
+    if (!item || refs.get(item[2]) !== item[1] || seen.has(item[2])) return undefined;
     seen.add(item[2]);
     tag = item[2].startsWith('refs/tags/') ? item[2] : undefined;
   }
@@ -231,7 +232,8 @@ function parsePackedRefs(text: string, refs: Map<string, string>, objects: Set<s
 }
 
 /** Read the object inventory, graph, refs, and dates. Verify integrity without writes. */
-export function verifyExport(path: string) {
+export type ExportReport = { ok: boolean; repository: string; commits: number; tags: number; objects: number; errors: string[] };
+export function verifyExport(path: string): ExportReport {
   const absolute = resolve(path);
   const manifest = loadManifest(absolute);
   const { errors, peeledRefs } = checkExportFiles(absolute, manifest);
@@ -352,7 +354,7 @@ export function verifyExport(path: string) {
   return { ok: errors.length === 0, repository: repo.path, commits: manifest.commitOrder.length, tags: refs.filter((r) => r.name.startsWith('refs/tags/')).length, objects: objects.length, errors };
 }
 
-export function exportPlan(plan: Plan, destination: string) {
+export function exportPlan(plan: Plan, destination: string): ExportReport {
   const { repo } = plan;
   const target = exportDestination(repo, destination);
   const sourceBefore = repo.inspect();

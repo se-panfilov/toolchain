@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
-import { readFileSync, lstatSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { lstatSync,readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const { version } = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));

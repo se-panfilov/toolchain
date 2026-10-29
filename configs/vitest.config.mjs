@@ -1,5 +1,6 @@
-import { defineConfig } from 'vitest/config';
 import { availableParallelism } from 'node:os';
+
+import { defineConfig } from 'vitest/config';
 
 const defaults = {
   environment: 'node',

@@ -1,10 +1,11 @@
-import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, copyFileSync, writeFileSync, readFileSync, symlinkSync, linkSync, unlinkSync, rmSync, existsSync } from 'node:fs';
+import { copyFileSync, existsSync,linkSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import { test } from 'vitest';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const workspaceRoot = fileURLToPath(new URL('../../../', import.meta.url));

@@ -1,6 +1,6 @@
-import { expect, test } from 'vitest';
 import { parseDate, parseStart } from '@reHistory/cli';
 import { stripTagSignature, validateIdentity, withoutGitEnvironment } from '@reHistory/engine';
+import { expect, test } from 'vitest';
 
 test.each(['1970-01-01T00:00:00Z', '1970-01-01T01:00:00+01:00', '1969-12-31T23:00:00-01:00'])('часовой пояс сохраняет начало Unix: %s', (value) => {
   expect(parseDate(value)).toBe(0);

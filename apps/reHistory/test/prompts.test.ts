@@ -1,9 +1,10 @@
-import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { PassThrough, Writable } from 'node:stream';
-import { stripVTControlCharacters } from 'node:util';
 import type { ReadStream, WriteStream } from 'node:tty';
-import { TerminalPrompts, PromptCancelled, terminalStyle } from '@reHistory/prompts';
+import { stripVTControlCharacters } from 'node:util';
+
+import { PromptCancelled, TerminalPrompts, terminalStyle } from '@reHistory/prompts';
+import { test } from 'vitest';
 
 class Input extends PassThrough {
   isTTY = true;
@@ -22,7 +23,7 @@ class Output extends Writable {
     callback();
   }
 }
-function fixture(t: { onTestFinished: (fn: () => void) => void }) {
+function fixture(t: { onTestFinished: (fn: () => void) => void }): { input: Input; output: Output; prompts: TerminalPrompts } {
   // Model an ANSI terminal, not the TERM=dumb shell used by CI.
   const term = process.env.TERM;
   process.env.TERM = 'xterm-256color';
