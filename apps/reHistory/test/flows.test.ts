@@ -141,7 +141,10 @@ for (const format of ['sha1', 'sha256'])
       writeFileSync(file, JSON.stringify(manifest));
       const report = verifyExport(target);
       assert.equal(report.ok, false);
-      assert(report.errors.some((item) => error.test(item)), report.errors.join('\n'));
+      assert(
+        report.errors.some((item) => error.test(item)),
+        report.errors.join('\n')
+      );
     }
   });
 
@@ -204,7 +207,11 @@ function runCli(root: string, repo: Repository, answers: Record<string, string |
     TerminalPrompts.prototype.select = async (question) => answer(question);
   `
   );
-  const result = spawnSync(process.execPath, ['--import', preload, cli, '--repo', repo.path, ...args], { encoding: 'utf8', env: { ...process.env, TERM: 'xterm-256color', NO_COLOR: '1' }, timeout: 30000 });
+  const result = spawnSync(process.execPath, ['--import', preload, cli, '--repo', repo.path, ...args], {
+    encoding: 'utf8',
+    env: { ...process.env, TERM: 'xterm-256color', NO_COLOR: '1' },
+    timeout: 30000
+  });
   const asked = existsSync(log) ? readFileSync(log, 'utf8').split('\n').filter(Boolean) : [];
   return { status: result.status, output: result.stdout + result.stderr, asked };
 }
@@ -229,9 +236,21 @@ test.skipIf(process.platform === 'win32')('CLI задаёт только воп�
     assert.deepEqual(run.asked, ['Что переписать?', 'Создать бекап?', ...expected, 'Применить изменения?', 'Сделать push?']);
     const after = commits(repo).map((line) => line.split('|'));
     const old = before.map((line) => line.split('|'));
-    if (choice === 0) assert.deepEqual(after.map((line) => line[4]), ['1704067200 +0000', '1704067202 +0000']);
-    if (choice === 1) assert.deepEqual(after.map((line) => line.slice(0, 2)), old.map(() => [identity.name, identity.email]));
-    if (choice === 2) assert.deepEqual(after.map((line) => line.slice(6).join('|')), ['Общее сообщение', 'Общее сообщение']);
+    if (choice === 0)
+      assert.deepEqual(
+        after.map((line) => line[4]),
+        ['1704067200 +0000', '1704067202 +0000']
+      );
+    if (choice === 1)
+      assert.deepEqual(
+        after.map((line) => line.slice(0, 2)),
+        old.map(() => [identity.name, identity.email])
+      );
+    if (choice === 2)
+      assert.deepEqual(
+        after.map((line) => line.slice(6).join('|')),
+        ['Общее сообщение', 'Общее сообщение']
+      );
     // A second run of any flow needs a push first.
     const blocked = runCli(root, repo, {});
     assert.equal(blocked.status, 1, blocked.output);

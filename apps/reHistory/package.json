@@ -1,7 +1,7 @@
 {
   "name": "tx-rehistory",
-  "version": "2.5.7",
-  "description": "Interactive normalization, audit and verifiable export of Git history",
+  "version": "3.0.0",
+  "description": "Interactive rewrite of Git commit dates, authors or messages, with audit and verifiable export",
   "private": false,
   "type": "module",
   "license": "MIT",

@@ -386,7 +386,8 @@ export function verifyExport(path: string): ExportReport {
       const tagger = stamp(raw, 'tagger');
       const target = repo.text(['rev-parse', '--verify', `${object.oid}^{}`]);
       check(positions.has(target), `Тег ${object.oid} указывает вне выбранной истории.`);
-      if (expect.dates?.tagPolicy === 'normalize') check(positions.has(target) && tagger.timestamp === dateOf(positions.get(target)!) && tagger.timezone === '+0000', `Неверная дата тега ${object.oid}.`);
+      if (expect.dates?.tagPolicy === 'normalize')
+        check(positions.has(target) && tagger.timestamp === dateOf(positions.get(target)!) && tagger.timezone === '+0000', `Неверная дата тега ${object.oid}.`);
       if (expect.tagIdentity) check(tagger.identity === `${expect.tagIdentity.name} <${expect.tagIdentity.email}>`, `Неверный tagger ${object.oid}.`);
       check(!/(?:^|\n)-----BEGIN (?:PGP SIGNATURE|SSH SIGNATURE|SIGNED MESSAGE)-----/m.test(parts(raw).message.toString('latin1')), `Осталась подпись тега ${object.oid}.`);
     });
