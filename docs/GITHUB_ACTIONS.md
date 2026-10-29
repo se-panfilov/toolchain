@@ -123,6 +123,7 @@ Limits:
 - The secret pattern check finds only common token and key formats. It does not prove that an archive has no secrets.
 - Pull requests from forks run Tests with a read-only token and no secrets. They run the code from the pull request.
 - The Linux test job downloads Git source from kernel.org and checks its SHA-256 value.
+- Tests use only Node.js 26. CI does not check the minimum engine version, such as Node.js 24.12.0 for reHistory. Check it locally before you change that requirement.
 - GitHub-hosted runners and the pinned actions are trusted.
 - The locked development dependencies run in the test and build jobs and are trusted. They can change the built archive. The `min-release-age` setting in `.npmrc` delays new dependency versions.
 - The tag check runs after publication. If a tag with the same name points to a different commit, `github-release` stops after npm publication.
