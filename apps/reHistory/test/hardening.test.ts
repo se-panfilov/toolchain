@@ -178,7 +178,7 @@ test.skipIf(process.platform === 'win32')('SIGINT родителя во врем
     const plan = makePlan(repo, ${JSON.stringify(settings)});
     const original = repo.git.bind(repo);
     repo.git = (...args) => {
-      if (args[0][0] === 'index-pack') process.kill(process.pid, 'SIGINT');
+      if (args[0].includes('index-pack')) process.kill(process.pid, 'SIGINT');
       return original(...args);
     };
     const before = process.listenerCount('SIGINT');
@@ -249,7 +249,7 @@ test('история больше одного batch обрабатываетс�
   assert.equal(calls.filter((args) => args[0] === 'cat-file' && args[1] === '--batch').length, 2);
   assert(!calls.some((args) => args[0] === 'hash-object'));
   applyPlan(plan);
-  assert.equal(calls.filter((args) => args[0] === 'index-pack').length, 1);
+  assert.equal(calls.filter((args) => args.includes('index-pack')).length, 1);
   const audit = auditRepository(repo);
   assert.equal(audit.complete, true);
   assert.equal(audit.commits.length, 262);
