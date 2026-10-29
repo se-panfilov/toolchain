@@ -32,3 +32,22 @@ Distinguish a verified result from a recommendation or an untested assumption.
 
 The [reHistory terminology](../apps/reHistory/TERMINOLOGY.md) contains terms for that utility.
 It does not define requirements for unrelated utilities.
+
+## Commits and pull requests
+
+Write commit messages and pull request text in English.
+Apply ASD-STE100 Issue 9 to commit subjects and bodies.
+Apply the same standard to pull request titles and all description text after `tl;dr`.
+Use the writing rules and dictionary for these texts.
+Keep commands, paths, identifiers, and quoted software labels exact.
+
+Start every pull request description with the heading `## tl;dr`.
+Explain the problem and the result in plain language for a reader with little subject knowledge.
+Avoid unexplained technical terms in this section.
+Keep this section as short as possible, with one or two paragraphs.
+The `tl;dr` section uses these plain-language requirements. The rest of the pull request must follow ASD-STE100.
+
+Use the [pull request template](../.github/pull_request_template.md).
+Replace its instructions with the task details.
+Describe the final change and the completed checks.
+Identify checks that were not run and any remaining limits.
