@@ -16,7 +16,10 @@ Keep utility-specific requirements in the relevant utility documentation.
 ## Authorization and Git
 
 - Do all work on a task branch. Do not work directly on `master` or `main`.
-- Before changes, create a task branch or use an existing branch for the task. Use the `codex/` prefix for new agent branches.
+- Before changes, create a task branch or use an existing branch for the task.
+- Name new agent branches as `<type>/<short_description>`, such as `feature/add_export` or `bugfix/fix_archive_paths`.
+- Choose a prefix that matches the task, such as `feature`, `bugfix`, `docs`, `refactor`, `test`, or `chore`.
+- Use a short English description in lowercase with underscores between words.
 - You may stage and commit your task changes and push the task branch to the repository remote.
 - When GitHub access is available, open a pull request for the task branch.
 - Do not stage unrelated user changes. Do not reset, discard, or stash user changes.
