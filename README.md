@@ -29,6 +29,7 @@ Then run `npm run check:workflows`.
 Do all work on a task branch. Do not work directly on `master` or `main`.
 You may commit task changes and push the task branch to the repository remote.
 When GitHub access is available, open a pull request for the task branch.
+AI agents never merge pull requests. A human makes the final decision on critical questions, including security. See [human decisions](AGENTS.md#human-decisions).
 Follow the [Git authorization rules](AGENTS.md#authorization-and-git) and [commit and pull request writing rules](docs/WRITING.md#commits-and-pull-requests).
 
 Use Node.js 24.12 or later.

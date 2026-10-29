@@ -65,6 +65,7 @@ Fix confirmed defects within the task scope.
 Add meaningful regression checks for security defects.
 Repeat affected checks after each fix.
 Report unresolved findings with impact, conditions, evidence, and a recommended action.
+A human makes the final decision on each security finding that is not fixed. Do not accept or postpone a risk yourself.
 
 For a documentation-only change, examine instruction accuracy and unsafe example commands.
 Check references and authorization boundaries. Do not run destructive examples to validate their wording.
@@ -103,4 +104,5 @@ Run root format:check and ESLint, then the affected workspace tests. Fix errors 
 Keep generated output and vendored skills outside formatting changes.
 Update the utility's operating instructions and security notes as necessary.
 Report the result, executed checks, fixed defects, and remaining limits in Russian.
+Never merge the pull request. A human reviews and merges it.
 Do not present static review as native platform testing or a formal security certificate.
