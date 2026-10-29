@@ -405,6 +405,18 @@ export function writeObjects(repo: Repository, objects: ObjectData[]): void {
   }
 }
 
+/** The strict pack import needs every referenced tree. Find a missing tree during planning, also in a dry-run. */
+function assertTreesPresent(repo: Repository, trees: string[]): void {
+  for (let start = 0; start < trees.length; start += 1024) {
+    const batch = trees.slice(start, start + 1024);
+    const lines = repo.text(['cat-file', '--batch-check=%(objectname) %(objecttype)'], batch.join('\n') + '\n').split('\n');
+    for (const [index, oid] of batch.entries()) {
+      if (lines[index] !== `${oid} tree`)
+        throw new Error(`В хранилище нет дерева ${oid}, на которое ссылается коммит истории. Репозиторий неполный; проверьте его командой git fsck --connectivity-only. История не изменена.`);
+    }
+  }
+}
+
 export function makePlan(repo: Repository, options: Options): Plan {
   validateOptions(options);
   const dates = options.flow === 'dates' ? options : undefined;
@@ -448,6 +460,7 @@ export function makePlan(repo: Repository, options: Options): Plan {
     mapping.set(old, oid);
     return oid;
   };
+  const trees = new Set<string>();
   for (const [index, old, type, raw] of readMetadataBatches(repo, commits)) {
     if (type !== 'commit') throw new Error('Ожидался объект коммита.');
     if (raw.includes(0)) throw new Error(`Коммит ${old} содержит NUL в метаданных. История не поддерживается; исходные данные не изменены.`);
@@ -460,6 +473,7 @@ export function makePlan(repo: Repository, options: Options): Plan {
         continue;
       }
       if (replacementMessage !== undefined && key === 'encoding') continue;
+      if (key === 'tree') trees.add(h.subarray(5).toString('ascii'));
       if (key === 'parent') {
         const parent = mapping.get(h.subarray(7).toString('ascii'));
         if (!parent) throw new Error('Родитель коммита отсутствует в плане.');
@@ -470,6 +484,7 @@ export function makePlan(repo: Repository, options: Options): Plan {
     }
     add(old, 'commit', assemble(updated, replacementMessage ?? message));
   }
+  assertTreesPresent(repo, [...trees]);
   // Map each commit and tag to the index of its final commit.
   const positions = new Map(commits.map((old, index) => [old, index]));
   const active = new Set<string>();
