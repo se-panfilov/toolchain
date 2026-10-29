@@ -132,6 +132,8 @@ export class Repository {
   constructor(path: string) {
     this.path = resolve(path);
     this.common = this.text(['rev-parse', '--path-format=absolute', '--git-common-dir']);
+    // Work from the top level. In a subdirectory, index-pack cannot find existing objects and ls-files lists only that subdirectory.
+    if (this.text(['rev-parse', '--is-bare-repository']) !== 'true') this.path = this.text(['rev-parse', '--show-toplevel']);
   }
   git(args: string[], input?: Buffer | string | number, extraEnv: Record<string, string> = {}, output?: number): Buffer {
     return runGit(this.path, args, input, extraEnv, output);
