@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync, readdirSync, readFileSync, mkdirSyn
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { Repository, makePlan, applyPlan, validateIdentity, runGit, defaultBackupBranch, withoutGitEnvironment } from './engine.ts';
+import { Repository, makePlan, applyPlan, validateIdentity, runGit, defaultBackupBranch, withoutGitEnvironment, stripTagSignature } from './engine.ts';
 import { parseDate, parseStart } from './cli.ts';
 
 function fixture(t: { after: (fn: () => void) => void }, format?: string): Repository {
@@ -179,6 +179,27 @@ test('удаляются подписи и mergetag, бинарное сообщ
   assert(!repo.git(['cat-file', 'tag', 'signed']).includes(Buffer.from('BEGIN PGP')));
 });
 
+test('снятие подписи сохраняет произвольные байты сообщения и идемпотентно', () => {
+  let seed = 0x51a7;
+  const next = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed; };
+  for (let sample = 0; sample < 256; sample++) {
+    // Exclude the marker's first character so each prefix is an unsigned message.
+    const bytes = Buffer.from(Array.from({ length: next() % 384 }, () => { const byte = next() & 255; return byte === 45 ? 44 : byte; }));
+    const prefix = Buffer.concat([bytes, Buffer.from('\n')]);
+    const before = Buffer.from(prefix);
+    for (const kind of ['PGP SIGNATURE', 'SSH SIGNATURE']) for (const newline of ['\n', '\r\n']) {
+      const armor = Buffer.from(`-----BEGIN ${kind}-----${newline}ZmFrZQ==${newline}-----END ${kind}-----${newline}`);
+      const raw = Buffer.concat([prefix, armor]);
+      const original = Buffer.from(raw);
+      const result = stripTagSignature(raw);
+      assert.equal(result.stripped, true, `sample=${sample}; kind=${kind}`);
+      assert.deepEqual(result.message, before);
+      assert.deepEqual(stripTagSignature(result.message), { message: before, stripped: false });
+      assert.deepEqual(raw, original);
+    }
+  }
+});
+
 test('неполная подпись и текст после подписи тега не обрезаются', t => {
   const repo = fixture(t);
   for (const message of [
@@ -186,6 +207,8 @@ test('неполная подпись и текст после подписи т
     'notes\n-----BEGIN PGP SIGNATURE-----\nfake\n-----END PGP SIGNATURE-----\nkeep this text\n',
     'notes\n-----BEGIN SSH SIGNATURE-----\nfake\n-----END PGP SIGNATURE-----\n',
     'notes\n-----BEGIN SIGNED MESSAGE-----\nkeep this text\n',
+    'notes\n-----BEGIN PGP SIGNATURE-----\nfake\n-----END PGP SIGNATURE-----\nkeep this text\n-----BEGIN PGP SIGNATURE-----\nfake\n-----END PGP SIGNATURE-----\n',
+    'notes\n-----BEGIN SSH SIGNATURE-----\nfake\n-----BEGIN PGP SIGNATURE-----\nfake\n-----END PGP SIGNATURE-----\n-----END SSH SIGNATURE-----\n',
   ]) {
     const raw = Buffer.from(`object ${repo.text(['rev-parse', 'HEAD'])}\ntype commit\ntag ambiguous\ntagger Test <test@example.org> 1000000000 +0000\n\n${message}`);
     const oid = repo.text(['hash-object', '-w', '-t', 'tag', '--stdin'], raw);
