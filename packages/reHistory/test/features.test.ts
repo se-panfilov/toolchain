@@ -1,20 +1,20 @@
-import { test } from 'node:test';
+import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
-import { Repository, runGit, makePlan, applyPlan } from '#rehistory/engine';
-import { auditRepository, stamp } from '#rehistory/audit';
-import { exportDestination, exportPlan, verifyExport, manifestName } from '#rehistory/export';
-import { runDemo, validateDemoURL } from '#rehistory/demo';
-import { parseArguments } from '#rehistory/cli';
+import { Repository, runGit, makePlan, applyPlan } from '@reHistory/engine';
+import { auditRepository, stamp } from '@reHistory/audit';
+import { exportDestination, exportPlan, verifyExport, manifestName } from '@reHistory/export';
+import { runDemo, validateDemoURL } from '@reHistory/demo';
+import { parseArguments } from '@reHistory/cli';
 
-function temp(t: { after: (fn: () => void) => void }): string {
+function temp(t: { onTestFinished: (fn: () => void) => void }): string {
   const path = mkdtempSync(join(tmpdir(), 'rehistory-features-'));
-  t.after(() => rmSync(path, { recursive: true, force: true })); return path;
+  t.onTestFinished(() => rmSync(path, { recursive: true, force: true })); return path;
 }
-function fixture(t: { after: (fn: () => void) => void }, format = 'sha1'): Repository {
+function fixture(t: { onTestFinished: (fn: () => void) => void }, format = 'sha1'): Repository {
   const root = temp(t);
   runGit(root, ['init', '-q', '--template=', '--initial-branch=main', `--object-format=${format}`, join(root, 'source')]);
   const repo = new Repository(join(root, 'source'));
@@ -273,7 +273,7 @@ test('конкурирующее изменение source останавлив�
 
 test('demo: URL обязателен; опасные URL и несовместимые параметры отвергаются', t => {
   const root = temp(t); const directory = join(root, 'must-not-exist');
-  const cli = spawnSync(process.execPath, [new URL('../src/cli.js', import.meta.url).pathname, '--demo', '--demo-dir', directory]);
+  const cli = spawnSync(process.execPath, [new URL('../dist/src/cli.js', import.meta.url).pathname, '--demo', '--demo-dir', directory]);
   assert.equal(cli.status, 1); assert.match(cli.stderr.toString(), /обязателен/); assert.equal(existsSync(directory), false);
   for (const url of ['', '/tmp/server.git', 'file:///tmp/server.git', 'ext::sh -c id', 'http://example.org/repo', 'https://token@example.org/repo', 'https://example.org/repo?secret=1', 'ssh://-bad@example.org/repo', 'https://example.org/a\n']) assert.throws(() => validateDemoURL(url));
   assert.equal(validateDemoURL('git@example.org:owner/repo.git'), 'ssh://git@example.org/owner/repo.git');
@@ -322,7 +322,7 @@ test('вне demo сетевые и файловые Git-транспорты з
 
 test('CLI запускается через символическую ссылку, как npm bin', t => {
   const root = temp(t); const link = join(root, 'tx-rehistory.js');
-  symlinkSync(new URL('../src/cli.js', import.meta.url).pathname, link);
+  symlinkSync(new URL('../dist/src/cli.js', import.meta.url).pathname, link);
   const result = spawnSync(process.execPath, [link, '--help']);
   assert.equal(result.status, 0, result.stderr.toString());
   assert.match(result.stdout.toString(), /--demo-remote/);
