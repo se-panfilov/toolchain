@@ -57,6 +57,7 @@ Local adaptations are stored as reversible patches:
 
 - [code-simplifier](skill-patches/code-simplifier.patch) removes React advice and the blanket preference against exception handlers.
   It adds CLI safety invariants, limited refactoring scope, and verification requirements.
+  It preserves the compiled `dist/` output for local execution and npm distribution.
 - [agents-md](skill-patches/agents-md.patch) preserves native imports and required project rules regardless of line-count targets.
   It treats upstream package manager and commit examples as examples.
 - [skill-scanner](skill-patches/skill-scanner.patch) describes command template syntax without a literal executable template in its entrypoint.
