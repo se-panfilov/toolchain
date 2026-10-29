@@ -1,26 +1,11 @@
 {
+  "extends": "../../configs/tsconfig.base.json",
   "compilerOptions": {
-    "target": "ES2023",
-    "lib": ["ES2023"],
-    "module": "ESNext",
-    "moduleResolution": "Bundler",
     "rootDir": ".",
     "outDir": "dist",
-    "types": ["node"],
-    "strict": true,
-    "noEmitOnError": true,
-    "forceConsistentCasingInFileNames": true,
-    "verbatimModuleSyntax": true,
-    "isolatedModules": true,
     "paths": {
       "@reHistory/*": ["./src/*.ts"]
-    },
-    "noImplicitReturns": true,
-    "noFallthroughCasesInSwitch": true,
-    "noImplicitOverride": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "noEmit": true
+    }
   },
   "include": ["src/**/*.ts", "test/**/*.ts"],
   "exclude": ["dist", "node_modules"]
