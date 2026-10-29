@@ -23,6 +23,7 @@ Keep utility-specific requirements in the relevant utility documentation.
 - Do not push directly to `master` or `main`. Do not force-push, merge pull requests, or create tags without explicit task authorization.
 - Do not publish packages or change other external services without explicit task authorization.
 - Preparation for npx use does not authorize npm publication or removal of a publication guard.
+- Do not start the Release workflow with `dry_run=false` without explicit task authorization.
 - Synthetic commits and branches are permitted inside isolated test fixtures when tests require them.
 - Do not use Toolchain or personal repositories as destructive test fixtures.
 - Network demos require a user-specified server URL and explicit authorization to run that demo.
@@ -113,6 +114,20 @@ Keep utility-specific requirements in the relevant utility documentation.
 - Report changes, checks, security findings, fixes, and remaining limitations in Russian.
 - Distinguish completed checks from planned checks. Do not claim platform support from static inspection alone.
 
+## GitHub Actions
+
+- Read [the GitHub Actions guide](docs/GITHUB_ACTIONS.md) before you change workflows or the application list.
+- The Tests, Build, and Release workflows each have an `app` choice input with `all` and every directory in `apps/`.
+- When you add an application, add its directory name to the `app` options in `test.yml`, `build.yml`, and `release.yml`.
+- When you remove an application, remove its directory name from the same three lists.
+- When you rename an application directory, replace the old name in the same three lists.
+- Keep `all` first and the directory names in code point order.
+- Run `npm run check:workflows` after each change to `apps/` or `.github/workflows/`.
+- Pin each action to a full commit SHA with the version in a comment. Do not use tags or branches as action references.
+- Give each job only the necessary token permissions. Use `persist-credentials: false` for checkout.
+- Pass workflow inputs to scripts through environment variables. Do not put `${{ }}` expressions with input data in `run` text.
+- Do not add npm tokens or other publication secrets to the repository or workflows. Releases use npm trusted publishing.
+
 ## Documentation
 
 - Write documentation and code comments in English.
@@ -142,6 +157,7 @@ npm run typecheck
 npm run build
 npm test
 npm run check
+npm run check:workflows
 npm test --workspace tx-rehistory
 npm run build --workspace tx-rehistory
 node apps/reHistory/dist/src/cli.js --help

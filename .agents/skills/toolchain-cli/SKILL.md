@@ -27,6 +27,10 @@ Check the Vite build, separate TypeScript check, and Vitest test commands.
 Check structure, metadata, TypeScript options, and package-local aliases against [the package requirements](../../../docs/PACKAGES.md).
 Verify that local startup and npm bin entries use the same compiled entry point in `dist/`.
 Do not copy reHistory-specific Git restrictions into an unrelated utility.
+Add the new directory name to the `app` options in the three GitHub Actions workflows.
+Remove or replace the name there when you remove or rename a utility directory.
+Run `npm run check:workflows` to compare the workflow lists with `apps/`.
+See [the GitHub Actions guide](../../../docs/GITHUB_ACTIONS.md).
 
 ## Implement in stages
 
@@ -85,6 +89,7 @@ Check runtime dependency and installation hook changes when present.
 Keep the tested archive integrity value with the verification result.
 Metadata or included-file changes require a new archive and repeated artifact checks.
 Leave publication and real network operations outside this workflow unless the user explicitly authorized them.
+Do not start the Release workflow with `dry_run=false` without that authorization.
 
 ## Deliver
 

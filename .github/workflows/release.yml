@@ -1,0 +1,175 @@
+# Publish application versions that are not yet in the npm registry.
+# Publication uses npm trusted publishing (OIDC). Configure each package on npmjs.com with workflow file release.yml.
+# When you add, remove, or rename an application in apps/, update the `app` options in test.yml, build.yml, and release.yml.
+# `npm run check:workflows` and the `plan` job stop when the lists differ from apps/.
+
+name: Release
+run-name: Release (app=${{ inputs.app }}, dry_run=${{ inputs.dry_run }})
+
+on:
+  workflow_dispatch:
+    inputs:
+      app:
+        description: Application directory in apps/, or all
+        type: choice
+        required: true
+        default: all
+        options:
+          - all
+          - reHistory
+      dry_run:
+        description: Run all checks and npm publish --dry-run. Do not publish or create GitHub releases.
+        type: boolean
+        required: true
+        default: true
+
+permissions: {}
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      releases: ${{ steps.plan.outputs.releases }}
+      count: ${{ steps.plan.outputs.count }}
+      dry_run: ${{ steps.plan.outputs.dry_run }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - id: plan
+        name: Find unpublished versions
+        env:
+          APP: ${{ inputs.app }}
+          DRY_RUN: ${{ inputs.dry_run == true }}
+        run: node scripts/ci/release.mjs plan
+
+  test:
+    needs: plan
+    if: needs.plan.outputs.count != '0'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/test.yml
+    with:
+      app: ${{ inputs.app }}
+
+  build:
+    needs: plan
+    if: needs.plan.outputs.count != '0'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/build.yml
+    with:
+      app: ${{ inputs.app }}
+
+  publish-dry-run:
+    needs: [plan, test, build]
+    if: needs.plan.outputs.dry_run == 'true'
+    name: publish dry run (${{ matrix.release.name }}@${{ matrix.release.version }})
+    strategy:
+      fail-fast: false
+      matrix:
+        release: ${{ fromJSON(needs.plan.outputs.releases) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # A dry run gets no OIDC token and no deployment environment.
+    permissions:
+      contents: read
+    env:
+      APP: ${{ matrix.release.dir }}
+      DRY_RUN: 'true'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: package-${{ matrix.release.dir }}
+          path: ${{ runner.temp }}/package-${{ matrix.release.dir }}
+      - name: Check npm publication without publishing
+        env:
+          ARCHIVE_DIR: ${{ runner.temp }}/package-${{ matrix.release.dir }}
+        run: node scripts/ci/release.mjs publish
+
+  publish:
+    needs: [plan, test, build]
+    if: needs.plan.outputs.dry_run == 'false'
+    name: publish (${{ matrix.release.name }}@${{ matrix.release.version }})
+    strategy:
+      fail-fast: false
+      matrix:
+        release: ${{ fromJSON(needs.plan.outputs.releases) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: npm-publish
+    # id-token is necessary for npm trusted publishing and provenance. No other write access.
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      APP: ${{ matrix.release.dir }}
+      DRY_RUN: 'false'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: package-${{ matrix.release.dir }}
+          path: ${{ runner.temp }}/package-${{ matrix.release.dir }}
+      - name: Publish to npm
+        env:
+          ARCHIVE_DIR: ${{ runner.temp }}/package-${{ matrix.release.dir }}
+        run: node scripts/ci/release.mjs publish
+
+  github-release:
+    needs: [plan, publish]
+    if: needs.plan.outputs.dry_run == 'false'
+    name: github-release (${{ matrix.release.name }}@${{ matrix.release.version }})
+    strategy:
+      fail-fast: false
+      matrix:
+        release: ${{ fromJSON(needs.plan.outputs.releases) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # contents: write creates the tag and the GitHub Release.
+    permissions:
+      contents: write
+    env:
+      APP: ${{ matrix.release.dir }}
+      DRY_RUN: 'false'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: package-${{ matrix.release.dir }}
+          path: ${{ runner.temp }}/package-${{ matrix.release.dir }}
+      - name: Create the tag and the GitHub Release
+        env:
+          ARCHIVE_DIR: ${{ runner.temp }}/package-${{ matrix.release.dir }}
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/ci/release.mjs github-release
