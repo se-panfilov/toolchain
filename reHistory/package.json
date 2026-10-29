@@ -1,6 +1,6 @@
 {
   "name": "toolchain-rehistory",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "Интерактивная нормализация, аудит и проверяемый экспорт истории Git",
   "private": true,
   "type": "module",
@@ -17,12 +17,13 @@
     "dist/audit.js",
     "dist/export.js",
     "dist/demo.js",
+    "dist/prompts.js",
     "README.md",
     "SECURITY.md",
     "LICENSE"
   ],
   "scripts": {
-    "test": "node --test engine.test.ts features.test.ts",
+    "test": "node --test engine.test.ts features.test.ts prompts.test.ts",
     "start": "node cli.ts",
     "build": "node build.mjs",
     "prepack": "npm run build"
