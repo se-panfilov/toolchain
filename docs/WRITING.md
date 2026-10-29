@@ -9,7 +9,9 @@ Do not claim full conformance from a sentence counter or an unchecked vocabulary
 - Write documentation and code comments in English.
 - Write the CLI interface and user-facing task reports in Russian.
 - Keep commands, paths, identifiers, quoted software labels, and license text exact.
-- Keep existing Russian test names and interface strings unless the task requires a change.
+- Write test names, test data, and test comments in English. Tests are not user interaction.
+- Use Russian in tests only to match Russian interface strings, such as an expected error message.
+- When you change a test file, translate its remaining Russian test names to English.
 
 ## External examples
 
