@@ -1,7 +1,30 @@
 {
   "name": "toolchain-rehistory",
+  "version": "2.0.0",
+  "description": "Интерактивная нормализация, аудит и проверяемый экспорт истории Git",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=24" },
-  "scripts": { "test": "node --test engine.test.ts", "start": "node cli.ts" }
+  "license": "MIT",
+  "engines": {
+    "node": ">=24.12.0"
+  },
+  "bin": {
+    "rehistory": "dist/cli.js"
+  },
+  "files": [
+    "dist/cli.js",
+    "dist/engine.js",
+    "dist/audit.js",
+    "dist/export.js",
+    "dist/demo.js",
+    "README.md",
+    "SECURITY.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test engine.test.ts features.test.ts",
+    "start": "node cli.ts",
+    "build": "node build.mjs",
+    "prepack": "npm run build"
+  }
 }

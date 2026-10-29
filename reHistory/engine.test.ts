@@ -205,7 +205,7 @@ test('поддерживается SHA-256 и bare-репозиторий', t =>
   applyPlan(plan);
   repo.git(['fsck', '--strict']);
   const bare = join(repo.path, 'bare.git');
-  repo.git(['clone', '-q', '--bare', '--no-local', repo.path, bare]);
+  repo.git(['-c', 'protocol.file.allow=always', 'clone', '-q', '--bare', '--no-local', repo.path, bare]);
   const bareRepo = new Repository(bare);
   applyPlan(makePlan(bareRepo, { ...options, start: options.start + 1 }));
   bareRepo.git(['fsck', '--strict']);
