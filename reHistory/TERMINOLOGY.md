@@ -87,6 +87,18 @@ The table does not change the approved general meanings in the STE dictionary.
 | question | A prompt that accepts software input. |
 | reachability | The presence of a path through Git object links. |
 | reachable object | An object that a Git ref can reach through object links. |
+| 2FA | Authentication that uses a second factor in addition to the account login. |
+| access token | A credential that gives npm API permissions. |
+| cache | Local npm data used for package downloads and execution. |
+| public package | A package that any registry user can download without package access permission. |
+| publication guard | The local private flag that prevents npm publication. |
+| release archive | The tested package file selected for publication. |
+| dist-tag | An npm label that selects a published package version. |
+| integrity | A hash value used to compare the contents of release archives. |
+| release | A package version prepared for publication. |
+| scope | The npm namespace controlled by a user or organization. |
+| smoke test | A short test that makes sure that a package starts correctly. |
+| version | The identifier of a package release. |
 | registry | The service that stores published npm packages. |
 | request | A software message sent to a network service. |
 | response | The software data given after a request. |
