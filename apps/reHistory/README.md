@@ -90,6 +90,7 @@ From the Toolchain root, use `npm run start --workspace tx-rehistory -- --help` 
 A build error stops this command before application startup.
 
 Without `--repo`, the program uses the current process directory.
+If this directory is a subdirectory of a working tree, the program uses the top-level directory of that working tree.
 An npm workspace script runs in the application directory.
 Supply `--repo /path/to/project` when you start through an npm script.
 
