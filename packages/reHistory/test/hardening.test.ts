@@ -255,3 +255,11 @@ test('история больше одного batch обрабатываетс�
   exportPlan(makePlan(repo, settings), target);
   assert.equal(verifyExport(target).ok, true);
 });
+
+test('многострочные значения config не подменяют список имён настроек', (t) => {
+  const { repo } = fixture(t);
+  repo.git(['config', 'rehistory.note', 'note\nfilter.fake.clean=cat']);
+  assert.equal(makePlan(repo, settings).commits, 1);
+  repo.git(['config', 'filter.driver.clean', 'cat\ncat']);
+  assert.throws(() => makePlan(repo, settings), /Git-фильтры/);
+});
