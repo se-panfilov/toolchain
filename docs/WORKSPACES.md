@@ -106,4 +106,3 @@ Native Linux and Windows results require the configured CI jobs.
 ## References
 
 - [npm workspaces](https://docs.npmjs.com/cli/v11/using-npm/workspaces/).
-- [Reference repository layout](https://github.com/se-panfilov/anarchy-engine).

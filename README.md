@@ -16,12 +16,13 @@ The root package is private.
 
 ## GitHub Actions
 
-The repository has three workflows: Tests, Build, and Release.
-Each workflow can use all applications or one application, and has a dry-run mode.
+The three application workflows are Tests, Build, and Release.
+Each application workflow can use all applications or one application, and has a dry-run mode.
+The separate Secrets workflow checks repository history and working files. See [Git hooks and secret checks](docs/GIT_HOOKS.md).
 Release publishes new application versions to npm through trusted publishing.
 See the [GitHub Actions guide](docs/GITHUB_ACTIONS.md).
 
-**CAUTION: When you add, remove, or rename an application, update the `app` list in each workflow.**
+**CAUTION: When you add, remove, or rename an application, update the `app` list in each application workflow.**
 Then run `npm run check:workflows`.
 
 ## Development
@@ -44,6 +45,9 @@ npm run lint
 npm run format
 npm run check
 ```
+
+Install local commit checks with `npm run hooks:install` after installing Gitleaks.
+See [Git hooks and secret checks](docs/GIT_HOOKS.md) for prerequisites, configuration sources, CI checks, and operating limits.
 
 The check command runs formatting checks, lint, the GitHub Actions list check, and all workspace tests.
 Each application test command builds and checks TypeScript before testing.
