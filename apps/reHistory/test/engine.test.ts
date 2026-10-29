@@ -23,7 +23,7 @@ function commit(repo: Repository, message: string): string {
   repo.git(['commit', '-q', '--allow-empty', '-m', message]);
   return repo.text(['rev-parse', 'HEAD']);
 }
-const options = { start: 1700000000, interval: 1 };
+const options = { flow: 'dates' as const, start: 1700000000, interval: 1 };
 function snapshot(repo: Repository): Map<string, Buffer> {
   const result = new Map<string, Buffer>();
   function walk(dir: string): void {
@@ -87,10 +87,13 @@ test('dry-run не меняет ни одного файла в .git', (t) => {
 
 test('смена идентичности всех авторов и коммитеров; отсутствие бекапа', (t) => {
   const repo = fixture(t);
-  const plan = makePlan(repo, { ...options, identity: { name: 'Новый автор', email: 'new@example.org' } });
+  const dates = repo.text(['show', '-s', '--format=%ad|%cd|%B', '--date=raw']);
+  const plan = makePlan(repo, { flow: 'authors', identity: { name: 'Новый автор', email: 'new@example.org' } });
   const result = applyPlan(plan);
   assert.equal(result.backupPrefix, undefined);
   assert.equal(repo.text(['show', '-s', '--format=%an|%ae|%cn|%ce']), 'Новый автор|new@example.org|Новый автор|new@example.org');
+  // The authors flow keeps dates, time zones, and messages.
+  assert.equal(repo.text(['show', '-s', '--format=%ad|%cd|%B', '--date=raw']), dates);
   assert.equal(JSON.parse(readFileSync(result.recovery, 'utf8')).refs[0].new, repo.text(['rev-parse', 'HEAD']));
 });
 
@@ -303,7 +306,7 @@ test('переменные GIT_* не перенаправляют работу 
     `
     import { Repository, makePlan } from ${JSON.stringify(new URL('../dist/src/engine.js', import.meta.url).href)};
     const repo = new Repository(process.argv[2]);
-    const plan = makePlan(repo, { start: 1700000000, interval: 1 });
+    const plan = makePlan(repo, { flow: 'dates', start: 1700000000, interval: 1 });
     console.log(JSON.stringify({ commits: plan.commits, common: repo.common }));
   `
   );

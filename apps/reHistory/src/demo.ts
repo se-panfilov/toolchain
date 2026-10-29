@@ -90,12 +90,11 @@ export function runDemo(options: { remote: string; directory?: string; print?: (
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const settings = {
+      flow: 'dates' as const,
       start: today.getTime() / 1000,
       interval: 1,
       tagPolicy: 'normalize' as const,
-      backupBranch: 'rehistory-backup/demo',
-      identity: { name: 'Demo Нормализованный', email: 'normalized@example.invalid' },
-      tagIdentity: { name: 'Demo Нормализованный', email: 'normalized@example.invalid' }
+      backupBranch: 'rehistory-backup/demo'
     };
     applyPlan(makePlan(repo, settings));
     const audit = auditRepository(repo);

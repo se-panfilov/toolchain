@@ -8,15 +8,14 @@ import { deflateSync } from 'node:zlib';
 export const defaultBackupBranch = 'rehistory-backup/original';
 
 export type Ref = { name: string; oid: string; symbolic: string };
-export type Options = {
-  interval: number;
-  start: number;
-  identity?: { name: string; email: string };
-  backupBranch?: string;
-  tagPolicy?: 'normalize' | 'preserve';
-  tagIdentity?: { name: string; email: string };
-  commitMessage?: string;
-};
+export type Identity = { name: string; email: string };
+export const flows = ['dates', 'authors', 'messages'] as const;
+export type Flow = (typeof flows)[number];
+/** Each run changes one kind of metadata. Other commit and tag data stay unchanged. */
+export type Options =
+  | { flow: 'dates'; start: number; interval: number; tagPolicy?: 'normalize' | 'preserve'; backupBranch?: string }
+  | { flow: 'authors'; identity: Identity; tagIdentity?: Identity; backupBranch?: string }
+  | { flow: 'messages'; commitMessage: string; backupBranch?: string };
 export type ObjectData = { type: 'commit' | 'tag'; data: Buffer; oid: string };
 export type Plan = {
   repo: Repository;
@@ -283,12 +282,41 @@ export function normalizeCommitMessage(value: string): Buffer {
   }
   return Buffer.from(value.endsWith('\n') ? value : `${value}\n`, 'utf8');
 }
-function identity(header: Buffer, timestamp: number, replacement?: Options['identity']): Buffer {
+/** Validate an author, committer, or tagger line. Replace only the requested part. */
+function person(header: Buffer, change: { timestamp?: number; identity?: Identity } = {}): Buffer {
   const text = header.toString('latin1');
   const match = /^(author|committer|tagger) (.*) (-?\d+) ([+-]\d{4})$/.exec(text);
   if (!match) throw new Error('Некорректная дата или идентичность в коммите.');
-  const who = replacement ? Buffer.from(`${replacement.name} <${replacement.email}>`, 'utf8') : Buffer.from(match[2], 'latin1');
-  return Buffer.concat([Buffer.from(`${match[1]} `), who, Buffer.from(` ${timestamp} +0000`)]);
+  const who = change.identity ? Buffer.from(`${change.identity.name} <${change.identity.email}>`, 'utf8') : Buffer.from(match[2], 'latin1');
+  const when = change.timestamp === undefined ? `${match[3]} ${match[4]}` : `${change.timestamp} +0000`;
+  return Buffer.concat([Buffer.from(`${match[1]} `), who, Buffer.from(` ${when}`)]);
+}
+
+function exactOptionKeys(options: Record<string, unknown>, keys: string[]): void {
+  const allowed = new Set(['flow', 'backupBranch', ...keys]);
+  const extra = Object.keys(options).filter((key) => !allowed.has(key) && options[key] !== undefined);
+  if (extra.length) throw new Error(`Параметры не относятся к выбранному флоу: ${extra.join(', ')}.`);
+}
+/** Reject unknown flows and parameters of other flows. One run changes one kind of metadata. */
+export function validateOptions(options: Options): void {
+  if (!options || typeof options !== 'object') throw new Error('Не выбран флоу переписывания.');
+  const record = options as Record<string, unknown>;
+  if (options.backupBranch !== undefined && typeof options.backupBranch !== 'string') throw new Error('Некорректное имя бекап-ветки.');
+  if (options.flow === 'dates') {
+    exactOptionKeys(record, ['start', 'interval', 'tagPolicy']);
+    if (!Number.isSafeInteger(options.interval) || options.interval < 1 || options.interval > 31536000) throw new Error('Интервал: целое число от 1 до 31536000 секунд.');
+    if (!Number.isSafeInteger(options.start) || options.start < 0) throw new Error('Даты должны находиться между 1970 и 9999 годом.');
+    if (options.tagPolicy !== undefined && !['normalize', 'preserve'].includes(options.tagPolicy)) throw new Error('Неизвестная политика дат тегов.');
+  } else if (options.flow === 'authors') {
+    exactOptionKeys(record, ['identity', 'tagIdentity']);
+    if (!options.identity) throw new Error('Не указаны имя и email.');
+    validateIdentity(options.identity.name, options.identity.email);
+    if (options.tagIdentity) validateIdentity(options.tagIdentity.name, options.tagIdentity.email);
+  } else if (options.flow === 'messages') {
+    exactOptionKeys(record, ['commitMessage']);
+    if (typeof options.commitMessage !== 'string') throw new Error('Не указано новое сообщение.');
+    normalizeCommitMessage(options.commitMessage);
+  } else throw new Error('Неизвестный флоу переписывания.');
 }
 
 /** Remove one trailing signature block without discarding ambiguous message text. */
@@ -378,11 +406,10 @@ export function writeObjects(repo: Repository, objects: ObjectData[]): void {
 }
 
 export function makePlan(repo: Repository, options: Options): Plan {
-  const replacementMessage = options.commitMessage === undefined ? undefined : normalizeCommitMessage(options.commitMessage);
-  if (!Number.isSafeInteger(options.interval) || options.interval < 1 || options.interval > 31536000) throw new Error('Интервал: целое число от 1 до 31536000 секунд.');
-  if (options.identity) validateIdentity(options.identity.name, options.identity.email);
-  if (options.tagIdentity) validateIdentity(options.tagIdentity.name, options.tagIdentity.email);
-  if (options.tagPolicy && !['normalize', 'preserve'].includes(options.tagPolicy)) throw new Error('Неизвестная политика дат тегов.');
+  validateOptions(options);
+  const dates = options.flow === 'dates' ? options : undefined;
+  const authors = options.flow === 'authors' ? options : undefined;
+  const replacementMessage = options.flow === 'messages' ? normalizeCommitMessage(options.commitMessage) : undefined;
   const { refs, head, headOid } = repo.inspect();
   const reachable = new Set(repo.text(['rev-list', headOid]).split('\n'));
   const selected = refs.filter((r) => {
@@ -402,8 +429,11 @@ export function makePlan(repo: Repository, options: Options): Plan {
     .split('\n')
     .filter(Boolean);
   if (!commits.length) throw new Error('Нет коммитов для переписывания.');
-  const last = options.start + (commits.length - 1) * options.interval;
-  if (!Number.isSafeInteger(options.start) || options.start < 0 || !Number.isSafeInteger(last) || last > 253402300799) throw new Error('Даты должны находиться между 1970 и 9999 годом.');
+  if (dates) {
+    const last = dates.start + (commits.length - 1) * dates.interval;
+    if (!Number.isSafeInteger(last) || last > 253402300799) throw new Error('Даты должны находиться между 1970 и 9999 годом.');
+  }
+  const dateOf = (index: number): number | undefined => (dates ? dates.start + index * dates.interval : undefined);
   const format = objectFormat(repo);
   const mapping = new Map<string, string>();
   const objects: ObjectData[] = [];
@@ -435,12 +465,13 @@ export function makePlan(repo: Repository, options: Options): Plan {
         if (!parent) throw new Error('Родитель коммита отсутствует в плане.');
         updated.push(Buffer.from(`parent ${parent}`));
       } else if (key === 'author' || key === 'committer') {
-        updated.push(identity(h, options.start + index * options.interval, options.identity));
+        updated.push(person(h, { timestamp: dateOf(index), identity: authors?.identity }));
       } else updated.push(h);
     }
     add(old, 'commit', assemble(updated, replacementMessage ?? message));
   }
-  const dates = new Map(commits.map((old, index) => [old, options.start + index * options.interval]));
+  // Map each commit and tag to the index of its final commit.
+  const positions = new Map(commits.map((old, index) => [old, index]));
   const active = new Set<string>();
   function rewriteTag(old: string): string {
     if (mapping.has(old)) return mapping.get(old)!;
@@ -458,20 +489,16 @@ export function makePlan(repo: Repository, options: Options): Plan {
     const rewritten = rewriteTag(target);
     const signature = stripTagSignature(message);
     if (signature.stripped) stripped++;
-    const date = dates.get(target);
-    if (date === undefined) throw new Error('Не удалось определить дату конечного коммита тега.');
+    const position = positions.get(target);
+    if (position === undefined) throw new Error('Не удалось определить конечный коммит тега.');
     if (!headers.some((h) => field(h) === 'tagger')) throw new Error('Annotated-тег без tagger: обработка остановлена.');
     const updated = headers.map((h) => {
       if (field(h) === 'object') return Buffer.from(`object ${rewritten}`);
       if (field(h) !== 'tagger') return h;
-      if (options.tagPolicy !== 'preserve') return identity(h, date, options.tagIdentity);
-      if (!options.tagIdentity) return h;
-      const match = / (-?\d+) ([+-]\d{4})$/.exec(h.toString('latin1'));
-      if (!match) throw new Error('Некорректная дата tagger.');
-      return Buffer.concat([Buffer.from(`tagger ${options.tagIdentity.name} <${options.tagIdentity.email}>`), Buffer.from(match[0])]);
+      return person(h, { timestamp: dates && dates.tagPolicy !== 'preserve' ? dateOf(position) : undefined, identity: authors?.tagIdentity });
     });
     const result = add(old, 'tag', assemble(updated, signature.message));
-    dates.set(old, date);
+    positions.set(old, position);
     active.delete(old);
     return result;
   }
