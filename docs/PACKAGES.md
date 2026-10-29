@@ -112,6 +112,7 @@ Keep application wrappers small and limited to local roots, aliases, entries, an
 Extend the shared TypeScript base from each application tsconfig.json.
 Set rootDir, outDir, include, exclude, and alias paths locally because they are relative to their config file.
 Use recommended JavaScript and TypeScript ESLint rules.
+Apply the adapted [ESLint rules](ESLINT.md) for Node.js applications.
 Use eslint-config-prettier to disable conflicting formatting rules. Keep Prettier separate from ESLint.
 Provide format, format:check, lint, and check commands.
 Before completing work, format changed maintained files and run the format check and application lint.

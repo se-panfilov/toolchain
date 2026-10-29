@@ -742,6 +742,9 @@ The lint command rejects warnings as well as errors.
 The root Prettier discovery file and .prettierignore select shared formatting and exclusions.
 ESLint settings, TypeScript defaults, and build and test presets live in the root configs directory.
 ESLint uses the recommended JavaScript and TypeScript rules with Node.js globals.
+It also checks import order, type imports and exports, return types, and unsafe spread operations.
+Runtime imports use the @reHistory/* alias. Test fixtures can use relative imports.
+Lint checks permit CLI state changes and the getter used for deferred interruption signals.
 eslint-config-prettier disables conflicting style rules. Prettier runs separately.
 Generated output, dependencies, coverage, and reports stay outside these checks.
 

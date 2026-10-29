@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import { gitConfigKeys, type Plan,type Repository } from '@reHistory/engine';
+import { gitConfigKeys, type Plan, type Repository } from '@reHistory/engine';
 
 /** Accept only explicit SSH/HTTPS destinations without embedded secrets. */
 export function validateRemoteURL(value: string): string {
