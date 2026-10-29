@@ -493,7 +493,10 @@ All existing tests now use Vitest.
 Test-scoped cleanup replaces node:test cleanup without removing existing assertions.
 Real Git fixtures, byte comparisons, subprocess checks, and the isolated demo transport remain in use.
 Unit tests also cover dates, identities, signatures, and Git environment isolation through Vitest expect assertions.
-Tests run sequentially in isolated worker processes and restore changed process state.
+Test files run in isolated fork processes with at most three workers.
+Available CPU parallelism caps the worker count.
+Tests inside a file remain sequential and restore changed process state.
+All security regressions remain in the complete suite.
 The watch command runs source-only unit and terminal tests.
 The complete test command builds first and also checks compiled subprocess behavior.
 
