@@ -217,7 +217,7 @@ export class Repository {
 
 /** Status can recurse into initialized submodules and run their filters too. */
 function assertStatusFilters(repo: Repository, seen = new Set<string>()): void {
-  const canonical = realpathSync(repo.path);
+  const canonical = realpathSync.native(repo.path);
   if (seen.has(canonical)) return;
   if (seen.size >= 256) throw new Error('Проверка ограничена 256 рабочими деревьями подмодулей. Используйте отдельный клон без инициализированных подмодулей.');
   seen.add(canonical);
@@ -234,7 +234,7 @@ function assertStatusFilters(repo: Repository, seen = new Set<string>()): void {
     if (!existsSync(join(path, '.git'))) continue;
     if (lstatSync(path).isSymbolicLink() || lstatSync(join(path, '.git')).isSymbolicLink()) throw new Error('Символическая ссылка в рабочем дереве подмодуля не поддерживается.');
     const child = new Repository(path);
-    if (realpathSync(child.text(['rev-parse', '--show-toplevel'])) !== realpathSync(path)) throw new Error('Не удалось однозначно определить рабочее дерево подмодуля.');
+    if (realpathSync.native(child.text(['rev-parse', '--show-toplevel'])) !== realpathSync.native(path)) throw new Error('Не удалось однозначно определить рабочее дерево подмодуля.');
     assertStatusFilters(child, seen);
   }
 }
