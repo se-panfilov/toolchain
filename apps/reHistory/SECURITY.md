@@ -382,6 +382,13 @@ The first remote copy check ran only before the questions.
 A commit made after the check and before planning could enter the plan.
 The program now repeats the check for the planned head before the write.
 
+A manual test after the audit found a second defect, which is older than the flow split.
+A start from a subdirectory, such as `apps/reHistory` without `--repo`, stopped at the strict pack import.
+In a subdirectory, `index-pack` did not find existing trees. Also, `ls-files` listed only that subdirectory for the submodule filter check.
+The program now uses the top-level directory of the working tree for all Git commands.
+The pack import failed before the ref transaction, so refs did not change.
+Planning also examines all referenced trees and gives a clear error if one is missing.
+
 These limits remain. A human decides whether to accept them:
 
 - The remote copy check trusts local remote-tracking refs and can use out-of-date data.

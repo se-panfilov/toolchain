@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -322,4 +322,18 @@ test('план останавливается, если в хранилище н
   ] as Options[])
     assert.throws(() => makePlan(repo, options), new RegExp(`нет дерева ${tree}`));
   assert.equal(repo.text(['rev-parse', 'HEAD']), head);
+});
+
+test('запуск из подкаталога рабочего дерева использует корень репозитория', (t) => {
+  const repo = fixture(t);
+  mkdirSync(join(repo.path, 'apps', 'tool'), { recursive: true });
+  writeFileSync(join(repo.path, 'apps', 'tool', 'file.txt'), 'data\n');
+  repo.git(['add', '--', 'apps/tool/file.txt']);
+  repo.git(['commit', '-q', '-m', 'файл в подкаталоге']);
+  const nested = new Repository(join(repo.path, 'apps', 'tool'));
+  assert.equal(realpathSync.native(nested.path), realpathSync.native(repo.path));
+  const plan = makePlan(nested, { flow: 'dates', start: 1700000000, interval: 1 });
+  applyPlan(plan);
+  assert.equal(repo.text(['rev-parse', 'HEAD']), plan.mapping.get(plan.headOid));
+  repo.git(['fsck', '--strict', '--no-reflogs']);
 });
