@@ -200,7 +200,7 @@ It does not record old commit IDs, old tag IDs, or the source path.
 The program compares the complete inventory with this manifest.
 It examines dates, identities, parent order, and reachability.
 It rejects extra refs, config, files, links, and special files.
-It also uses `git fsck --full --strict --no-reflogs`.
+It also uses strict Git fsck with only `fsck.zeroPaddedFilemode=ignore`.
 
 **CAUTION: Do not publish an export that fails a check.**
 A failed export can be not complete.
@@ -236,6 +236,10 @@ Planning rejects selected source commits containing NUL before data writes.
 Generated commit and tag metadata containing NUL is rejected on all supported Git versions.
 The program retains other binary message bytes unless replacement is selected.
 Git validates metadata packs with `index-pack --strict` before refs change.
+Export imports source trees and blobs with `--strict=zeroPaddedFilemode=ignore`.
+The final fsck uses the same single exception.
+This permits historical noncanonical mode formatting without changing tree bytes or object IDs.
+Other diagnostics retain their strict severity, including unsorted trees.
 An unsupported object can stop the operation with recovery instructions.
 
 JSON serialization escapes C1 controls and Unicode format controls, including supplementary code points.
@@ -246,7 +250,11 @@ Human-readable output continues to remove terminal control characters.
 
 The exclusive lock error reports the recorded PID when the file is readable.
 The program does not remove an existing lock automatically.
-During local application, a SIGINT listener defers parent interruption until cleanup runs.
+During local application, a SIGINT listener records interruption.
+The listener remains installed until the next event-loop turn so queued signals are observed.
+After successful application, the CLI waits for that turn and checks the recorded flag.
+An interrupted success exits with code 130 and does not offer push.
+The completed local rewrite is retained.
 An interrupted Git child can fail while the parent cleans up and reports recovery information.
 Ref updates still use the atomic Git transaction.
 SIGKILL, crashes, power loss, or other abrupt termination can leave a lock.
