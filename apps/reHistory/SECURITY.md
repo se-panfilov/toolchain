@@ -263,8 +263,9 @@ Human-readable output continues to remove terminal control characters.
 The exclusive lock error reports the recorded PID when the file is readable.
 The program does not remove an existing lock automatically.
 During local application, a SIGINT listener records interruption.
-The listener remains installed until the next event-loop turn so queued signals are observed.
-After successful application, the CLI waits for that turn and checks the recorded flag.
+Two nested setImmediate callbacks retain the listener across the next poll phase.
+This also covers application resumed from a keyboard input callback.
+After successful application, the CLI crosses the same two check phases and examines the flag.
 An interrupted success exits with code 130 and does not offer push.
 The completed local rewrite is retained.
 An interrupted Git child can fail while the parent cleans up and reports recovery information.
@@ -274,7 +275,7 @@ Examine the recorded process and recovery file before removing that lock manuall
 
 ## Release command
 
-The release npm script runs npm pack and npm publish in sequence.
+The release npm script runs npm pack and a small Node.js publication helper in sequence.
 Run the separate root check before release.
 Shell `&&` stops later steps when a command fails.
 The complete check retains the mandatory TypeScript check, build, and application security regressions.
@@ -284,8 +285,10 @@ The dry-run script adds `--dry-run` to the final publish command.
 Publication defaults to the public npm registry and uses the user's npm authentication.
 The script does not change versions or Git refs.
 The standard pack command writes an archive in the application directory and can replace an archive with the same name.
-Publication packages the working directory again.
-Do not modify files between checks and publication.
+Publication uses the exact tx-rehistory-<version>.tgz file created by pack.
+The helper passes that explicit file to the npm CLI with argument arrays and no shell.
+The helper accepts only --dry-run, requires an ordinary archive with one link, and propagates npm failure.
+Do not modify source files or the archive between checks and publication.
 The script does not isolate hostile local processes or perform a separate custom archive audit.
 Review the package file allowlist and permitted files for secrets before publishing.
 A lost publication response can leave the registry state uncertain.

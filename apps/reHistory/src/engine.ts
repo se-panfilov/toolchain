@@ -511,7 +511,7 @@ export function applyPlan(plan: Plan): { recovery: string; backupPrefix?: string
     }
     throw new Error(`reHistory заблокирован. PID: ${owner}. Проверьте процесс и файл ${lock}. Удаляйте lock только после остановки процесса и проверки восстановления.`, { cause: error });
   }
-  // Keep the handler through the next event-loop turn so queued signals are observed.
+  // Cross the next poll phase even when application starts from an I/O callback.
   const interruption = { interrupted: false };
   if (!pendingInterruptions.size) process.on('SIGINT', recordInterrupt);
   pendingInterruptions.add(interruption);
@@ -572,8 +572,10 @@ export function applyPlan(plan: Plan): { recovery: string; backupPrefix?: string
       unlinkSync(lock);
     } finally {
       setImmediate(() => {
-        pendingInterruptions.delete(interruption);
-        if (!pendingInterruptions.size) process.removeListener('SIGINT', recordInterrupt);
+        setImmediate(() => {
+          pendingInterruptions.delete(interruption);
+          if (!pendingInterruptions.size) process.removeListener('SIGINT', recordInterrupt);
+        });
       });
     }
   }

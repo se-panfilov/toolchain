@@ -538,6 +538,7 @@ The recovery file cannot restore objects that are not available.
 
 An existing lock error shows its PID when readable.
 Ctrl+C is recorded during local application, including signals queued during JavaScript work.
+The handler crosses the next poll phase before cleanup, including when keyboard input starts application.
 After successful application and lock cleanup, interruption exits with code 130 without a push question.
 The completed local rewrite remains saved.
 An interrupted Git subprocess can still abort the atomic ref transaction.
@@ -702,7 +703,7 @@ From the Toolchain root, use `npm run release --workspace tx-rehistory`.
 The command runs this sequence:
 
 ```sh
-npm pack --ignore-scripts && npm publish --ignore-scripts --registry=https://registry.npmjs.org/ --access=public
+npm pack --ignore-scripts && node scripts/publish.mjs
 ```
 
 The separate root check includes formatting, lint, TypeScript, the Vite build, and all application tests.
@@ -713,8 +714,11 @@ The dry-run command adds `--dry-run` to the final npm publish step.
 
 The pack step writes `tx-rehistory-<version>.tgz` in the application directory.
 A repeated pack replaces the archive with the same name.
-The publish step packages the checked working directory for the public npm registry.
-Do not change files while release runs.
+The publish helper sends that exact archive to the public npm registry.
+It runs npm publish ./tx-rehistory-<version>.tgz with lifecycle scripts disabled.
+The helper uses Node.js to resolve the version on macOS, Linux, and Windows.
+It accepts only --dry-run and rejects missing archives and linked files.
+Do not change source files or the archive while release runs.
 The command does not increment the version, create Git commits or tags, or push Git refs.
 The npm authentication and two-factor authentication requirements still apply.
 The narrow package file allowlist controls archive contents.
