@@ -20,7 +20,7 @@ function print(value: unknown, tone: keyof ReturnType<typeof terminalStyle> = 'p
   console.log(style[tone](safe(value)));
 }
 function help(): void {
-  print(`reHistory — нормализация истории текущей ветки и её тегов.
+  print(`reHistory — переписывание времени, авторов или сообщений коммитов текущей ветки и её тегов.
 Node.js 24.12+, Git 2.39+. Запуск: node /путь/toolchain/apps/reHistory/dist/src/cli.js [параметры]
 
   --repo PATH          Исходный репозиторий (по умолчанию текущий каталог).
@@ -306,9 +306,10 @@ async function main(): Promise<void> {
   }
   try {
     // Rewrite in place only after the current history has a remote copy. Run one flow, push, then run the next flow.
+    let gate: ReturnType<typeof remoteGate> = 'ok';
     if (!mode.destination) {
       const copy = remoteCopy(repo, state.headOid);
-      const gate = remoteGate(copy, mode.dryRun);
+      gate = remoteGate(copy, mode.dryRun);
       const unpushed = `Незапушенные коммиты: ${copy.unpushed}. Сначала отправьте ветку на сервер и обновите remote-ссылки (git fetch).`;
       if (gate === 'block') throw new Error(unpushed);
       if (gate === 'warn') print(`${unpushed} Без dry-run запуск будет остановлен.`, 'warning');
@@ -318,13 +319,14 @@ async function main(): Promise<void> {
         return;
       }
     }
-    const flow = flows[
-      await prompts.select(
-        'Что переписать?',
-        flows.map((item) => flowLabels[item]),
-        0
-      )
-    ];
+    const flow =
+      flows[
+        await prompts.select(
+          'Что переписать?',
+          flows.map((item) => flowLabels[item]),
+          0
+        )
+      ];
     let backupBranch: string | undefined;
     if (!mode.destination) {
       if (await choose('Создать бекап?', true)) {
@@ -373,6 +375,9 @@ async function main(): Promise<void> {
       print(`✓ Экспорт проверен · коммиты: ${result.commits} · теги: ${result.tags}`, 'success');
       print(result.repository, 'muted');
     } else {
+      // Repeat the remote copy check for the planned head. Plan application then rejects any later ref change.
+      const recheck = remoteGate(remoteCopy(repo, plan.headOid), false);
+      if (recheck === 'block' || (recheck === 'confirm' && gate !== 'confirm')) throw new Error('Ветка или remote-ссылки изменились после проверки. Запустите скрипт заново.');
       const result = applyPlan(plan);
       print(`✓ Готово · коммиты: ${plan.commits}`, 'success');
       print(`Восстановление: ${result.recovery}${result.backupPrefix ? `\nБекап-ссылки: ${result.backupPrefix}` : ''}`, 'muted');
