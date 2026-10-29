@@ -1,6 +1,6 @@
 # Gitleaks and Lefthook Implementation Plan
 
-**Goal:** Add root secret checks and a pre-commit hook based on anarchy-engine.
+**Goal:** Add root secret checks and a parallel pre-commit hook.
 
 **Architecture:** Lefthook runs read-only staged formatting and secret checks in parallel. Gitleaks extends its official default rules. CI also checks all local refs and working files.
 

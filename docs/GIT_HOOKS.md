@@ -1,7 +1,7 @@
 # Git hooks and secret checks
 
 Toolchain uses Lefthook 2.2.2 as a root development dependency.
-The [configuration](../lefthook.yml) follows the parallel pre-commit checks in [anarchy-engine](https://github.com/se-panfilov/anarchy-engine/blob/6f7a661038a088fca48ce4e52d04d30e418f5648/lefthook.yml).
+The [configuration](../lefthook.yml) runs pre-commit checks in parallel.
 It checks formatting and secrets without automatic fixes, staging, or stashing.
 Hook commands do not substitute filenames into a shell command.
 

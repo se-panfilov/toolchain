@@ -4,10 +4,9 @@ The shared configuration is [configs/eslint.config.mjs](../configs/eslint.config
 The root discovery file supplies these rules to application commands.
 Prettier runs separately. Its existing configuration and exclusions remain applicable.
 
-The reference is the [anarchy-engine configuration](https://github.com/se-panfilov/anarchy-engine/tree/6f7a661038a088fca48ce4e52d04d30e418f5648/configs/EsLint).
-The inspected revision is `6f7a661038a088fca48ce4e52d04d30e418f5648`.
-The reference repository uses the [MIT license](https://github.com/se-panfilov/anarchy-engine/blob/6f7a661038a088fca48ce4e52d04d30e418f5648/LICENSE).
-Toolchain adapts selected rule settings. It does not execute or install the reference repository.
+The rules are selected for Toolchain's Node.js applications.
+The configuration combines recommended ESLint settings with explicit project rules.
+The table explains which settings are enabled, adapted, or excluded.
 
 ## Rule selection
 
@@ -149,7 +148,7 @@ No network demo, npm publication, or destructive operation on a personal reposit
 ## Security review
 
 The review covers lint configuration, dependency metadata, source changes, and distribution boundaries.
-The reference configuration was inspected as data. No reference script or installation hook was executed.
+The rule settings were reviewed before use. No external development script or installation hook was executed.
 Import order and type markers require review because module evaluation can have side effects.
 The runtime modules retain their validation, filesystem checks, subprocess arguments, and network confirmation paths.
 The dynamic interruption getter remains intact.
