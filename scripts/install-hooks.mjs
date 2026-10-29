@@ -3,7 +3,7 @@ import { lstatSync, realpathSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const root = realpathSync(fileURLToPath(new URL('../', import.meta.url)));
+const root = realpathSync.native(fileURLToPath(new URL('../', import.meta.url)));
 const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.toUpperCase().startsWith('GIT_')));
 
 function git(args) {
@@ -14,11 +14,11 @@ function git(args) {
 
 try {
   if (process.argv.length !== 2) throw new Error('Параметры не поддерживаются.');
-  if (realpathSync(git(['rev-parse', '--show-toplevel'])) !== root) throw new Error('Скрипт должен находиться в корне репозитория.');
+  if (realpathSync.native(git(['rev-parse', '--show-toplevel'])) !== root) throw new Error('Скрипт должен находиться в корне репозитория.');
   if (git(['config', '--null', '--name-only', '--get-regexp', '^core\\.hookspath$'])) throw new Error('core.hooksPath уже настроен. Установка отменена без изменения настройки.');
   // --git-path can resolve a linked hooks directory before lstat can reject it.
   const directory = join(git(['rev-parse', '--path-format=absolute', '--git-common-dir']), 'hooks');
-  if (realpathSync(dirname(directory)) !== dirname(directory)) throw new Error('Родительский каталог hooks не должен содержать ссылки.');
+  if (realpathSync.native(dirname(directory)) !== dirname(directory)) throw new Error('Родительский каталог hooks не должен содержать ссылки.');
   try {
     const stat = lstatSync(directory);
     if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('Каталог hooks должен быть обычным каталогом без ссылок.');

@@ -89,7 +89,7 @@ That limit does not bound the scanner's initial report writes or its total memor
 
 ## CI
 
-The [workflow](../.github/workflows/rehistory.yml) has a separate secrets job with read-only repository permission.
+The [Secrets workflow](../.github/workflows/secrets.yml) has read-only repository permission.
 Checkout retrieves complete history and does not retain GitHub credentials in Git configuration.
 The job downloads the official Gitleaks 8.30.1 Linux x64 archive and checks this SHA-256 before extraction:
 
@@ -150,3 +150,4 @@ The pre-commit hook was installed in the current checkout after the isolated ins
 Native Linux and Windows hook execution was not tested locally.
 The new Linux CI job must provide its own execution result after the branch is pushed.
 Application runtime source, version, and npm archive contents are unaffected by these repository-only changes.
+The task branch includes the current master changes. Its application version and three application workflows are preserved.

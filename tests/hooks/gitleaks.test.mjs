@@ -9,7 +9,8 @@ import { test } from 'vitest';
 
 const workspace = fileURLToPath(new URL('../../', import.meta.url));
 const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.toUpperCase().startsWith('GIT_') && !key.toUpperCase().startsWith('GITLEAKS_')));
-Object.assign(env, { GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_SYSTEM: devNull, GIT_CONFIG_GLOBAL: devNull, GIT_OPTIONAL_LOCKS: '0' });
+const gitNullConfig = process.platform === 'win32' ? 'nul' : devNull;
+Object.assign(env, { GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_SYSTEM: gitNullConfig, GIT_CONFIG_GLOBAL: gitNullConfig, GIT_OPTIONAL_LOCKS: '0' });
 // Construct a synthetic token at runtime. Never store a usable credential in source.
 const secret = ['gh', 'p_', 'm7K2p9Z4v6B8n3X5q1R0s2T4u6V8w9Y1a3C5'].join('');
 

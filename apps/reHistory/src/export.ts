@@ -21,15 +21,16 @@ function within(parent: string, child: string): boolean {
 /** Validate the destination without directory creation. Use this for dry-run too. */
 export function exportDestination(repo: Repository, destination: string): string {
   const absolute = resolve(destination);
-  const target = join(realpathSync(dirname(absolute)), basename(absolute));
+  const target = join(realpathSync.native(dirname(absolute)), basename(absolute));
   try {
     lstatSync(target);
     throw new Error('Каталог экспорта уже существует. Нужен новый путь.');
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
   }
-  const root = realpathSync(repo.text(['rev-parse', '--is-bare-repository']) === 'true' ? repo.common : repo.text(['rev-parse', '--show-toplevel']));
-  if (within(root, target) || within(target, root) || within(realpathSync(repo.common), target)) throw new Error('Экспорт должен находиться вне исходного репозитория и его служебного каталога.');
+  const root = realpathSync.native(repo.text(['rev-parse', '--is-bare-repository']) === 'true' ? repo.common : repo.text(['rev-parse', '--show-toplevel']));
+  if (within(root, target) || within(target, root) || within(realpathSync.native(repo.common), target))
+    throw new Error('Экспорт должен находиться вне исходного репозитория и его служебного каталога.');
   return target;
 }
 function equalSet(a: string[], b: string[]): boolean {
@@ -249,7 +250,7 @@ export function verifyExport(path: string): ExportReport {
   }
   const repo = new Repository(absolute);
   const actualGitDir = repo.text(['rev-parse', '--absolute-git-dir']);
-  if (realpathSync(repo.common) !== realpathSync(absolute) || realpathSync(actualGitDir) !== realpathSync(absolute)) {
+  if (realpathSync.native(repo.common) !== realpathSync.native(absolute) || realpathSync.native(actualGitDir) !== realpathSync.native(absolute)) {
     throw new Error('Git выбрал другой служебный каталог. Проверка экспорта остановлена.');
   }
   function check(ok: boolean, message: string): void {

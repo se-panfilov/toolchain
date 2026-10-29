@@ -4,13 +4,14 @@ import { devNull, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const root = realpathSync(fileURLToPath(new URL('../', import.meta.url)));
+const root = realpathSync.native(fileURLToPath(new URL('../', import.meta.url)));
+const gitNullConfig = process.platform === 'win32' ? 'nul' : devNull;
 class ScanFailure extends Error {}
 const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^(?:GIT_|GITLEAKS_)/i.test(key)));
 Object.assign(env, {
   GIT_CONFIG_NOSYSTEM: '1',
-  GIT_CONFIG_SYSTEM: devNull,
-  GIT_CONFIG_GLOBAL: devNull,
+  GIT_CONFIG_SYSTEM: gitNullConfig,
+  GIT_CONFIG_GLOBAL: gitNullConfig,
   GIT_OPTIONAL_LOCKS: '0',
   GIT_NO_REPLACE_OBJECTS: '1',
   GIT_CONFIG_COUNT: '3',
@@ -46,13 +47,13 @@ function stagedIndex() {
   const stat = lstatSync(path);
   if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1) throw new ScanFailure('Git-индекс должен быть обычным файлом без ссылок.');
   // Git can supply a temporary index for commit --only or commit --all.
-  env.GIT_INDEX_FILE = realpathSync(path);
+  env.GIT_INDEX_FILE = realpathSync.native(path);
 }
 
 function main() {
   const [mode, ...extra] = process.argv.slice(2);
   if (extra.length || !['staged', 'history', 'files'].includes(mode)) throw new ScanFailure('Укажите один режим: staged, history или files.');
-  if (realpathSync(git(['rev-parse', '--show-toplevel']).trim()) !== root) throw new ScanFailure('Скрипт должен находиться в корне выбранного репозитория.');
+  if (realpathSync.native(git(['rev-parse', '--show-toplevel']).trim()) !== root) throw new ScanFailure('Скрипт должен находиться в корне выбранного репозитория.');
   const keys = git(['config', '--null', '--name-only', '--list']).split('\0');
   if (keys.some((key) => /^filter\.[\s\S]*\.(?:clean|smudge|process)$/i.test(key))) throw new ScanFailure('Git-фильтры не поддерживаются для проверки секретов.');
   if (keys.some((key) => /^(?:diff\.[\s\S]*\.(?:textconv|command)|diff\.external)$/i.test(key))) throw new ScanFailure('Внешние Git diff-драйверы не поддерживаются для проверки секретов.');
