@@ -9,14 +9,19 @@ Use [SECURITY.md](SECURITY.md) for security controls and limits.
 
 ## Package structure
 
-| Path                | Purpose                                               |
-| ------------------- | ----------------------------------------------------- |
-| `src/`              | TypeScript application modules.                       |
-| `test/`             | Vitest unit, integration, and build regression tests. |
-| `scripts/build.mjs` | Type checking, Vite build, and output publication.    |
-| `dist/src/`         | Compiled runtime modules.                             |
-| `vite.config.mjs`   | Node.js build target, aliases, and module output.     |
-| `vitest.config.mjs` | Test isolation and shared Vite alias resolution.      |
+| Path                | Purpose                                                          |
+| ------------------- | ---------------------------------------------------------------- |
+| `src/`              | TypeScript application modules.                                  |
+| `test/`             | Vitest unit, integration, and build regression tests.            |
+| `scripts/build.mjs` | Type checking, Vite build, and safe output publication.          |
+| `dist/src/`         | Compiled runtime modules for local execution and npx.            |
+| `tsconfig.json`     | Application paths and aliases extending the shared base.         |
+| `vite.config.mjs`   | Application entries and namespace using the shared CLI preset.   |
+| `vitest.config.mjs` | Application root and alias mapping using the shared test preset. |
+
+Shared tool versions and the only lockfile belong to the Toolchain root.
+Shared configuration is in `configs/` at that root.
+Run dependency installation from the Toolchain root.
 
 The package is a CLI without a public import API.
 Its exports map is empty.
@@ -64,21 +69,23 @@ The interactive modes do not operate with `TERM=dumb`.
 Replace the example paths with your paths.
 Put paths that contain spaces in double quotes.
 
-Install build dependencies from the package directory:
+Install build dependencies from the Toolchain root:
 
 ```sh
-cd /path/to/toolchain/apps/reHistory
+cd /path/to/toolchain
 npm ci --ignore-scripts
-npm run build
+npm run build --workspace tx-rehistory
 ```
 
 Compile the application before execution.
 Local execution and npx use the same entry point, `dist/src/cli.js`.
 Rebuild after source changes.
-Use `npm start -- --help` to build and then run the local application.
+From the Toolchain root, use `npm run start --workspace tx-rehistory -- --help` to build and run the application.
 A build error stops this command before application startup.
 
-Without `--repo`, the program uses the current directory.
+Without `--repo`, the program uses the current process directory.
+An npm workspace script runs in the application directory.
+Supply `--repo /path/to/project` when you start through an npm script.
 
 ```sh
 node /path/to/toolchain/apps/reHistory/dist/src/cli.js --help
@@ -611,10 +618,10 @@ After npm publication, use this command:
 npx tx-rehistory --help
 ```
 
-1. Open the package directory.
+1. Open the Toolchain root.
 
    ```sh
-   cd /path/to/toolchain/apps/reHistory
+   cd /path/to/toolchain
    ```
 
 2. Install the locked build dependencies.
@@ -626,28 +633,29 @@ npx tx-rehistory --help
 3. Do the tests.
 
    ```sh
-   npm test
+   npm test --workspace tx-rehistory
    ```
 
 4. Make the JavaScript build.
 
    ```sh
-   npm run build
+   npm run build --workspace tx-rehistory
    ```
 
 5. Examine the package contents.
 
    ```sh
-   npm pack --dry-run
+   npm pack --workspace tx-rehistory --dry-run
    ```
 
 6. Make a local archive.
 
    ```sh
-   npm pack --pack-destination /path/to/package-directory
+   npm pack --workspace tx-rehistory --pack-destination /path/to/package-directory
    ```
 
-The build runs `tsc --noEmit` with tsconfig.json, then Vite.
+The build runs `tsc --noEmit` with the application tsconfig.json, then Vite.
+That config extends `configs/tsconfig.base.json` at the Toolchain root.
 Both stages complete before files enter `dist/`.
 Vite alone does not check types.
 The TypeScript configuration uses ES2023, ESNext modules, Bundler resolution, and Node.js types.
@@ -674,7 +682,8 @@ npx --offline --yes --package /path/to/PACKAGE.tgz tx-rehistory --help
 
 ### Publish the current version
 
-Run these commands from the source checkout after installing the locked development dependencies.
+Run these release commands from the application directory after installing dependencies at the Toolchain root.
+Run `npm run check` from the root before release.
 Configure npm authentication separately with `npm login`.
 
 Check the release without publishing:
@@ -689,14 +698,15 @@ Publish the current version:
 npm run release
 ```
 
-From the Toolchain root, use `npm --prefix apps/reHistory run release`.
+From the Toolchain root, use `npm run release --workspace tx-rehistory`.
 The command runs this sequence:
 
 ```sh
-npm run check && npm pack --ignore-scripts && npm publish --ignore-scripts --registry=https://registry.npmjs.org/ --access=public
+npm pack --ignore-scripts && npm publish --ignore-scripts --registry=https://registry.npmjs.org/ --access=public
 ```
 
-The check includes formatting, lint, TypeScript, the Vite build, and all application tests.
+The separate root check includes formatting, lint, TypeScript, the Vite build, and all application tests.
+The release command does not build or test automatically.
 A failed step stops the sequence.
 Packing and publishing skip lifecycle scripts, so they do not repeat the build.
 The dry-run command adds `--dry-run` to the final npm publish step.
@@ -714,18 +724,19 @@ After a connection error, inspect the registry before repeating publication.
 ## Development checks
 
 ```sh
-cd /path/to/toolchain/apps/reHistory
+cd /path/to/toolchain
 npm run format
 npm run lint
 npm run typecheck
-npm test
+npm test --workspace tx-rehistory
 ```
 
 Use `npm run format:check` for a read-only formatting check.
 Use `npm run lint:fix` for explicit ESLint fixes.
 Use `npm run check` for formatting checks, lint, type checks, and the complete test suite.
 The lint command rejects warnings as well as errors.
-The existing .prettierrc and .prettierignore define formatting and excluded paths.
+The root Prettier discovery file and .prettierignore select shared formatting and exclusions.
+ESLint settings, TypeScript defaults, and build and test presets live in the root configs directory.
 ESLint uses the recommended JavaScript and TypeScript rules with Node.js globals.
 eslint-config-prettier disables conflicting style rules. Prettier runs separately.
 Generated output, dependencies, coverage, and reports stay outside these checks.
@@ -735,15 +746,15 @@ The unit suite covers dates, identities, signature removal, environment isolatio
 The integration suite uses real Git commands in different temporary repositories.
 The subprocess tests also exercise the built JavaScript modules.
 
-Use `npm run test:unit` for unit and terminal tests.
-Use `npm run test:watch` to watch those source-only suites.
-Use `npm test` after changes to check the build and all integration regressions.
+From the root, use `npm run test:unit --workspace tx-rehistory` for unit and terminal tests.
+Use `npm run test:watch --workspace tx-rehistory` to watch those source-only suites.
+Use `npm test --workspace tx-rehistory` after changes to check the build and all integration regressions.
 Test files run in isolated fork processes, with at most three workers.
 The worker count is capped by available CPU parallelism.
 Tests inside each file remain sequential to protect process state.
 The complete suite retains every integration and security regression.
 The check command uses the build's mandatory TypeScript check without running it twice.
-Use `npm test -- --no-file-parallelism --maxWorkers=1` for sequential diagnosis.
+Use `npm test --workspace tx-rehistory -- --no-file-parallelism --maxWorkers=1` for sequential diagnosis.
 The demo test uses a local test server through a transport adapter.
 A specified network URL is necessary for the product demo.
 

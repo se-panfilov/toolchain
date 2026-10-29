@@ -5,7 +5,7 @@ import globals from 'globals';
 import prettier from 'eslint-config-prettier/flat';
 
 export default defineConfig([
-  { ignores: ['dist/**', 'node_modules/**', 'coverage/**', 'reports/**'] },
+  { ignores: ['**/dist/**', '**/node_modules/**', '**/coverage/**', '**/reports/**', '.agents/**', '.claude/**', '.codex/**', '.gemini/**'] },
   {
     files: ['**/*.{js,mjs,ts}'],
     extends: [js.configs.recommended],
