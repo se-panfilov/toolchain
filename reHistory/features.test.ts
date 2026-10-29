@@ -217,3 +217,27 @@ test('проверка экспорта отвергает дополнител�
   new Repository(target).git(['config', 'user.email', 'extra@example.org']);
   assert(verifyExport(target).errors.some(e => e.includes('посторонние настройки')));
 });
+
+
+test('refs/codex/* сохраняются при переписывании и не попадают в экспорт', t => {
+  const repo = fixture(t);
+  const checkpoint = 'refs/codex/turn-diffs/checkpoints/session/turn/1793225263690/checkpoint';
+  const original = repo.text(['rev-parse', 'HEAD']);
+  repo.git(['update-ref', checkpoint, original]);
+  const plan = makePlan(repo, settings);
+  assert(!plan.selected.some(r => r.name.startsWith('refs/codex/')));
+  applyPlan(plan);
+  assert.equal(repo.text(['rev-parse', checkpoint]), original);
+  assert.notEqual(repo.text(['rev-parse', 'HEAD']), original);
+  const audit = auditRepository(repo);
+  assert(audit.refs.some(r => r.name === checkpoint && !r.inCurrentHistory));
+  const target = join(repo.path, '..', 'export.git');
+  assert.equal(exportPlan(makePlan(repo, settings), target).ok, true);
+  assert(!new Repository(target).refs().some(r => r.name.startsWith('refs/codex/')));
+});
+
+test('refs/codex без разделителя пространства имён не разрешает посторонние refs', t => {
+  const repo = fixture(t);
+  repo.git(['update-ref', 'refs/codex-untrusted/test', repo.text(['rev-parse', 'HEAD'])]);
+  assert.throws(() => makePlan(repo, settings), /Неподдерживаемые/);
+});
