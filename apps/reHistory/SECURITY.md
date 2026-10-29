@@ -252,6 +252,35 @@ Ref updates still use the atomic Git transaction.
 SIGKILL, crashes, power loss, or other abrupt termination can leave a lock.
 Examine the recorded process and recovery file before removing that lock manually.
 
+## Release command
+
+The development-only release command runs the complete check before packaging.
+It publishes an explicit tarball instead of rebuilding during publication.
+The command does not increment versions or create Git refs.
+The dry-run branch never invokes npm publish.
+
+Packing and installed-bin checks use offline npm, blank account configurations, and a private cache.
+The existing package release-age policy remains seven days.
+The final publish uses the user's npm authentication and the fixed public registry.
+Lifecycle scripts are disabled for pack, local installation, and publication.
+The local check still executes the reviewed application check script.
+
+The archive validator limits compressed and decompressed data to 16 MiB.
+It checks header checksums, regular file types, exact names, duplicates, file modes, complete endings, and file bytes.
+It rejects unsupported tar extensions and writes only allowlisted files into a new private directory.
+The bin and read-only audit run outside the source checkout through offline npm exec.
+A synthetic Git fixture verifies that audit leaves its repository unchanged.
+
+Input snapshots and final byte comparisons detect cooperative concurrent source or archive changes.
+They do not prevent a hostile local owner from changing files after the final check.
+The operating system, npm executable, development dependencies, and publication account configuration must be trusted.
+Allowed source and documentation files can still contain secrets that require manual review.
+
+The command retains release artifacts for inspection.
+Inspect the printed private directory before manually removing it.
+A failed publication response can leave the registry state uncertain.
+The command does not retry publication automatically.
+
 ## Known limits
 
 - Changed Git dates do not show the time of the work.
