@@ -6,10 +6,10 @@ Compile to JavaScript before execution.
 Use Vite for application builds and Vitest for tests.
 Check types separately with `tsc --noEmit`.
 Use the same `dist/` output for local execution and npx.
-Keep all applications in separate directories under `packages/`.
+Keep all applications in separate directories under `apps/`.
 Use `tx-` followed by the directory name in lowercase for npm packages and CLI commands.
 
-- [reHistory](packages/reHistory/README.md) changes Git dates and makes an export.
+- [reHistory](apps/reHistory/README.md) changes Git dates and makes an export.
 
 The documentation uses English with ASD-STE100 writing rules.
 Code comments use English.

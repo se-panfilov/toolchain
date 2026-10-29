@@ -30,5 +30,5 @@ Use tables for comparisons and mappings.
 Explain preconditions, expected results, cancellation, and recovery when the operation needs them.
 Distinguish a verified result from a recommendation or an untested assumption.
 
-The [reHistory terminology](../packages/reHistory/TERMINOLOGY.md) contains terms for that utility.
+The [reHistory terminology](../apps/reHistory/TERMINOLOGY.md) contains terms for that utility.
 It does not define requirements for unrelated utilities.

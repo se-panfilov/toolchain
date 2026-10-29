@@ -40,13 +40,16 @@ Keep utility-specific requirements in the relevant utility documentation.
 - Support macOS first. Prefer portable Node.js APIs and explicit platform checks.
 - Read package engine requirements before execution. The current reHistory minimum is Node.js 24.12.0.
 - Keep runtime imports explicit. Treat compilation as a type check, not only type stripping.
-- Put all applications in `packages/`. Give each utility its own directory, documentation, and necessary package metadata.
+- Put all applications in `apps/`. Give each utility its own directory, documentation, and necessary package metadata.
 - Name each application's npm package and CLI command `tx-` followed by its directory name in lowercase.
-- For example, `packages/reHistory` uses `tx-rehistory`. Keep the directory name unchanged.
+- For example, `apps/reHistory` uses `tx-rehistory`. Keep the directory name unchanged.
 - Keep shared code small. Do not add a framework or workspace manager without a concrete need.
 - Prefer Node.js built-ins. Evaluate the need and security impact of each added dependency.
 - Follow `.editorconfig`. Edit source files instead of generated build output.
 - Do not assume that the repository root has npm scripts. Read the relevant utility's `package.json`.
+- Update each changed application's version once per iteration according to [the SemVer policy](docs/PACKAGES.md#version-policy).
+- Use `npm version patch --no-git-tag-version --ignore-scripts` (or `minor`/`major`) in the application directory. Never edit version strings directly.
+- Preserve user version changes. Do not repeat an iteration's completed bump or create Git commits or tags through npm.
 
 ## CLI behavior
 
@@ -114,20 +117,20 @@ Keep utility-specific requirements in the relevant utility documentation.
 ## Current utility
 
 reHistory changes the current Git branch and its corresponding tags.
-Read its [README](packages/reHistory/README.md) and [security notes](packages/reHistory/SECURITY.md) before changing its behavior.
-Use its [terminology](packages/reHistory/TERMINOLOGY.md) for reHistory documentation.
+Read its [README](apps/reHistory/README.md) and [security notes](apps/reHistory/SECURITY.md) before changing its behavior.
+Use its [terminology](apps/reHistory/TERMINOLOGY.md) for reHistory documentation.
 Its README describes local npm archive preparation. Publication requires separate explicit authorization.
 
 Run these commands from the repository root when relevant:
 
 ```sh
-npm --prefix packages/reHistory test
-npm --prefix packages/reHistory run format
-npm --prefix packages/reHistory run format:check
-npm --prefix packages/reHistory run lint
-npm --prefix packages/reHistory run typecheck
-npm --prefix packages/reHistory run build
-node packages/reHistory/dist/src/cli.js --help
+npm --prefix apps/reHistory test
+npm --prefix apps/reHistory run format
+npm --prefix apps/reHistory run format:check
+npm --prefix apps/reHistory run lint
+npm --prefix apps/reHistory run typecheck
+npm --prefix apps/reHistory run build
+node apps/reHistory/dist/src/cli.js --help
 ```
 
 reHistory checks types with tsconfig.json, builds with Vite, and tests with Vitest.

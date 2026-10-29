@@ -1,6 +1,6 @@
 # Application package requirements
 
-These requirements apply to each application under `packages/`.
+These requirements apply to each application under `apps/`.
 They are Toolchain conventions based on the official references below.
 npm does not require a source directory named `lib`.
 
@@ -39,6 +39,38 @@ Exclude tests and build scripts from publication.
 
 An exports map defines the supported import API. It is not an access control boundary.
 Publication remains subject to the authorization limits in AGENTS.md.
+
+## Version policy
+
+Update each changed application's version once per completed iteration.
+Choose the increment from the observable changes to that application.
+Use the largest required increment when an iteration combines different change types.
+
+| Increment | Change                                                                                                                                         |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `patch`   | Compatible bug or security fixes, performance improvements, internal refactoring, packaging corrections, or application documentation changes. |
+| `minor`   | New backward-compatible application functionality or a public deprecation.                                                                     |
+| `major`   | Incompatible changes to the supported CLI, JSON output contract, defaults, runtime requirements, or public API.                                |
+
+Repository-only instructions do not require changing an unaffected application version.
+A directory move does not require a major increment when the installed CLI contract remains compatible.
+Do not repeat a bump already completed by the user for the same iteration.
+Use prerelease identifiers only when the release channel requires them.
+
+Before changing a version, inspect package scripts and current metadata.
+Run this command in the application directory:
+
+```sh
+npm version patch --no-git-tag-version --ignore-scripts
+```
+
+Replace `patch` with `minor` or `major` when required.
+Never edit version strings directly in package.json or lockfiles.
+The command must update package.json and the tracked npm lockfile together.
+The flags prevent Git commits, Git tags, and version lifecycle scripts.
+Do not use `--force` to bypass version checks.
+Verify the resulting version and lockfile consistency.
+A version change does not authorize publication.
 
 ## TypeScript and imports
 
@@ -88,13 +120,21 @@ Test error paths, stale output, alias resolution, and source-independent archive
 Use Vitest for unit and integration tests in every TypeScript application.
 Migrate existing tests when their assertions, isolation, cleanup, and safety properties can be preserved.
 Use test-scoped cleanup and restore changed environment or global state.
-Run tests that modify process state sequentially or in isolated workers.
+Run tests that modify process state sequentially within a file.
+Parallel files must use isolated processes and independent temporary fixtures.
+Bound worker count by available CPUs and expected resource use.
+Measure full-suite runtime before and after performance changes.
+Keep security assertions and failure cases in the complete suite.
+Avoid duplicate type checks when the tested build already requires `tsc --noEmit`.
 Include failure cases for changes to user data. Do not replace these checks with mocked success paths.
 Vitest can transform source modules for tests. Also check the actual build and installed archive.
 Keep changes to runtime behavior separate from structural changes when practical.
 Run security review after each stage and separately after implementation.
 
 ## References
+
+- [Semantic Versioning 2.0.0](https://semver.org/).
+- [npm version and Git tag controls](https://docs.npmjs.com/cli/v11/commands/npm-version/).
 
 - [npm package metadata, bin, files, and repository directory](https://docs.npmjs.com/cli/v11/configuring-npm/package-json/).
 - [Vite TypeScript transforms and type checking](https://vite.dev/guide/features.html#typescript).
