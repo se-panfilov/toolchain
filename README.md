@@ -32,6 +32,9 @@ npm run format
 npm run check
 ```
 
+Install the optional local commit checks with `npm run hooks:install` after installing Gitleaks.
+See [Git hooks and secret checks](docs/GIT_HOOKS.md) for prerequisites, configuration sources, CI checks, and operating limits.
+
 The check command runs formatting checks, lint, and all workspace tests.
 Each application test command builds and checks TypeScript before testing.
 Build output in each application's `dist/` is the runtime for local use and npx.

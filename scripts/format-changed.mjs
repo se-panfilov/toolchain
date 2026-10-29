@@ -15,7 +15,7 @@ const safe = (value) => String(value).replace(/[\p{Cc}\p{Cf}]/gu, (character) =>
 function run(program, args) {
   const result = spawnSync(program, args, { cwd: root, env, maxBuffer: 16 * 1024 * 1024, timeout: 60000, windowsHide: true });
   if (result.error) throw new Error(`Не удалось запустить процесс: ${result.error.message}`, { cause: result.error });
-  if (result.status !== 0) throw new Error(`Процесс завершился с ошибкой (${result.status}):\n${result.stderr}`);
+  if (result.status !== 0) throw new Error(`Процесс завершился с ошибкой (${result.status}). Проверьте выбранные файлы локально. Содержимое файлов скрыто.`);
   return result.stdout;
 }
 
@@ -48,6 +48,17 @@ async function main() {
     throw new Error('Git-фильтры не поддерживаются. Используйте отдельную копию без filter.*.clean/process/smudge.');
   const staged = args.includes('--staged');
   const check = args.includes('--check');
+  if (staged) {
+    const indexes = Object.entries(process.env)
+      .filter(([key]) => key.toUpperCase() === 'GIT_INDEX_FILE')
+      .map(([, value]) => resolve(root, value));
+    if (new Set(indexes).size > 1) throw new Error('Указаны разные Git-индексы.');
+    if (indexes.length) {
+      const stat = lstatSync(indexes[0]);
+      if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1) throw new Error('Git-индекс должен быть обычным файлом без ссылок.');
+      env.GIT_INDEX_FILE = realpathSync(indexes[0]);
+    }
+  }
   const names = changed(staged ? ['--cached'] : ['HEAD']);
   const unstaged = staged ? new Set(changed([])) : new Set();
   const files = [];

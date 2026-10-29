@@ -80,6 +80,8 @@ NUL-separated Git output preserves spaces and line breaks in filenames.
 Subprocess argument arrays and absolute paths prevent filename option injection.
 The helper rejects invalid UTF-8, file links, linked parent directories, and partly staged files in staged mode.
 It removes inherited Git routing variables and disables external diff commands, text conversion, hooks, and filesystem monitoring.
+In staged mode, it preserves the explicit GIT_INDEX_FILE supplied by Git after validating that file.
+This supports temporary commit indexes without changing another staged snapshot.
 It rejects configured Git content filters before diff and excludes submodule content.
 It checks file identity and modification metadata again before each formatter batch.
 Subprocesses have a 60-second timeout and a 16 MiB output limit.
