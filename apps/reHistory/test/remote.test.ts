@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 import { applyPlan, makePlan, normalizeCommitMessage, Repository, runGit } from '@reHistory/engine';
 import { exportPlan, manifestName, verifyExport } from '@reHistory/export';
-import { executePush, networkGit, preparePush, pushRemotes, type PushTransport, remoteCopy, updateTrackingRef, validateRemoteURL } from '@reHistory/remote';
+import { executePush, networkGit, preparePush, pushRemotes, type PushTransport, remoteCopy, sharedTags, updateTrackingRef, validateRemoteURL } from '@reHistory/remote';
 import { test } from 'vitest';
 
 const settings = { flow: 'dates' as const, start: 1700000000, interval: 1 };
@@ -274,9 +274,56 @@ test('пустой сервер использует пустые lease и по�
   applyPlan(plan);
   const push = preparePush(plan, 'origin', connection);
   assert(push.refs.every((ref) => ref.expected === ''));
-  executePush(push, connection);
+  assert.deepEqual(
+    push.optional.map((ref) => [ref.destination, ref.reasons]),
+    [['refs/tags/release', ['new']]]
+  );
+  executePush(push, connection, true);
   const names = git(['--git-dir', server, 'for-each-ref', '--format=%(refname)']).toString().trim().split('\n');
   assert.deepEqual(names.sort(), plan.selected.map((ref) => ref.name).sort());
+});
+
+test('новые локальные теги не отправляются без отдельного выбора', (t) => {
+  const { repo, connection, git, server, stats } = fixture(t);
+  repo.git(['tag', 'local-only']);
+  const plan = makePlan(repo, settings);
+  applyPlan(plan);
+  const push = preparePush(plan, 'origin', connection);
+  assert.deepEqual(
+    push.optional.map((ref) => [ref.destination, ref.reasons]),
+    [['refs/tags/local-only', ['new']]]
+  );
+  executePush(push, connection);
+  assert(!stats().lastArgs.some((arg) => arg.includes('local-only')));
+  assert.equal(git(['--git-dir', server, 'for-each-ref', 'refs/tags/local-only']).toString(), '');
+  assert.equal(git(['--git-dir', server, 'rev-parse', 'refs/tags/release^{}']).toString().trim(), repo.text(['rev-parse', 'refs/tags/release^{}']));
+});
+
+test('теги других веток переносятся на сервере только после отдельного выбора', (t) => {
+  const { repo, connection, git, server } = fixture(t);
+  repo.git(['checkout', '-q', '-b', 'feature']);
+  repo.git(['commit', '-q', '--allow-empty', '-m', 'feature']);
+  git(['push', server, 'feature']);
+  const release = git(['--git-dir', server, 'rev-parse', 'refs/tags/release']).toString().trim();
+  const plan = makePlan(repo, { ...settings, backupBranch: 'backup' });
+  applyPlan(plan);
+  assert.deepEqual(sharedTags(plan), new Set(['refs/tags/release']));
+  const push = preparePush(plan, 'origin', connection);
+  assert.deepEqual(
+    push.refs.map((ref) => ref.destination),
+    ['refs/heads/feature']
+  );
+  assert.deepEqual(
+    push.optional.map((ref) => [ref.destination, ref.reasons]),
+    [['refs/tags/release', ['shared']]]
+  );
+  executePush(push, connection);
+  assert.equal(git(['--git-dir', server, 'rev-parse', 'refs/tags/release']).toString().trim(), release);
+  assert.equal(git(['--git-dir', server, 'rev-parse', 'feature']).toString().trim(), plan.mapping.get(plan.headOid));
+  // The release tag stays in the history of main on the server.
+  git(['--git-dir', server, 'merge-base', '--is-ancestor', 'refs/tags/release^{}', 'main']);
+  executePush(preparePush(plan, 'origin', connection), connection, true);
+  assert.equal(git(['--git-dir', server, 'rev-parse', 'refs/tags/release']).toString().trim(), plan.mapping.get(plan.selected.find((ref) => ref.name === 'refs/tags/release')!.oid));
 });
 
 test('сетевой адаптер отключает helpers, askpass, redirects и произвольные SSH-команды', () => {

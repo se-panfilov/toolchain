@@ -9,7 +9,7 @@ import { runDemo, validateDemoURL } from '@reHistory/demo';
 import { applyPlan, defaultBackupBranch, type Flow, flows, makePlan, normalizeCommitMessage, type Options, type Plan, Repository, terminalJSON, validateIdentity } from '@reHistory/engine';
 import { exportDestination, exportPlan, verifyExport } from '@reHistory/export';
 import { PromptCancelled, TerminalPrompts, terminalStyle } from '@reHistory/prompts';
-import { executePush, preparePush, pushRemotes, type RemoteCopy, remoteCopy, updateTrackingRef } from '@reHistory/remote';
+import { executePush, preparePush, pushRemotes, type RemoteCopy, remoteCopy, sharedTags, updateTrackingRef } from '@reHistory/remote';
 
 // Git metadata and errors can contain terminal control characters.
 function safe(value: unknown): string {
@@ -215,12 +215,22 @@ async function main(): Promise<void> {
       const push = preparePush(plan, remotes.names[index]);
       print(`Push → ${push.remote} · ${push.url}`, 'accent');
       for (const ref of push.refs) print(`${ref.destination}: ${ref.expected ? ref.expected.slice(0, 12) : 'новая ссылка'} → ${ref.oid.slice(0, 12)}`);
+      let includeOptional = false;
+      if (push.optional.length) {
+        print(`Теги, которые требуют отдельного решения: ${push.optional.length}`, 'warning');
+        const reasons = { shared: 'есть в других ветках', new: 'нет на сервере' };
+        for (const ref of push.optional)
+          print(`  ${ref.destination}: ${ref.expected ? ref.expected.slice(0, 12) : 'новая ссылка'} → ${ref.oid.slice(0, 12)} · ${ref.reasons.map((reason) => reasons[reason]).join(', ')}`, 'warning');
+        print('Перенос общих тегов уводит их из истории других веток, например релизные теги master. Новые теги станут публичными.', 'warning');
+        includeOptional = await choose('Отправить и эти теги?', false);
+      }
       print('Другие ссылки и старые копии остаются без изменений.', 'muted');
-      if (!(await choose('Отправить ветку и теги?', false))) {
+      if (!(await choose(includeOptional ? 'Отправить ветку и все показанные теги?' : 'Отправить ветку и теги без отдельного решения?', false))) {
         print('Push пропущен.');
         return;
       }
-      executePush(push);
+      executePush(push, undefined, includeOptional);
+      if (push.optional.length && !includeOptional) print(`Не отправлены теги: ${push.optional.length}. Локально они уже переписаны.`, 'warning');
       print('✓ Push выполнен.', 'success');
       try {
         const tracking = updateTrackingRef(push);
@@ -356,6 +366,8 @@ async function main(): Promise<void> {
       print(`Подписи и mergetag к удалению: ${plan.stripped}`, 'warning');
       print('Новые коммиты и теги нельзя подписать заново. Без удаления подписей переписывание невозможно.', 'warning');
     }
+    const shared = mode.destination ? 0 : sharedTags(plan).size;
+    if (shared) print(`Теги, которые есть и в других ветках: ${shared}. Локально они разойдутся с этими ветками. Push — только после отдельного подтверждения.`, 'warning');
     if (options.flow === 'dates') print('Даты условные; старые копии сохраняют исходную историю.', 'muted');
     if (!mode.destination && plan.selected.every((ref) => plan.mapping.get(ref.oid) === ref.oid)) {
       print('Изменений нет: история уже соответствует параметрам.', 'success');
