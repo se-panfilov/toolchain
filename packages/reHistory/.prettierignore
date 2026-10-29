@@ -1,0 +1,7 @@
+node_modules
+dist
+reports
+coverage
+pnpm-lock.yaml
+package-lock.json
+.github

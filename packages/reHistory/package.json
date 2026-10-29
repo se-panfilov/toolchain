@@ -24,18 +24,19 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "npm run build && node --test test/build.test.mjs dist/test/engine.test.js dist/test/features.test.js dist/test/prompts.test.js",
+    "test": "npm run build && vitest run",
     "start": "npm run build && node dist/src/cli.js",
     "typecheck": "tsc --project tsconfig.json --noEmit",
     "build": "node scripts/build.mjs",
-    "prepack": "npm run build"
+    "prepack": "npm run build",
+    "test:watch": "vitest test/unit.test.ts test/prompts.test.ts",
+    "test:unit": "vitest run test/unit.test.ts test/prompts.test.ts"
   },
   "devDependencies": {
     "@types/node": "24.10.1",
-    "typescript": "5.9.3"
-  },
-  "imports": {
-    "#rehistory/*": "./dist/src/*.js"
+    "typescript": "5.9.3",
+    "vite": "8.3.5",
+    "vitest": "5.0.5"
   },
   "exports": {},
   "repository": {
