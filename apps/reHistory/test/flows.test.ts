@@ -304,3 +304,22 @@ test.skipIf(process.platform === 'win32')('CLI не применяет план 
   assert.equal(repo.text(['rev-parse', 'HEAD']), head);
   assert.throws(() => repo.text(['rev-parse', '--verify', 'refs/heads/backup']));
 });
+
+test('план останавливается, если в хранилище нет дерева коммита', (t) => {
+  const repo = fixture(t);
+  writeFileSync(join(repo.path, 'file.txt'), 'data\n');
+  repo.git(['add', '--', 'file.txt']);
+  repo.git(['commit', '-q', '-m', 'файл']);
+  writeFileSync(join(repo.path, 'file.txt'), 'other\n');
+  repo.git(['commit', '-q', '-am', 'другой файл']);
+  const tree = repo.text(['rev-parse', 'HEAD~1^{tree}']);
+  rmSync(join(repo.common, 'objects', tree.slice(0, 2), tree.slice(2)));
+  const head = repo.text(['rev-parse', 'HEAD']);
+  for (const options of [
+    { flow: 'dates', start: 1700000000, interval: 1 },
+    { flow: 'authors', identity },
+    { flow: 'messages', commitMessage: 'x' }
+  ] as Options[])
+    assert.throws(() => makePlan(repo, options), new RegExp(`нет дерева ${tree}`));
+  assert.equal(repo.text(['rev-parse', 'HEAD']), head);
+});
