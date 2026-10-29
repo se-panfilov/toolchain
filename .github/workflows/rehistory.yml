@@ -1,9 +1,9 @@
 name: reHistory checks
 on:
   pull_request:
-    paths: ['apps/reHistory/**', '.github/workflows/rehistory.yml']
+    paths: ['apps/reHistory/**', '.github/workflows/rehistory.yml', '.gitattributes']
   push:
-    paths: ['apps/reHistory/**', '.github/workflows/rehistory.yml']
+    paths: ['apps/reHistory/**', '.github/workflows/rehistory.yml', '.gitattributes']
   workflow_dispatch:
 permissions:
   contents: read

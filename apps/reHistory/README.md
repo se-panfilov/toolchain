@@ -371,7 +371,7 @@ The check rejects Git discovery that selects a different repository directory.
 The manifest rejects unknown fields, duplicate entries, and invalid identities.
 HEAD and loose refs must contain only their expected values.
 The config must contain only supported settings and values, without comments or duplicate keys.
-It also uses `git fsck --full --strict --no-reflogs`.
+It also uses strict Git fsck with only `fsck.zeroPaddedFilemode=ignore`.
 
 If a check fails, the program keeps the not complete destination.
 Do not publish that destination.
@@ -530,7 +530,9 @@ The recovery file cannot restore objects that are not available.
 6. Remove the lock file only after these checks.
 
 An existing lock error shows its PID when readable.
-Ctrl+C is deferred during the local apply phase so cleanup can run.
+Ctrl+C is recorded during local application, including signals queued during JavaScript work.
+After successful application and lock cleanup, interruption exits with code 130 without a push question.
+The completed local rewrite remains saved.
 An interrupted Git subprocess can still abort the atomic ref transaction.
 Forced termination, a crash, or power loss can leave the lock.
 Do not remove an active lock file.
@@ -547,6 +549,11 @@ Generated metadata containing NUL is also rejected.
 Other binary message bytes remain unchanged unless you select message replacement.
 Git validates the metadata pack with `index-pack --strict` before the ref transaction.
 The program does not bypass validation with `--literally`.
+
+Export preserves historical tree modes with leading zeros, such as `040000`.
+Content import and final verification ignore only the `zeroPaddedFilemode` diagnostic.
+Other structural errors remain blocking.
+Tree and blob bytes and their object IDs remain unchanged.
 
 Planning reads commits in groups and computes object IDs in Node.js.
 Applying a plan writes the generated metadata through one pack import.
