@@ -4,8 +4,8 @@ import { mkdtempSync, rmSync, writeFileSync, readdirSync, readFileSync, mkdirSyn
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { Repository, makePlan, applyPlan, validateIdentity, runGit } from './engine.ts';
-import { parseDate } from './cli.ts';
+import { Repository, makePlan, applyPlan, validateIdentity, runGit, defaultBackupBranch } from './engine.ts';
+import { parseDate, parseStart } from './cli.ts';
 
 function fixture(t: { after: (fn: () => void) => void }, format?: string): Repository {
   const dir = mkdtempSync(join(tmpdir(), 'rehistory-test-'));
@@ -53,6 +53,9 @@ test('merge-граф, содержимое, сообщения, другие в�
   const before = repo.text(['rev-list', '--reverse', '--topo-order', 'HEAD']).split('\n');
   const plan = makePlan(repo, { ...options, interval: 3, backupBranch: 'rehistory-backup/test' });
   const result = applyPlan(plan);
+  const uuid = '[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}';
+  assert.match(result.backupPrefix!, new RegExp(`^refs/rehistory/backups/${uuid}$`));
+  assert.match(result.recovery.split(/[\\/]/).at(-1)!, new RegExp(`^rehistory-recovery-${uuid}\\.json$`));
   assert.equal(repo.text(['rev-parse', 'other']), root);
   assert.equal(repo.text(['rev-parse', 'feature']), feature);
   assert.equal(repo.text(['rev-parse', 'origin/main']), root);
@@ -253,4 +256,47 @@ test('переменные GIT_* не перенаправляют работу 
   assert.deepEqual(JSON.parse(result.stdout.toString()), { commits: 1, common: repo.common }, diagnostic);
   assert.deepEqual(snapshot(repo), before);
   assert.deepEqual(snapshot(foreign), foreignBefore);
+});
+
+
+test('фиксированное имя бекапа не содержит времени и не перезаписывается', t => {
+  const repo = fixture(t);
+  assert.equal(defaultBackupBranch, 'rehistory-backup/original');
+  repo.git(['branch', defaultBackupBranch]);
+  const before = snapshot(repo);
+  assert.throws(() => makePlan(repo, { ...options, backupBranch: defaultBackupBranch }), /уже существует/);
+  assert.deepEqual(snapshot(repo), before);
+});
+
+test('отдельное время первого коммита: минуты, секунды, UTC и смещение', () => {
+  assert.equal(parseStart('2026-10-29', '18:45:12+01:00'), Date.parse('2026-10-29T17:45:12Z') / 1000);
+  assert.equal(parseStart('2026-10-29', '18:45Z'), Date.parse('2026-10-29T18:45:00Z') / 1000);
+  assert.equal(parseStart('2026-10-29', '18:45'), new Date(2026, 9, 29, 18, 45, 0).getTime() / 1000);
+  assert.equal(parseStart('2024-02-29', '00:00:00Z'), Date.parse('2024-02-29T00:00:00Z') / 1000);
+  for (const time of ['', '24:00', '12:60', '12:00:60', '12:00+24:00', '12:00+01:60', '12:00\nZ', '12:00:00.5Z']) assert.throws(() => parseStart('2026-10-29', time));
+  for (const date of ['2026-02-29', '2026-04-31', '1969-12-31', '2026-10-29T12:00:00Z']) assert.throws(() => parseStart(date, '12:00'));
+  assert.throws(() => parseStart('9999-12-31', '23:59:59-01:00'));
+});
+
+test('введённое время попадает в даты автора и коммитера', t => {
+  const repo = fixture(t);
+  const start = parseStart('2026-10-29', '18:45:12+01:00');
+  applyPlan(makePlan(repo, { ...options, start }));
+  assert.equal(repo.text(['show', '-s', '--format=%at:%ct', 'HEAD']), `${start}:${start}`);
+});
+
+test('локальное время проверяется при переходах DST; явное смещение однозначно', t => {
+  const dir = mkdtempSync(join(tmpdir(), 'rehistory-time-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const child = join(dir, 'time-check.mjs');
+  writeFileSync(child, `
+    import { parseStart } from ${JSON.stringify(new URL('./cli.ts', import.meta.url).href)};
+    let missing = false;
+    try { parseStart('2026-03-29', '02:30'); } catch { missing = true; }
+    console.log(JSON.stringify({ missing, delta: parseStart('2026-10-25', '02:30+01:00') - parseStart('2026-10-25', '02:30+02:00') }));
+  `);
+  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('NODE_TEST_')));
+  const result = spawnSync(process.execPath, [child], { env: { ...env, TZ: 'Europe/Amsterdam' }, timeout: 30000 });
+  assert.equal(result.status, 0, result.stderr?.toString());
+  assert.deepEqual(JSON.parse(result.stdout.toString()), { missing: true, delta: 3600 });
 });
