@@ -447,3 +447,30 @@ test('refs/codex без разделителя пространства имён
   repo.git(['update-ref', 'refs/codex-untrusted/test', repo.text(['rev-parse', 'HEAD'])]);
   assert.throws(() => makePlan(repo, settings), /Неподдерживаемые/);
 });
+
+for (const format of ['sha1', 'sha256']) {
+  test(`экспорт ${format} сохраняет старый zero-padded filemode, но отклоняет другие ошибки tree`, (t) => {
+    const repo = fixture(t, format);
+    const blob = repo.text(['hash-object', '-w', '--stdin'], 'legacy content');
+    const childData = Buffer.concat([Buffer.from('100644 file\0'), Buffer.from(blob, 'hex')]);
+    const child = repo.text(['hash-object', '-w', '-t', 'tree', '--stdin'], childData);
+    const treeData = Buffer.concat([Buffer.from('040000 directory\0'), Buffer.from(child, 'hex')]);
+    const tree = repo.text(['hash-object', '--literally', '-w', '-t', 'tree', '--stdin'], treeData);
+    const raw = Buffer.from(`tree ${tree}\nauthor Fixture <fixture@example.org> 1600000000 +0000\ncommitter Fixture <fixture@example.org> 1600000000 +0000\n\nlegacy\n`);
+    const commit = repo.text(['hash-object', '-w', '-t', 'commit', '--stdin'], raw);
+    repo.git(['update-ref', 'refs/heads/main', commit]);
+    // Avoid checkout: this is an isolated bare fixture with deliberately noncanonical tree bytes.
+    repo.git(['config', 'core.bare', 'true']);
+    const target = join(repo.path, '..', `legacy-${format}.git`);
+    exportPlan(makePlan(repo, settings), target);
+    const output = new Repository(target);
+    assert.deepEqual(output.git(['cat-file', 'tree', tree]), treeData);
+    assert.equal(output.text(['rev-parse', 'HEAD^{tree}']), tree);
+    assert.equal(verifyExport(target).ok, true);
+    const invalidData = Buffer.concat([Buffer.from('100644 z\0'), Buffer.from(blob, 'hex'), Buffer.from('100644 a\0'), Buffer.from(blob, 'hex')]);
+    const invalidTree = repo.text(['hash-object', '--literally', '-w', '-t', 'tree', '--stdin'], invalidData);
+    const invalidCommit = repo.text(['hash-object', '-w', '-t', 'commit', '--stdin'], raw.toString().replace(tree, invalidTree));
+    repo.git(['update-ref', 'refs/heads/main', invalidCommit]);
+    assert.throws(() => exportPlan(makePlan(repo, settings), join(repo.path, '..', `invalid-${format}.git`)), /treeNotSorted/);
+  });
+}

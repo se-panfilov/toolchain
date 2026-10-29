@@ -1,4 +1,5 @@
 import { test } from 'vitest';
+import { setImmediate as nextTurn } from 'node:timers/promises';
 import { createHash } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, copyFileSync, openSync, closeSync, ftruncateSync, utimesSync } from 'node:fs';
@@ -180,13 +181,13 @@ test.skipIf(process.platform === 'win32')('SIGINT родителя во врем
       return original(...args);
     };
     const before = process.listenerCount('SIGINT');
-    applyPlan(plan);
-    setImmediate(() => console.log(JSON.stringify({ lock: existsSync(join(repo.common, 'rehistory.lock')), handlersRestored: before === process.listenerCount('SIGINT') })));
+    const result = applyPlan(plan);
+    setImmediate(() => console.log(JSON.stringify({ interrupted: result.interrupted, lock: existsSync(join(repo.common, 'rehistory.lock')), handlersRestored: before === process.listenerCount('SIGINT') })));
   `
   );
   const result = spawnSync(process.execPath, [script], { encoding: 'utf8', timeout: 30000 });
   assert.equal(result.status, 0, result.stderr);
-  assert.deepEqual(JSON.parse(result.stdout), { lock: false, handlersRestored: true });
+  assert.deepEqual(JSON.parse(result.stdout), { interrupted: true, lock: false, handlersRestored: true });
 });
 
 test('status не запускает clean-фильтр внутри инициализированного подмодуля', (t) => {
@@ -262,4 +263,81 @@ test('многострочные значения config не подменяют
   assert.equal(makePlan(repo, settings).commits, 1);
   repo.git(['config', 'filter.driver.clean', 'cat\ncat']);
   assert.throws(() => makePlan(repo, settings), /Git-фильтры/);
+});
+
+test.skipIf(process.platform === 'win32')('CLI после SIGINT во время JS завершает применение с кодом 130 без предложения push', (t) => {
+  const { repo, root } = fixture(t);
+  const previous = repo.text(['rev-parse', 'HEAD']);
+  const preload = join(root, 'interrupt-cli.mjs');
+  const marker = join(root, 'push-offered');
+  const engine = new URL('../dist/src/engine.js', import.meta.url).href;
+  const prompts = new URL('../dist/src/prompts.js', import.meta.url).href;
+  writeFileSync(
+    preload,
+    `
+    import { Repository } from ${JSON.stringify(engine)};
+    import { TerminalPrompts } from ${JSON.stringify(prompts)};
+    import { writeFileSync } from 'node:fs';
+    Object.defineProperty(process.stdin, 'isTTY', { value: true });
+    Object.defineProperty(process.stdout, 'isTTY', { value: true });
+    TerminalPrompts.prototype.text = async (_question, initial) => initial;
+    TerminalPrompts.prototype.confirm = async question => {
+      if (question === 'Сделать push?') writeFileSync(${JSON.stringify(marker)}, 'offered');
+      return question === 'Применить изменения?' || question === 'Нормализовать даты тегов?';
+    };
+    const original = Repository.prototype.git;
+    Repository.prototype.git = function(...args) {
+      const result = original.apply(this, args);
+      if (args[0][0] === 'update-ref' && args[0].includes('-m')) {
+        process.kill(process.pid, 'SIGINT');
+        const end = Date.now() + 20;
+        while (Date.now() < end) { /* Keep the signal queued during JavaScript work. */ }
+      }
+      return result;
+    };
+  `
+  );
+  const result = spawnSync(process.execPath, ['--import', preload, cli, '--repo', repo.path], { encoding: 'utf8', env: { ...process.env, TERM: 'xterm-256color' }, timeout: 30000 });
+  assert.equal(result.status, 130, result.stdout + result.stderr);
+  assert(result.stdout.includes('Локальная история сохранена'));
+  assert(!result.stdout.includes('Сделать push?'));
+  assert.equal(existsSync(marker), false);
+  assert.equal(existsSync(join(repo.common, 'rehistory.lock')), false);
+  assert.notEqual(repo.text(['rev-parse', 'HEAD']), previous);
+});
+
+test('несколько синхронных применений используют один SIGINT-обработчик и очищают его после turn', async (t) => {
+  const { repo } = fixture(t);
+  await nextTurn();
+  const before = process.listenerCount('SIGINT');
+  for (let index = 0; index < 12; index++) {
+    applyPlan(makePlan(repo, { ...settings, start: settings.start + index }));
+    assert.equal(process.listenerCount('SIGINT'), before + 1);
+  }
+  await nextTurn();
+  assert.equal(process.listenerCount('SIGINT'), before);
+});
+
+test('checkout с core.autocrlf=true сохраняет LF для Prettier и исключения для bat/binary', (t) => {
+  const { repo } = fixture(t);
+  writeFileSync(join(repo.path, '.gitattributes'), readFileSync(new URL('../../../.gitattributes', import.meta.url)));
+  repo.git(['config', 'core.autocrlf', 'true']);
+  const files = new Map([
+    ['sample.ts', Buffer.from('export const answer = 1;\n')],
+    ['sample.mjs', Buffer.from('export const answer = 1;\n')],
+    ['package.json', Buffer.from('{}\n')],
+    ['.prettierrc', Buffer.from('{}\n')],
+    ['README.md', Buffer.from('# Fixture\n')],
+    ['sample.bat', Buffer.from('echo fixture\n')],
+    ['payload.exe', Buffer.from([0, 10, 13, 255])]
+  ]);
+  for (const [name, data] of files) writeFileSync(join(repo.path, name), data);
+  repo.git(['add', '--', '.gitattributes', ...files.keys()]);
+  repo.git(['commit', '-q', '-m', 'line ending fixture']);
+  for (const name of files.keys()) rmSync(join(repo.path, name));
+  repo.git(['checkout', 'HEAD', '--', ...files.keys()]);
+  for (const [name, data] of files) {
+    const expected = name.endsWith('.bat') ? Buffer.from(data.toString().replaceAll('\n', '\r\n')) : data;
+    assert.deepEqual(readFileSync(join(repo.path, name)), expected, name);
+  }
 });

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { setImmediate as nextTurn } from 'node:timers/promises';
 import { stdin, stdout } from 'node:process';
 import { pathToFileURL } from 'node:url';
 import { realpathSync } from 'node:fs';
@@ -305,6 +306,12 @@ async function main(): Promise<void> {
       const result = applyPlan(plan);
       print(`✓ Готово · коммиты: ${plan.commits}`, 'success');
       print(`Восстановление: ${result.recovery}${result.backupPrefix ? `\nБекап-ссылки: ${result.backupPrefix}` : ''}`, 'muted');
+      await nextTurn();
+      if (result.interrupted) {
+        print('Прервано. Локальная история сохранена; push не выполнялся.', 'warning');
+        process.exitCode = 130;
+        return;
+      }
       await offerPush(plan);
     }
   } finally {
