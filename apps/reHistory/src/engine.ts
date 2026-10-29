@@ -38,6 +38,8 @@ export function withoutGitEnvironment(source: Record<string, string | undefined>
   // Windows environment variable names are case-insensitive.
   return Object.fromEntries(Object.entries(source).filter(([key]) => !key.toUpperCase().startsWith('GIT_')));
 }
+// Git for Windows rejects os.devNull (\\.\nul) as a config path. The reserved name nul always selects the null device.
+const gitNullConfig = process.platform === 'win32' ? 'nul' : devNull;
 const env = withoutGitEnvironment(process.env);
 Object.assign(env, {
   GIT_NO_REPLACE_OBJECTS: '1',
@@ -46,8 +48,8 @@ Object.assign(env, {
   GIT_NO_LAZY_FETCH: '1',
   LC_ALL: 'C',
   GIT_CONFIG_NOSYSTEM: '1',
-  GIT_CONFIG_SYSTEM: devNull,
-  GIT_CONFIG_GLOBAL: devNull
+  GIT_CONFIG_SYSTEM: gitNullConfig,
+  GIT_CONFIG_GLOBAL: gitNullConfig
 });
 /** Resolve only absolute PATH entries. Never search the current directory implicitly. */
 export function findGitExecutable(pathValue: string, platform = process.platform, probe?: (candidate: string) => string | undefined): string {
@@ -215,7 +217,7 @@ export class Repository {
 
 /** Status can recurse into initialized submodules and run their filters too. */
 function assertStatusFilters(repo: Repository, seen = new Set<string>()): void {
-  const canonical = realpathSync(repo.path);
+  const canonical = realpathSync.native(repo.path);
   if (seen.has(canonical)) return;
   if (seen.size >= 256) throw new Error('Проверка ограничена 256 рабочими деревьями подмодулей. Используйте отдельный клон без инициализированных подмодулей.');
   seen.add(canonical);
@@ -232,7 +234,7 @@ function assertStatusFilters(repo: Repository, seen = new Set<string>()): void {
     if (!existsSync(join(path, '.git'))) continue;
     if (lstatSync(path).isSymbolicLink() || lstatSync(join(path, '.git')).isSymbolicLink()) throw new Error('Символическая ссылка в рабочем дереве подмодуля не поддерживается.');
     const child = new Repository(path);
-    if (realpathSync(child.text(['rev-parse', '--show-toplevel'])) !== realpathSync(path)) throw new Error('Не удалось однозначно определить рабочее дерево подмодуля.');
+    if (realpathSync.native(child.text(['rev-parse', '--show-toplevel'])) !== realpathSync.native(path)) throw new Error('Не удалось однозначно определить рабочее дерево подмодуля.');
     assertStatusFilters(child, seen);
   }
 }

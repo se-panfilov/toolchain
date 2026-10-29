@@ -11,7 +11,8 @@ const workspace = fileURLToPath(new URL('../../../', import.meta.url));
 const script = join(workspace, 'scripts/format-changed.mjs');
 const metadata = JSON.parse(readFileSync(join(workspace, 'package.json'), 'utf8'));
 const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.toUpperCase().startsWith('GIT_') && !key.toUpperCase().startsWith('NPM_CONFIG_')));
-Object.assign(env, { GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_SYSTEM: devNull, GIT_CONFIG_GLOBAL: devNull, GIT_OPTIONAL_LOCKS: '0' });
+const gitNullConfig = process.platform === 'win32' ? 'nul' : devNull;
+Object.assign(env, { GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_SYSTEM: gitNullConfig, GIT_CONFIG_GLOBAL: gitNullConfig, GIT_OPTIONAL_LOCKS: '0' });
 
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), 'toolchain-format-'));
@@ -218,7 +219,10 @@ test('clean:reinstall выполняет offline npm ci без lifecycle-скр�
   writeFileSync(join(directory, 'postinstall.cjs'), "require('node:fs').writeFileSync('executed', 'unsafe');\n");
   const config = { NPM_CONFIG_OFFLINE: 'true', NPM_CONFIG_USERCONFIG: devNull, NPM_CONFIG_GLOBALCONFIG: join(directory, 'global.npmrc'), NPM_CONFIG_CACHE: join(directory, 'cache') };
   writeFileSync(config.NPM_CONFIG_GLOBALCONFIG, '');
-  const result = spawnSync('npm', ['run', 'clean:reinstall', '--', '--offline', '--no-audit', '--no-fund'], { cwd: directory, env: { ...env, ...config }, encoding: 'utf8', timeout: 30000 });
+  // On Windows, npm is a cmd file. Start the npm CLI that runs this test through Node.js when it is known.
+  const args = ['run', 'clean:reinstall', '--', '--offline', '--no-audit', '--no-fund'];
+  const options = { cwd: directory, env: { ...env, ...config }, encoding: 'utf8', timeout: 30000 };
+  const result = process.env.npm_execpath ? spawnSync(process.execPath, [process.env.npm_execpath, ...args], options) : spawnSync('npm', args, options);
   assert.equal(result.status, 0, result.stderr);
   assert.equal(existsSync(join(directory, 'executed')), false);
 });
