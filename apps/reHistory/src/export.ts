@@ -443,7 +443,7 @@ export function exportPlan(plan: Plan, destination: string): ExportReport {
       closeSync(fd);
       fd = undefined;
       fd = openSync(file, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
-      output.git(['index-pack', '--stdin', '--strict=zeroPaddedFilemode=ignore'], fd);
+      output.git([`--git-dir=${output.common}`, 'index-pack', '--stdin', '--strict=zeroPaddedFilemode=ignore'], fd);
     } finally {
       if (fd !== undefined) closeSync(fd);
       rmSync(transfer, { recursive: true, force: true });

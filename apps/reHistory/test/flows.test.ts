@@ -337,3 +337,18 @@ test('запуск из подкаталога рабочего дерева и�
   assert.equal(repo.text(['rev-parse', 'HEAD']), plan.mapping.get(plan.headOid));
   repo.git(['fsck', '--strict', '--no-reflogs']);
 });
+
+test('импорт объектов использует общий каталог Git даже из подкаталога', (t) => {
+  const repo = fixture(t);
+  mkdirSync(join(repo.path, 'apps', 'tool'), { recursive: true });
+  writeFileSync(join(repo.path, 'apps', 'tool', 'file.txt'), 'data\n');
+  repo.git(['add', '--', 'apps/tool/file.txt']);
+  repo.git(['commit', '-q', '-m', 'файл в подкаталоге']);
+  const nested = new Repository(repo.path);
+  // Simulate the earlier behavior: Git commands start in a subdirectory.
+  nested.path = join(repo.path, 'apps', 'tool');
+  const plan = makePlan(nested, { flow: 'dates', start: 1700000000, interval: 1 });
+  applyPlan(plan);
+  assert.equal(repo.text(['rev-parse', 'HEAD']), plan.mapping.get(plan.headOid));
+  assert.equal(existsSync(join(repo.path, 'apps', 'tool', '.git')), false);
+});
