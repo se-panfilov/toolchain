@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const metadata = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
-const modules = ['engine', 'audit', 'export', 'demo', 'prompts', 'cli', 'engine.test', 'features.test', 'prompts.test'];
+const modules = ['engine', 'audit', 'export', 'demo', 'prompts', 'cli', 'remote', 'engine.test', 'features.test', 'prompts.test'];
 function fixture(t) {
   const directory = mkdtempSync(join(tmpdir(), 'tx-rehistory-compiler-test-'));
   t.onTestFinished(() => rmSync(directory, { recursive: true, force: true }));

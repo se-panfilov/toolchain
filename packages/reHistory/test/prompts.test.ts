@@ -181,3 +181,17 @@ test('цвета доступны только в TTY и отключаются 
   process.env.FORCE_COLOR = '0';
   assert.equal(terminalStyle({ isTTY: true }).accent('текст'), 'текст');
 });
+
+test('выбор remote сохраняет предвыбранный вариант и поддерживает более двух пунктов', async (t) => {
+  const { input, output, prompts } = fixture(t);
+  let answer = prompts.select('Remote', ['alpha', 'beta', 'gamma'], 2);
+  input.write('\x1b[B\r');
+  assert.equal(await answer, 2);
+  answer = prompts.select('Remote', ['alpha', 'beta', '\x1b[31mgamma'], 0);
+  input.write('\x1b[A \r');
+  assert.equal(await answer, 2);
+  assert(!stripVTControlCharacters(output.text).includes('\x1b'));
+  assert.equal(input.isRaw, false);
+  assert.equal(input.listenerCount('keypress'), 0);
+  await assert.rejects(prompts.select('Remote', [], 0));
+});

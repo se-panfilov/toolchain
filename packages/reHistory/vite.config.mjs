@@ -2,7 +2,7 @@ import { defineConfig } from 'vite';
 import { fileURLToPath } from 'node:url';
 
 const source = fileURLToPath(new URL('./src/', import.meta.url));
-const modules = ['engine', 'audit', 'export', 'demo', 'prompts', 'cli'];
+const modules = ['engine', 'audit', 'export', 'demo', 'prompts', 'cli', 'remote'];
 
 export default defineConfig({
   logLevel: 'silent',
