@@ -6,15 +6,17 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
-test('scanner hides recognized secrets in all JSON fields and does not modify checked files', t => {
+test('scanner hides recognized secrets in all JSON fields and does not modify checked files', (t) => {
   const directory = mkdtempSync(join(tmpdir(), 'toolchain-skill-scan-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const name = directory.split(/[\\/]/).at(-1)!;
   // Construct a synthetic token without storing a credential-shaped literal in source.
   const token = 'gh' + 'p_' + 'a'.repeat(36);
   const password = 'synthetic' + 'Password42';
-  writeFileSync(join(directory, 'SKILL.md'),
-    `---\nname: ${name}\ndescription: Scan fixture ${token}\npassword: "${password}"\nmetadata:\n  "${token}": fixture\n---\nToken: ${token}\nhttps://example.invalid/${token}\n`);
+  writeFileSync(
+    join(directory, 'SKILL.md'),
+    `---\nname: ${name}\ndescription: Scan fixture ${token}\npassword: "${password}"\nmetadata:\n  "${token}": fixture\n---\nToken: ${token}\nhttps://example.invalid/${token}\n`
+  );
   mkdirSync(join(directory, 'scripts'));
   writeFileSync(join(directory, 'scripts', 'example.py'), `eval("${token}")\n`);
   function snapshot(): Map<string, Buffer> {
@@ -35,7 +37,7 @@ test('scanner hides recognized secrets in all JSON fields and does not modify ch
     cwd: directory,
     env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' },
     timeout: 30000,
-    maxBuffer: 4 * 1024 * 1024,
+    maxBuffer: 4 * 1024 * 1024
   });
   assert.equal(result.status, 0, result.error?.message || result.stderr.toString());
   const output = result.stdout.toString();

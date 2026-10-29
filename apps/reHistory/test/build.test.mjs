@@ -7,11 +7,17 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
+const workspaceRoot = fileURLToPath(new URL('../../../', import.meta.url));
 const metadata = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
 const modules = ['engine', 'audit', 'export', 'demo', 'prompts', 'cli', 'remote', 'engine.test', 'features.test', 'prompts.test'];
 function fixture(t) {
-  const directory = mkdtempSync(join(tmpdir(), 'tx-rehistory-compiler-test-'));
-  t.onTestFinished(() => rmSync(directory, { recursive: true, force: true }));
+  const workspace = mkdtempSync(join(tmpdir(), 'tx-rehistory-compiler-test-'));
+  t.onTestFinished(() => rmSync(workspace, { recursive: true, force: true }));
+  const directory = join(workspace, 'apps/reHistory');
+  mkdirSync(directory, { recursive: true });
+  mkdirSync(join(workspace, 'configs'));
+  for (const name of ['vite.config.mjs', 'tsconfig.base.json']) copyFileSync(join(workspaceRoot, 'configs', name), join(workspace, 'configs', name));
+  writeFileSync(join(workspace, 'package.json'), JSON.stringify({ private: true, type: 'module', workspaces: ['apps/*'] }));
   mkdirSync(join(directory, 'scripts'));
   copyFileSync(join(root, 'scripts/build.mjs'), join(directory, 'scripts/build.mjs'));
   copyFileSync(join(root, 'tsconfig.json'), join(directory, 'tsconfig.json'));
@@ -23,7 +29,7 @@ function fixture(t) {
     }
   }
   writeFileSync(join(directory, 'package.json'), JSON.stringify(metadata));
-  symlinkSync(join(root, 'node_modules'), join(directory, 'node_modules'), 'junction');
+  symlinkSync(join(workspaceRoot, 'node_modules'), join(workspace, 'node_modules'), 'junction');
   return directory;
 }
 function build(directory) {
@@ -104,8 +110,8 @@ test('ошибка Vite после проверки типов сохраняе�
   mkdirSync(join(directory, 'dist/src'), { recursive: true });
   const file = join(directory, 'dist/src/cli.js');
   writeFileSync(file, 'protected');
-  const config = join(directory, 'vite.config.mjs');
-  writeFileSync(config, readFileSync(config, 'utf8').replace('  build: {', "  plugins: [{ name: 'fixture-failure', buildStart() { throw new Error('fixture-vite-failure'); } }],\n  build: {"));
+  const config = join(directory, '../../configs/vite.config.mjs');
+  writeFileSync(config, readFileSync(config, 'utf8').replace('    build: {', "    plugins: [{ name: 'fixture-failure', buildStart() { throw new Error('fixture-vite-failure'); } }],\n    build: {"));
   const result = build(directory);
   assert.equal(result.error, undefined);
   assert.notEqual(result.status, 0);

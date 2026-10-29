@@ -20,13 +20,13 @@ The generated cases do not have automatic shrinking.
 All findings below are fixed and have regression tests.
 The severity is moderate because each defect requires specific repository data or a modified export.
 
-| Finding | Previous behavior | Fix and evidence |
-| --- | --- | --- |
-| Unexpected nested export files | Files inside allowed directories could pass verification. Such files could contain private metadata. | Every nested path has an explicit file or directory check. Tests add files inside objects and refs. |
-| Extra export metadata | Config comments, extra manifest fields, and unknown packed-ref header words could pass verification. | Strict schemas check metadata before Git reads the object store. Tests cover invalid types, duplicate entries, and extra data. |
-| Missing symbolic refs | Git omitted dangling loose symbolic refs. The audit could report complete coverage. | A bounded loose-file read finds omitted symbolic refs. Tests require an incomplete audit and blocked branch or tag rewriting. |
-| Tag message data loss | Multiple signature blocks could discard ordinary message text between blocks. | Signature removal accepts one complete trailing block. Ambiguous blocks stop planning before writes. |
-| Unchecked packed metadata | Cached peeled targets or renamed pack files could retain unrelated object IDs. | Cached targets must match actual targets. Pack names must match embedded checksums. Tests cover SHA-1 and SHA-256. |
+| Finding                        | Previous behavior                                                                                    | Fix and evidence                                                                                                               |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Unexpected nested export files | Files inside allowed directories could pass verification. Such files could contain private metadata. | Every nested path has an explicit file or directory check. Tests add files inside objects and refs.                            |
+| Extra export metadata          | Config comments, extra manifest fields, and unknown packed-ref header words could pass verification. | Strict schemas check metadata before Git reads the object store. Tests cover invalid types, duplicate entries, and extra data. |
+| Missing symbolic refs          | Git omitted dangling loose symbolic refs. The audit could report complete coverage.                  | A bounded loose-file read finds omitted symbolic refs. Tests require an incomplete audit and blocked branch or tag rewriting.  |
+| Tag message data loss          | Multiple signature blocks could discard ordinary message text between blocks.                        | Signature removal accepts one complete trailing block. Ambiguous blocks stop planning before writes.                           |
+| Unchecked packed metadata      | Cached peeled targets or renamed pack files could retain unrelated object IDs.                       | Cached targets must match actual targets. Pack names must match embedded checksums. Tests cover SHA-1 and SHA-256.             |
 
 Four regression tests failed against the previous implementation before the fixes.
 The signature reproducer showed message bytes discarded between complete blocks.
@@ -48,11 +48,11 @@ The export checks affect automatic verification after export and the explicit ve
 Existing transaction, recovery, dry-run, environment isolation, and terminal tests remain applicable.
 
 | Changed entry point | Direct runtime call sites |
-| --- | --- |
-| `Repository.refs` | 6 |
-| `stripTagSignature` | 1 |
-| `verifyExport` | 2 |
-| `exportPlan` | 2 |
+| ------------------- | ------------------------- |
+| `Repository.refs`   | 6                         |
+| `stripTagSignature` | 1                         |
+| `verifyExport`      | 2                         |
+| `exportPlan`        | 2                         |
 
 The counts exclude tests and function declarations.
 Indirect callers include planning and demo flows.
