@@ -135,6 +135,8 @@ Keep utility-specific requirements in the relevant utility documentation.
 - Start every pull request description with a `tl;dr` section. Use short, plain language for readers with little subject knowledge.
 - Keep `tl;dr` as short as possible, with a maximum of two paragraphs.
 - Apply ASD-STE100 to all other pull request text, including the title, and to commit messages. See [the writing rules](docs/WRITING.md#commits-and-pull-requests).
+- Never add links to AI agent threads, chats, or sessions where a feature was discussed. This applies to code, comments, documentation, commit messages, pull requests, issues, and review comments.
+- Do not add commit trailers or attribution lines that contain such links. Describe the reason for a change in the text itself.
 - Keep commands, identifiers, Russian interface strings, and license text exact.
 - Update operating instructions and security notes when behavior changes.
 - Keep these rules in this file. Vendor adapters must refer to it instead of copying the rules.
