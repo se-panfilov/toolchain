@@ -384,8 +384,11 @@ The program now repeats the check for the planned head before the write.
 
 A manual test after the audit found a second defect, which is older than the flow split.
 A start from a subdirectory, such as `apps/reHistory` without `--repo`, stopped at the strict pack import.
-In a subdirectory, `index-pack` did not find existing trees. Also, `ls-files` listed only that subdirectory for the submodule filter check.
-The program now uses the top-level directory of the working tree for all Git commands.
+In a subdirectory, `index-pack --stdin` used a relative `.git/objects` path in that subdirectory.
+It did not find existing trees, and it left a `tmp_pack_*` file in `<subdirectory>/.git/objects/pack`.
+Also, `ls-files` listed only that subdirectory for the submodule filter check.
+The pack import now names the common Git directory with `--git-dir`.
+The program also uses the top-level directory of the working tree for all other Git commands.
 The pack import failed before the ref transaction, so refs did not change.
 Planning also examines all referenced trees and gives a clear error if one is missing.
 

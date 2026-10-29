@@ -132,7 +132,7 @@ export class Repository {
   constructor(path: string) {
     this.path = resolve(path);
     this.common = this.text(['rev-parse', '--path-format=absolute', '--git-common-dir']);
-    // Work from the top level. In a subdirectory, index-pack cannot find existing objects and ls-files lists only that subdirectory.
+    // Work from the top level. In a subdirectory, ls-files lists only that subdirectory.
     if (this.text(['rev-parse', '--is-bare-repository']) !== 'true') this.path = this.text(['rev-parse', '--show-toplevel']);
   }
   git(args: string[], input?: Buffer | string | number, extraEnv: Record<string, string> = {}, output?: number): Buffer {
@@ -400,7 +400,8 @@ export function writeObjects(repo: Repository, objects: ObjectData[]): void {
     closeSync(fd);
     fd = undefined;
     fd = openSync(file, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
-    repo.git(['index-pack', '--stdin', '--strict'], fd);
+    // Name the object store explicitly. From a subdirectory, index-pack --stdin can resolve a relative .git path there and miss existing objects.
+    repo.git([`--git-dir=${repo.common}`, 'index-pack', '--stdin', '--strict'], fd);
   } finally {
     if (fd !== undefined) closeSync(fd);
     rmSync(directory, { recursive: true, force: true });
