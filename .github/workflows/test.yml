@@ -1,0 +1,122 @@
+# Run repository checks and application tests.
+# When you add, remove, or rename an application in apps/, update the `app` options in test.yml, build.yml, and release.yml.
+# `npm run check:workflows` and the `plan` job stop when the lists differ from apps/.
+
+name: Tests
+run-name: Tests (${{ github.event_name }}, app=${{ inputs.app || 'all' }}, dry_run=${{ inputs.dry_run == true }})
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      app:
+        description: Application directory in apps/, or all
+        type: choice
+        required: true
+        default: all
+        options:
+          - all
+          - reHistory
+      dry_run:
+        description: Show the plan only. Do not install or run tests.
+        type: boolean
+        required: true
+        default: false
+  workflow_call:
+    inputs:
+      app:
+        type: string
+        required: true
+      dry_run:
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      apps: ${{ steps.select.outputs.apps }}
+      dry_run: ${{ steps.select.outputs.dry_run }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - id: select
+        name: Select applications
+        env:
+          APP: ${{ inputs.app || 'all' }}
+          DRY_RUN: ${{ inputs.dry_run == true }}
+        run: node scripts/ci/apps.mjs select
+
+  repository:
+    needs: plan
+    if: needs.plan.outputs.dry_run != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts
+      - run: npm run format:check
+      - run: npm run lint
+      - run: npm run check:workflows
+
+  test:
+    needs: plan
+    if: needs.plan.outputs.dry_run != 'true'
+    name: test (${{ matrix.app.dir }}, ${{ matrix.os }}, Node.js ${{ matrix.node }})
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJSON(needs.plan.outputs.apps) }}
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node: ['26']
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    env:
+      WORKSPACE: ${{ matrix.app.name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node }}
+          package-manager-cache: false
+      # reHistory tests need a newer Git than the Linux runner image provides.
+      - name: Build pinned modern Git on Linux
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          build_dir="$(mktemp -d)"
+          cd "$build_dir"
+          curl --fail --silent --show-error --location https://www.kernel.org/pub/software/scm/git/git-2.56.0.tar.xz -o git.tar.xz
+          echo '26c56c296b38c0695b26fa95f475f1d01704d2d38e73465ca30b0b2f5dc789d3  git.tar.xz' | sha256sum --check
+          tar -xf git.tar.xz
+          make -C git-2.56.0 -j2 prefix="$build_dir/install" NO_RUST=YesPlease NO_CURL=YesPlease NO_OPENSSL=YesPlease NO_TCLTK=YesPlease NO_GETTEXT=YesPlease NO_PERL=YesPlease NO_PYTHON=YesPlease install
+          echo "$build_dir/install/bin" >> "$GITHUB_PATH"
+      - run: node --version && npm --version && git --version
+      - run: npm ci --ignore-scripts
+      - name: Test the application
+        run: npm test --workspace "$WORKSPACE"
+      - name: Start the built CLI
+        run: npm run start --workspace "$WORKSPACE" -- --help
