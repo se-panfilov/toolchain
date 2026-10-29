@@ -7,8 +7,8 @@ import { dirname, join } from 'node:path';
 import { auditRepository, stamp } from '@reHistory/audit';
 import { parseArguments } from '@reHistory/cli';
 import { runDemo, validateDemoURL } from '@reHistory/demo';
-import { applyPlan,makePlan, Repository, runGit } from '@reHistory/engine';
-import { exportDestination, exportPlan, manifestName,verifyExport } from '@reHistory/export';
+import { applyPlan, makePlan, Repository, runGit } from '@reHistory/engine';
+import { exportDestination, exportPlan, manifestName, verifyExport } from '@reHistory/export';
 import { test } from 'vitest';
 
 function temp(t: { onTestFinished: (fn: () => void) => void }): string {

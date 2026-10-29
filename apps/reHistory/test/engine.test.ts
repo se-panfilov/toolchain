@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync,mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { parseDate, parseStart } from '@reHistory/cli';
-import { applyPlan, defaultBackupBranch, makePlan, Repository, runGit, stripTagSignature,validateIdentity, withoutGitEnvironment } from '@reHistory/engine';
+import { applyPlan, defaultBackupBranch, makePlan, Repository, runGit, stripTagSignature, validateIdentity, withoutGitEnvironment } from '@reHistory/engine';
 import { test } from 'vitest';
 
 function fixture(t: { onTestFinished: (fn: () => void) => void }, format?: string): Repository {

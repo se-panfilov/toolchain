@@ -1,8 +1,8 @@
 import { spawnSync } from 'node:child_process';
-import { createHash,randomUUID } from 'node:crypto';
-import { accessSync, closeSync, constants, existsSync, fsyncSync, lstatSync,mkdtempSync, openSync, readdirSync, readSync, realpathSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { createHash, randomUUID } from 'node:crypto';
+import { accessSync, closeSync, constants, existsSync, fsyncSync, lstatSync, mkdtempSync, openSync, readdirSync, readSync, realpathSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { devNull, tmpdir } from 'node:os';
-import { dirname, join, posix,resolve, win32 } from 'node:path';
+import { dirname, join, posix, resolve, win32 } from 'node:path';
 import { deflateSync } from 'node:zlib';
 
 export const defaultBackupBranch = 'rehistory-backup/original';

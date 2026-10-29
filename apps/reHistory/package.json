@@ -1,6 +1,6 @@
 {
   "name": "tx-rehistory",
-  "version": "2.5.4",
+  "version": "2.5.5",
   "description": "Interactive normalization, audit and verifiable export of Git history",
   "private": false,
   "type": "module",

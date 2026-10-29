@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { lstatSync,readFileSync } from 'node:fs';
+import { lstatSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
