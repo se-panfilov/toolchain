@@ -91,6 +91,7 @@ function checkExportFiles(root: string, manifest: Manifest): { errors: string[];
     for (let i = 1; i < parts.length; i++) directories.add(parts.slice(0, i).join('/'));
   }
   const metadata = new Set(['HEAD', 'config', 'packed-refs', manifestName]);
+  const present = new Set<string>();
   const packs = new Map<string, Set<string>>();
   const width = manifest.commitOrder[0].length;
   const loose = new RegExp(`^objects/([a-f0-9]{2})/([a-f0-9]{${width - 2}})$`);
@@ -99,6 +100,7 @@ function checkExportFiles(root: string, manifest: Manifest): { errors: string[];
   function visit(directory: string, prefix = ''): void {
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
       const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
+      present.add(relative);
       const path = join(directory, entry.name);
       const stat = lstatSync(path);
       if (stat.isSymbolicLink()) {
@@ -155,6 +157,8 @@ function checkExportFiles(root: string, manifest: Manifest): { errors: string[];
   const stat = lstatSync(root);
   if (!stat.isDirectory() || stat.isSymbolicLink()) return { errors: ['Экспорт должен быть обычным каталогом без символической ссылки.'], peeledRefs };
   visit(root);
+  // Missing Git metadata must not allow discovery of a parent repository.
+  for (const name of ['HEAD', 'config', 'objects', 'refs']) check(present.has(name), `Отсутствует обязательный элемент экспорта: ${name}.`);
   for (const [name, files] of packs) check(files.has('pack') && files.has('idx'), `Неполная пара pack/idx: ${name}.`);
   return { errors, peeledRefs };
 }
@@ -233,6 +237,10 @@ export function verifyExport(path: string) {
     };
   }
   const repo = new Repository(absolute);
+  const actualGitDir = repo.text(['rev-parse', '--absolute-git-dir']);
+  if (realpathSync(repo.common) !== realpathSync(absolute) || realpathSync(actualGitDir) !== realpathSync(absolute)) {
+    throw new Error('Git выбрал другой служебный каталог. Проверка экспорта остановлена.');
+  }
   function check(ok: boolean, message: string): void {
     if (!ok) errors.push(message);
   }
