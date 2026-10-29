@@ -17,7 +17,7 @@ This skill does not grant permission to publish, push, or change real user data.
 4. Resolve material ambiguities before dependent work. Continue independent authorized work.
 5. Select checks that can demonstrate both the result and the relevant safety properties.
 
-For a new utility, use a separate directory.
+For a new utility, use a separate directory under `packages/`.
 Do not copy reHistory-specific Git restrictions into an unrelated utility.
 
 ## Implement in stages
