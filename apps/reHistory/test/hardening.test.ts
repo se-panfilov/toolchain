@@ -23,7 +23,7 @@ function fixture(t: { onTestFinished: (fn: () => void) => void }): { root: strin
   repo.git(['commit', '-q', '--allow-empty', '-m', 'fixture']);
   return { root, repo };
 }
-const settings = { start: 1700000000, interval: 1 };
+const settings = { flow: 'dates' as const, start: 1700000000, interval: 1 };
 const cli = fileURLToPath(new URL('../dist/src/cli.js', import.meta.url));
 
 test('поиск Git игнорирует пустые и относительные PATH-каталоги на POSIX и Windows', () => {
@@ -283,6 +283,7 @@ for (const completion of ['microtask', 'stdin']) {
     Object.defineProperty(process.stdin, 'isTTY', { value: true });
     Object.defineProperty(process.stdout, 'isTTY', { value: true });
     TerminalPrompts.prototype.text = async (_question, initial) => initial;
+    TerminalPrompts.prototype.select = async (_question, _choices, initial) => initial;
     TerminalPrompts.prototype.confirm = async question => {
       if (question === 'Применить изменения?' && ${JSON.stringify(completion)} === 'stdin') {
         await new Promise(resolve => {
@@ -291,7 +292,7 @@ for (const completion of ['microtask', 'stdin']) {
         });
       }
       if (question === 'Сделать push?') writeFileSync(${JSON.stringify(marker)}, 'offered');
-      return question === 'Применить изменения?' || question === 'Нормализовать даты тегов?';
+      return ['Применить изменения?', 'Нормализовать даты тегов?', 'Продолжить без копии на сервере?'].includes(question);
     };
     const original = Repository.prototype.git;
     Repository.prototype.git = function(...args) {

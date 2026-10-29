@@ -78,7 +78,7 @@ The table does not change the approved general meanings in the STE dictionary.
 | network                 | The software connections to other systems.                                           |
 | option                  | A command argument that selects software behavior.                                   |
 | permission              | An affirmative user choice before a software write.                                  |
-| plan                    | The selected refs, new objects, and date policy before a write.                      |
+| plan                    | The selected refs, new objects, and flow policy before a write.                      |
 | platform                | The operating system and runtime used for the program.                               |
 | prefix                  | The first part of a generated software name.                                         |
 | program                 | The executable software described in these documents.                                |
@@ -157,9 +157,11 @@ The table does not change the approved general meanings in the STE dictionary.
 | environment variable    | A named value available to a process.                                                |
 | executable              | A program file that the operating system can start.                                  |
 | export                  | The export repository that contains only selected history.                           |
-| export check            | A comparison of the export with its manifest and date policy.                        |
+| export check            | A comparison of the export with its manifest and flow policy.                        |
 | file mode               | The access bits that a POSIX file system assigns to a file.                          |
 | file system             | The operating system structure that stores files and directories.                    |
+| flow                    | One type of history change: commit dates, commit authors, or commit messages.        |
+| flow policy             | The selected flow and its values, such as the interval or the new identity.          |
 | focus                   | The answer position controlled by the terminal arrow keys.                           |
 | fragment                | The part of a URL after the number sign.                                             |
 | fsmonitor               | The Git file system monitor.                                                         |
@@ -222,6 +224,8 @@ The table does not change the approved general meanings in the STE dictionary.
 | remote                  | A Git server location or its local config entry.                                     |
 | remote helper           | A program that implements a Git transport.                                           |
 | remote-tracking ref     | A local ref that records a remote branch state.                                      |
+| remote copy             | A remote-tracking ref that contains all commits of the current branch.               |
+| unpushed commit         | A commit of the current branch that no remote-tracking ref contains.                 |
 | repository              | A Git object store, refs, and related config.                                        |
 | revert                  | A Git operation that makes a commit to reverse another change.                       |
 | runtime                 | The environment in which a program operates.                                         |
