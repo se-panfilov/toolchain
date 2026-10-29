@@ -1,4 +1,5 @@
 import { defineConfig } from 'vitest/config';
+import { availableParallelism } from 'node:os';
 import viteConfig from './vite.config.mjs';
 
 export default defineConfig({
@@ -7,8 +8,10 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['test/**/*.test.ts', 'test/**/*.test.mjs'],
-    fileParallelism: false,
-    maxWorkers: 1,
+    fileParallelism: true,
+    maxWorkers: Math.min(3, availableParallelism()),
+    isolate: true,
+    sequence: { concurrent: false },
     pool: 'forks',
     testTimeout: 60000,
     hookTimeout: 60000,

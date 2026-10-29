@@ -67,7 +67,7 @@ Put paths that contain spaces in double quotes.
 Install build dependencies from the package directory:
 
 ```sh
-cd /path/to/toolchain/packages/reHistory
+cd /path/to/toolchain/apps/reHistory
 npm ci --ignore-scripts
 npm run build
 ```
@@ -81,7 +81,7 @@ A build error stops this command before application startup.
 Without `--repo`, the program uses the current directory.
 
 ```sh
-node /path/to/toolchain/packages/reHistory/dist/src/cli.js --help
+node /path/to/toolchain/apps/reHistory/dist/src/cli.js --help
 ```
 
 ## Audit procedure
@@ -89,7 +89,7 @@ node /path/to/toolchain/packages/reHistory/dist/src/cli.js --help
 1. Start the audit.
 
    ```sh
-   node /path/to/toolchain/packages/reHistory/dist/src/cli.js --repo /path/to/project --audit
+   node /path/to/toolchain/apps/reHistory/dist/src/cli.js --repo /path/to/project --audit
    ```
 
 2. Read the report.
@@ -116,7 +116,7 @@ The audit does not get missing objects from the network.
 For a JSON report, use this command:
 
 ```sh
-node /path/to/toolchain/packages/reHistory/dist/src/cli.js --repo /path/to/project --audit --json
+node /path/to/toolchain/apps/reHistory/dist/src/cli.js --repo /path/to/project --audit --json
 ```
 
 The JSON fields include `refs`, `commits`, `tags`, `reflog`, `unreachable`, `metadata`, and `warnings`.
@@ -131,7 +131,7 @@ The dry-run gives a plan without writes.
 1. Start the dry-run.
 
    ```sh
-   node /path/to/toolchain/packages/reHistory/dist/src/cli.js --repo /path/to/project --dry-run
+   node /path/to/toolchain/apps/reHistory/dist/src/cli.js --repo /path/to/project --dry-run
    ```
 
 2. Enter the required values.
@@ -139,7 +139,7 @@ The dry-run gives a plan without writes.
 4. Start the program without `--dry-run`.
 
    ```sh
-   node /path/to/toolchain/packages/reHistory/dist/src/cli.js --repo /path/to/project
+   node /path/to/toolchain/apps/reHistory/dist/src/cli.js --repo /path/to/project
    ```
 
 5. Enter the required values again.
@@ -322,14 +322,14 @@ The destination parent directory must exist.
 1. Start the export dry-run.
 
    ```sh
-   node /path/to/toolchain/packages/reHistory/dist/src/cli.js --repo /path/to/project --export /path/to/export.git --dry-run
+   node /path/to/toolchain/apps/reHistory/dist/src/cli.js --repo /path/to/project --export /path/to/export.git --dry-run
    ```
 
 2. Do a check of the plan.
 3. Start the export without `--dry-run`.
 
    ```sh
-   node /path/to/toolchain/packages/reHistory/dist/src/cli.js --repo /path/to/project --export /path/to/export.git
+   node /path/to/toolchain/apps/reHistory/dist/src/cli.js --repo /path/to/project --export /path/to/export.git
    ```
 
 4. Select Yes only if the plan is correct.
@@ -382,7 +382,7 @@ The program does not change the source repository.
 Use this command for another check:
 
 ```sh
-node /path/to/toolchain/packages/reHistory/dist/src/cli.js --verify-export /path/to/export.git
+node /path/to/toolchain/apps/reHistory/dist/src/cli.js --verify-export /path/to/export.git
 ```
 
 Add `--json` for a JSON report.
@@ -414,7 +414,7 @@ The demo sends generated data to that server.
 3. Start the demo with a specified server URL.
 
    ```sh
-   node /path/to/toolchain/packages/reHistory/dist/src/cli.js --demo --demo-remote git@example.org:owner/empty-demo.git
+   node /path/to/toolchain/apps/reHistory/dist/src/cli.js --demo --demo-remote git@example.org:owner/empty-demo.git
    ```
 
 4. Read the result.
@@ -597,7 +597,7 @@ Read the warnings and object data in the report.
 
 The package has no runtime dependencies.
 The npm package and bin name is `tx-rehistory`.
-The source directory remains `packages/reHistory`.
+The source directory remains `apps/reHistory`.
 After npm publication, use this command:
 
 ```sh
@@ -607,7 +607,7 @@ npx tx-rehistory --help
 1. Open the package directory.
 
    ```sh
-   cd /path/to/toolchain/packages/reHistory
+   cd /path/to/toolchain/apps/reHistory
    ```
 
 2. Install the locked build dependencies.
@@ -666,7 +666,8 @@ npx --offline --yes --package /path/to/PACKAGE.tgz tx-rehistory --help
 ```
 
 Before publication, select an available package name.
-Select a release version.
+Select the required SemVer increment.
+Run `npm version patch --no-git-tag-version --ignore-scripts`, or use `minor` or `major` when required.
 Prepare npm authentication independently.
 Check the package name, version, and publication settings before publication.
 The program does not publish itself.
@@ -674,7 +675,7 @@ The program does not publish itself.
 ## Development checks
 
 ```sh
-cd /path/to/toolchain/packages/reHistory
+cd /path/to/toolchain/apps/reHistory
 npm run format
 npm run lint
 npm run typecheck
@@ -698,7 +699,12 @@ The subprocess tests also exercise the built JavaScript modules.
 Use `npm run test:unit` for unit and terminal tests.
 Use `npm run test:watch` to watch those source-only suites.
 Use `npm test` after changes to check the build and all integration regressions.
-Test files run sequentially in isolated workers because some checks change process state.
+Test files run in isolated fork processes, with at most three workers.
+The worker count is capped by available CPU parallelism.
+Tests inside each file remain sequential to protect process state.
+The complete suite retains every integration and security regression.
+The check command uses the build's mandatory TypeScript check without running it twice.
+Use `npm test -- --no-file-parallelism --maxWorkers=1` for sequential diagnosis.
 The demo test uses a local test server through a transport adapter.
 A specified network URL is necessary for the product demo.
 
