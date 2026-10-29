@@ -158,6 +158,7 @@ If the decision is unclear, keep the safer state and ask.
 
 - Write documentation and code comments in English.
 - Apply [the project writing rules](docs/WRITING.md), based on ASD-STE100 Issue 9.
+- Do not name or link to applications used as examples. See [external examples](docs/WRITING.md#external-examples).
 - Start every pull request description with a `tl;dr` section. Use short, plain language for readers with little subject knowledge.
 - Keep `tl;dr` as short as possible, with a maximum of two paragraphs.
 - Apply ASD-STE100 to all other pull request text, including the title, and to commit messages. See [the writing rules](docs/WRITING.md#commits-and-pull-requests).

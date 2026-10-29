@@ -11,6 +11,12 @@ Do not claim full conformance from a sentence counter or an unchecked vocabulary
 - Keep commands, paths, identifiers, quoted software labels, and license text exact.
 - Keep existing Russian test names and interface strings unless the task requires a change.
 
+## External examples
+
+Do not name or link to applications used as examples.
+This rule applies to repository files, commit messages, pull requests, issues, and review comments.
+Describe the relevant behavior or technique without naming the example application.
+
 ## Procedures and descriptions
 
 1. Use one consistent technical term for each concept.
