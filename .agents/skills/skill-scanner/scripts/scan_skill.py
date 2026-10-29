@@ -111,6 +111,33 @@ TRUSTED_DOMAINS = {
 }
 
 
+# Toolchain adaptation: do not echo recognized credentials in scanner output.
+def recognized_secret_values(content: str) -> set[str]:
+    """Keep matched values so parsed YAML cannot expose a standalone password."""
+    values: set[str] = set()
+    for pattern, _, _ in SECRET_PATTERNS:
+        for match in re.finditer(pattern, content):
+            values.add(match.group())
+            quoted = re.search(r"['\"]([^'\"]+)['\"]", match.group())
+            if quoted:
+                values.add(quoted.group(1))
+    return values
+
+
+def redact_report(value: Any, secrets: set[str]) -> Any:
+    """Remove recognized credentials from report values and metadata keys."""
+    if isinstance(value, dict):
+        return {redact_report(key, secrets): redact_report(item, secrets) for key, item in value.items()}
+    if isinstance(value, list):
+        return [redact_report(item, secrets) for item in value]
+    if isinstance(value, str):
+        for secret in sorted(secrets, key=len, reverse=True):
+            value = value.replace(secret, "[REDACTED]")
+        for pattern, _, _ in SECRET_PATTERNS:
+            value = re.sub(pattern, "[REDACTED]", value)
+    return value
+
+
 def parse_frontmatter(content: str) -> tuple[dict[str, Any] | None, str]:
     """Parse YAML frontmatter from SKILL.md content."""
     if not content.startswith("---"):
@@ -306,7 +333,7 @@ def check_secrets(content: str, filepath: str) -> list[dict[str, Any]]:
         for pattern, description, severity in SECRET_PATTERNS:
             if re.search(pattern, line):
                 # Mask the actual secret in evidence
-                evidence = line.strip()[:200]
+                evidence = "[REDACTED: suspected credential]"
                 findings.append({
                     "type": "Secret Detected",
                     "severity": severity,
@@ -549,6 +576,7 @@ def scan_skill(skill_dir: Path) -> dict[str, Any]:
 
     all_findings: list[dict[str, Any]] = []
     all_urls: list[dict[str, Any]] = []
+    secrets = recognized_secret_values(content)
 
     # 1. Frontmatter validation
     all_findings.extend(check_frontmatter(skill_dir, content))
@@ -577,6 +605,7 @@ def scan_skill(skill_dir: Path) -> dict[str, Any]:
                 rel_path = f"references/{ref_file.name}"
                 all_findings.extend(check_prompt_injection(ref_content, rel_path))
                 all_findings.extend(check_obfuscation(ref_content, rel_path))
+                secrets.update(recognized_secret_values(ref_content))
                 all_findings.extend(check_secrets(ref_content, rel_path))
                 all_urls.extend(extract_urls(ref_content, rel_path))
 
@@ -593,6 +622,7 @@ def scan_skill(skill_dir: Path) -> dict[str, Any]:
                 except OSError:
                     continue
                 rel_path = f"scripts/{script_file.name}"
+                secrets.update(recognized_secret_values(script_content))
                 all_findings.extend(check_secrets(script_content, rel_path))
                 all_findings.extend(check_obfuscation(script_content, rel_path))
                 all_urls.extend(extract_urls(script_content, rel_path))
@@ -638,7 +668,7 @@ def scan_skill(skill_dir: Path) -> dict[str, Any]:
                 "unrestricted": tools_str.strip() == "*",
             }
 
-    return {
+    return redact_report({
         "skill_name": frontmatter.get("name", "unknown") if frontmatter else "unknown",
         "skill_dir": str(skill_dir),
         "structure": structure,
@@ -653,7 +683,7 @@ def scan_skill(skill_dir: Path) -> dict[str, Any]:
             "trusted_count": len(all_urls) - len(untrusted_urls),
         },
         "description_body_overlap": round(overlap, 2),
-    }
+    }, secrets)
 
 
 def main():

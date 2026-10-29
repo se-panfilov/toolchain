@@ -1,0 +1,175 @@
+--- a/.agents/skills/code-simplifier/SKILL.md
++++ b/.agents/skills/code-simplifier/SKILL.md
+@@ -1,119 +1,74 @@
+ ---
+ name: code-simplifier
+-description: Simplifies and refines code for clarity, consistency, and maintainability while preserving all functionality. Use when asked to "simplify code", "clean up code", "refactor for clarity", "improve readability", or review recently modified code for elegance. Focuses on project-specific best practices.
++description: Simplify Toolchain CLI code for readability while preserving behavior and security. Use for requested refactoring or cleanup of recently changed code.
++license: Apache-2.0
++metadata:
++  upstream-source: getsentry/skills
++  upstream-revision: d12f250460ffd961f549dbebf7eeb0cf4afd4c2e
+ ---
+ 
+ <!--
+-Based on Anthropic's code-simplifier agent:
++Adapted for Toolchain from Sentry's code-simplifier skill:
++https://github.com/getsentry/skills/blob/d12f250460ffd961f549dbebf7eeb0cf4afd4c2e/skills/code-simplifier/SKILL.md
++The upstream skill is based on Anthropic's code-simplifier agent:
+ https://github.com/anthropics/claude-plugins-official/blob/main/plugins/code-simplifier/agents/code-simplifier.md
++Local changes remove React advice and blanket exception-handling preferences.
++They add CLI safety invariants, explicit scope, and verification requirements.
+ -->
+ 
+-# Code Simplifier
++# Simplify Toolchain CLI code
+ 
+-You are an expert code simplification specialist focused on enhancing code clarity, consistency, and maintainability while preserving exact functionality. Your expertise lies in applying project-specific best practices to simplify and improve code without altering its behavior. You prioritize readable, explicit code over overly compact solutions.
++Read [AGENTS.md](../../../AGENTS.md) and the affected utility documentation first.
++Use the [Toolchain workflow](../toolchain-cli/SKILL.md) for the required security reviews.
++This skill grants no additional permission to change data, Git history, or external services.
+ 
+-## Refinement Principles
++## Scope
+ 
+-### 1. Preserve Functionality
++Simplify the files selected by the user or the code changed for the current task.
++Do not expand a cleanup into a repository-wide refactor.
++Do not modify unrelated user changes or generated build output.
+ 
+-Never change what the code does - only how it does it. All original features, outputs, and behaviors must remain intact.
++## Preserve behavior
+ 
+-### 2. Apply Project Standards
++Keep public APIs, return values, exit codes, file contents, and ordering intact.
++Keep Russian prompts, help, errors, and confirmation defaults intact unless the task requests a text change.
++Keep TypeScript directly executable on the package's supported Node.js versions.
++Preserve explicit runtime import extensions and the separate JavaScript distribution build.
+ 
+-Follow the established coding standards from CLAUDE.md including:
++Preserve these safety properties when present:
+ 
+-- Use ES modules with proper import sorting and extensions
+-- Prefer `function` keyword over arrow functions
+-- Use explicit return type annotations for top-level functions
+-- Follow proper React component patterns with explicit Props types
+-- Use proper error handling patterns (avoid try/catch when possible)
+-- Maintain consistent naming conventions
++- Input validation and rejection of ambiguous states.
++- Subprocess argument arrays, environment isolation, and disabled hooks.
++- Path checks, file permissions, link checks, and overwrite protection.
++- Read-only plans, dry-run behavior, state checks, and ref transactions.
++- Recovery files, backups, locks, and partial-failure diagnostics.
++- Terminal cancellation, raw mode restoration, and event handler cleanup.
++- Explicit authorization for writes, network actions, and signature removal.
+ 
+-### 3. Enhance Clarity
++Do not remove try/catch/finally blocks merely to reduce nesting.
++Keep error propagation, cancellation, cleanup, and recovery semantics intact.
++Keep comments that explain a security invariant or a non-obvious platform constraint.
++Write new code comments in English.
+ 
+-Simplify code structure by:
++## Improve readability
+ 
+-- Reducing unnecessary complexity and nesting
+-- Eliminating redundant code and abstractions
+-- Improving readability through clear variable and function names
+-- Consolidating related logic
+-- Removing unnecessary comments that describe obvious code
+-- **Avoiding nested ternary operators** - prefer switch statements or if/else chains for multiple conditions
+-- Choosing clarity over brevity - explicit code is often better than overly compact code
++Prefer explicit control flow to nested ternaries and dense expressions.
++Use names that express the role of data and operations.
++Remove redundant abstractions only when their removal improves understanding.
++Keep validation, planning, writes, and verification distinct when this separation protects user data.
++Use early returns only when they preserve cleanup and error behavior.
++Do not introduce a dependency, framework, or new build step for cosmetic simplification.
++Do not apply React conventions to a terminal utility.
++Choose clarity over fewer lines or fewer tokens.
+ 
+-### 4. Maintain Balance
++## Verify the change
+ 
+-Avoid over-simplification that could:
++1. Identify the behavior and safety properties affected by the refactor.
++2. Make the smallest useful change.
++3. Read the complete diff, including failure and cleanup paths.
++4. Run the relevant existing checks in isolated fixtures.
++5. Add a regression check if the change exposes a security defect or missing behavioral coverage.
++6. Perform the separate security review required by AGENTS.md.
++7. Report the result, executed checks, and remaining limits in Russian.
+ 
+-- Reduce code clarity or maintainability
+-- Create overly clever solutions that are hard to understand
+-- Combine too many concerns into single functions or components
+-- Remove helpful abstractions that improve code organization
+-- Prioritize "fewer lines" over readability (e.g., nested ternaries, dense one-liners)
+-- Make the code harder to debug or extend
+-
+-### 5. Focus Scope
+-
+-Only refine code that has been recently modified or touched in the current session, unless explicitly instructed to review a broader scope.
+-
+-## Refinement Process
+-
+-1. **Identify** the recently modified code sections
+-2. **Analyze** for opportunities to improve elegance and consistency
+-3. **Apply** project-specific best practices and coding standards
+-4. **Ensure** all functionality remains unchanged
+-5. **Verify** the refined code is simpler and more maintainable
+-6. **Document** only significant changes that affect understanding
+-
+-## Examples
+-
+-### Before: Nested Ternaries
+-
+-```typescript
+-const status = isLoading ? 'loading' : hasError ? 'error' : isComplete ? 'complete' : 'idle';
+-```
+-
+-### After: Clear Switch Statement
+-
+-```typescript
+-function getStatus(isLoading: boolean, hasError: boolean, isComplete: boolean): string {
+-  if (isLoading) return 'loading';
+-  if (hasError) return 'error';
+-  if (isComplete) return 'complete';
+-  return 'idle';
+-}
+-```
+-
+-### Before: Overly Compact
+-
+-```typescript
+-const result = arr.filter(x => x > 0).map(x => x * 2).reduce((a, b) => a + b, 0);
+-```
+-
+-### After: Clear Steps
+-
+-```typescript
+-const positiveNumbers = arr.filter(x => x > 0);
+-const doubled = positiveNumbers.map(x => x * 2);
+-const sum = doubled.reduce((a, b) => a + b, 0);
+-```
+-
+-### Before: Redundant Abstraction
+-
+-```typescript
+-function isNotEmpty(arr: unknown[]): boolean {
+-  return arr.length > 0;
+-}
+-
+-if (isNotEmpty(items)) {
+-  // ...
+-}
+-```
+-
+-### After: Direct Check
+-
+-```typescript
+-if (items.length > 0) {
+-  // ...
+-}
+-```
++Do not execute a rewrite or network demo against real user data to validate a cleanup.
