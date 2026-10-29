@@ -165,7 +165,7 @@ test('удаляются подписи и mergetag, бинарное сообщ
   const repo = fixture(t);
   const old = repo.git(['cat-file', 'commit', 'HEAD']);
   const split = old.indexOf('\n\n');
-  const message = Buffer.from([0xff, 0x00, 0x0a, 0x41]);
+  const message = Buffer.from([0xff, 0xfe, 0x0a, 0x41]);
   const raw = Buffer.concat([
     old.subarray(0, split),
     Buffer.from('\ngpgsig -----BEGIN PGP SIGNATURE-----\n fake\n -----END PGP SIGNATURE-----\nmergetag object fake\n type commit'),
@@ -243,7 +243,7 @@ test('не исполняются локальные hooks; блокируетс
   writeFileSync(hook, `#!/bin/sh\ntouch '${marker}'\n`, { mode: 0o755 });
   const plan = makePlan(repo, options);
   writeFileSync(join(repo.common, 'rehistory.lock'), '');
-  assert.throws(() => applyPlan(plan), /EEXIST/);
+  assert.throws(() => applyPlan(plan), /reHistory заблокирован/);
   rmSync(join(repo.common, 'rehistory.lock'));
   applyPlan(plan);
   assert.throws(() => readFileSync(marker));

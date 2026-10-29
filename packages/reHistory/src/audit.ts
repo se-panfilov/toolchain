@@ -1,6 +1,6 @@
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { Repository, parts, field } from '@reHistory/engine';
+import { Repository, parts, field, readMetadataBatches } from '@reHistory/engine';
 
 export type Stamp = { identity: string; timestamp: number; timezone: string };
 export function stamp(data: Buffer, key: string): Stamp {
@@ -82,34 +82,41 @@ export function auditRepository(repo: Repository) {
   const fromReflog = new Set(!partial ? read(['rev-list', '--objects', '--no-object-names', '--reflog', '--all']).split('\n').filter(Boolean) : []);
   const commits: { oid: string; author: Stamp; committer: Stamp; inCurrentHistory: boolean; reachableFromRefs: boolean; protectedByReflog: boolean }[] = [];
   const tags: { oid: string; target: string; tagger: Stamp; reachableFromRefs: boolean }[] = [];
-  for (const object of objects) {
-    if (object.type !== 'commit' && object.type !== 'tag') continue;
-    try {
-      const raw = repo.git(['cat-file', object.type, object.oid]);
-      if (object.type === 'commit')
-        commits.push({
-          oid: object.oid,
-          author: stamp(raw, 'author'),
-          committer: stamp(raw, 'committer'),
-          inCurrentHistory: current.has(object.oid),
-          reachableFromRefs: reachable.has(object.oid),
-          protectedByReflog: fromReflog.has(object.oid)
-        });
-      else
-        tags.push({
-          oid: object.oid,
-          target:
-            parts(raw)
-              .headers.find((h) => field(h) === 'object')
-              ?.subarray(7)
-              .toString('ascii') || '',
-          tagger: stamp(raw, 'tagger'),
-          reachableFromRefs: reachable.has(object.oid)
-        });
-    } catch (error) {
-      complete = false;
-      warnings.push(`${object.oid}: ${error instanceof Error ? error.message : error}`);
+  try {
+    for (const [, oid, type, raw] of readMetadataBatches(
+      repo,
+      objects.filter((object) => object.type === 'commit' || object.type === 'tag').map((object) => object.oid)
+    )) {
+      const object = { oid, type };
+      try {
+        if (object.type === 'commit')
+          commits.push({
+            oid: object.oid,
+            author: stamp(raw, 'author'),
+            committer: stamp(raw, 'committer'),
+            inCurrentHistory: current.has(object.oid),
+            reachableFromRefs: reachable.has(object.oid),
+            protectedByReflog: fromReflog.has(object.oid)
+          });
+        else
+          tags.push({
+            oid: object.oid,
+            target:
+              parts(raw)
+                .headers.find((h) => field(h) === 'object')
+                ?.subarray(7)
+                .toString('ascii') || '',
+            tagger: stamp(raw, 'tagger'),
+            reachableFromRefs: reachable.has(object.oid)
+          });
+      } catch (error) {
+        complete = false;
+        warnings.push(`${object.oid}: ${error instanceof Error ? error.message : error}`);
+      }
     }
+  } catch (error) {
+    complete = false;
+    warnings.push(`Не удалось прочитать метаданные: ${error instanceof Error ? error.message : error}`);
   }
   const refDetails = refs.map((ref) => {
     let target = ref.oid;

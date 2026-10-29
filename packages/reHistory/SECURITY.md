@@ -13,6 +13,7 @@ These conditions are necessary:
 
 - The Node.js and Git executables are correct.
 - The operating system and PATH are correct.
+- The process environment and certificate trust store are under your control.
 - The source config and SSH config are under your control.
 - No other process changes the source or export during an operation.
 
@@ -20,6 +21,13 @@ Use [README.md](README.md) for the operating procedures.
 Use [TERMINOLOGY.md](TERMINOLOGY.md) for project terms.
 
 ## Git command controls
+
+The program resolves Git once through absolute PATH directories.
+It ignores empty, relative, and drive-relative entries.
+On Windows it accepts `git.exe`, not shell wrappers.
+It launches the resolved absolute file from its installation directory.
+The selected repository path is passed as an absolute `-C` argument.
+Trusted PATH directories and their executable targets remain necessary.
 
 The program gives Git an argument array.
 It does not insert user text into a shell command.
@@ -29,6 +37,11 @@ It contains no user input.
 The program removes inherited `GIT_*` variables before a Git call.
 It does not read system or global Git config.
 It reads local source config.
+Before status, rewrite and export reject configured clean, process, and smudge filters.
+The read-only audit does not call status or run these filters.
+Git LFS filter repositories require a separate controlled workflow.
+The filter check includes initialized nested submodules before recursive status.
+It accepts at most 256 working trees and requires UTF-8 index paths.
 
 Command options disable these functions:
 
@@ -65,8 +78,12 @@ Git URL substitutions are rejected before the server read.
 
 The network adapter rejects inline credentials and nonstandard paths.
 It preserves the distinction between home-relative SCP paths and absolute SSH URL paths.
-It requires TLS checks and rejects HTTP redirects.
+It rejects all local `http.*` keys before network access, including URL-specific overrides.
+The shared adapter repeats this check for demo and ordinary push commands.
+With those overrides excluded, command options require TLS checks and reject HTTP redirects.
 It disables credential helpers, askpass programs, and interactive authentication.
+Authenticated GitHub and GitLab push requires SSH under the current policy.
+HTTPS supports only servers that permit the requested operation without disabled authentication methods.
 SSH uses BatchMode and connection keepalive limits.
 The trusted SSH configuration can still select keys, proxies, and external SSH programs.
 
@@ -213,6 +230,28 @@ If a push completes before a later error, the program keeps that server data.
 The program does not undo completed push operations.
 The user controls server cleanup.
 
+## Object validation and terminal output
+
+Planning rejects selected source commits containing NUL before data writes.
+Generated commit and tag metadata containing NUL is rejected on all supported Git versions.
+The program retains other binary message bytes unless replacement is selected.
+Git validates metadata packs with `index-pack --strict` before refs change.
+An unsupported object can stop the operation with recovery instructions.
+
+JSON serialization escapes C1 controls and Unicode format controls, including supplementary code points.
+The escapes preserve original values after JSON parsing.
+Human-readable output continues to remove terminal control characters.
+
+## Interrupted application
+
+The exclusive lock error reports the recorded PID when the file is readable.
+The program does not remove an existing lock automatically.
+During local application, a SIGINT listener defers parent interruption until cleanup runs.
+An interrupted Git child can fail while the parent cleans up and reports recovery information.
+Ref updates still use the atomic Git transaction.
+SIGKILL, crashes, power loss, or other abrupt termination can leave a lock.
+Examine the recorded process and recovery file before removing that lock manually.
+
 ## Known limits
 
 - Changed Git dates do not show the time of the work.
@@ -230,10 +269,17 @@ The user controls server cleanup.
 - The program does not examine file contents for dates or personal data.
 
 The limit for new commit and tag metadata is 128 MiB.
-The limit for one Git response is 256 MiB.
-The program keeps the plan in memory.
-It starts two or more Git processes for each object.
-Large objects or histories can cause an operation to stop.
+The limit for one captured Git response is 256 MiB.
+Blob transfer uses temporary pack files and does not have that stdout buffer limit.
+Planning batches commit reads and computes new object IDs without Git subprocesses.
+Generated metadata uses one strict pack import per application or export.
+The program keeps the bounded metadata plan in memory.
+Planning, audit, and commit verification read metadata in groups of at most 128 objects.
+Tag planning and tag target verification still use individual reads.
+Large histories, disk limits, and Git memory use can cause an operation to stop.
+Temporary packs use private directories outside the source repository.
+A normal return or handled error removes them.
+An abrupt process termination can leave those private files.
 
 ## Previous implementation checks
 
