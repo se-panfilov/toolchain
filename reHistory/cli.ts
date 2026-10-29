@@ -142,7 +142,7 @@ async function main(): Promise<void> {
     } else print(`Экспорт → ${mode.destination}`, 'muted');
     let interval: number;
     for (;;) {
-      const value = await ask('Интервал, с', '1');
+      const value = await ask('Интервал (в секундах)', '1');
       interval = Number(value);
       if (/^\d+$/.test(value) && Number.isSafeInteger(interval) && interval >= 1 && interval <= 31536000) break;
       print('Целое число: 1–31536000.');
