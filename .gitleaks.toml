@@ -1,0 +1,7 @@
+# Extend the official rules embedded in Gitleaks.
+# https://github.com/gitleaks/gitleaks#configuration
+title = "Toolchain secret scanning"
+minVersion = "v8.28.0"
+
+[extend]
+useDefault = true

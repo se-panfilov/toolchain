@@ -1,0 +1,10 @@
+min_version: 2.2.2
+lefthook: node node_modules/lefthook/bin/index.js
+
+pre-commit:
+  parallel: true
+  commands:
+    prettier:
+      run: npm run pretty-quick -- --check
+    gitleaks:
+      run: npm run gitleaks:staged

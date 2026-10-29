@@ -575,7 +575,7 @@ typescript-eslint 8.72.0 was selected because the newer patch did not meet the a
 
 ### Adapted ESLint rules
 
-The shared configuration now includes selected rules from anarchy-engine.
+The shared configuration includes additional rules for Node.js CLI development.
 Typed spread and type-export checks use each application's TypeScript project.
 Only Node.js globals are available. Browser and Vue settings are excluded.
 Import sorting and explicit type boundaries do not replace input validation or Git safety checks.
