@@ -187,8 +187,8 @@ export class Repository {
   }
   inspectFull(): { refs: Ref[]; head: string; headOid: string } {
     const config = this.text(['config', '--list']);
-    assertStatusFilters(this);
     if (/^(remote\..*\.promisor(?:=|$)|extensions\.partialclone(?:=|$))/im.test(config)) throw new Error('Partial clone не поддерживается: нужен полный локальный репозиторий.');
+    assertStatusFilters(this);
     const refs = this.refs();
     if (refs.some((r) => r.symbolic && /^refs\/(heads|tags)\//.test(r.name))) throw new Error('Символические ссылки внутри локальных веток/тегов не поддерживаются.');
     const unsupported = refs.filter((r) => !/^refs\/(heads|tags|remotes|rehistory|codex)\//.test(r.name));
@@ -219,7 +219,7 @@ function assertStatusFilters(repo: Repository, seen = new Set<string>()): void {
   if (seen.has(canonical)) return;
   if (seen.size >= 256) throw new Error('Проверка ограничена 256 рабочими деревьями подмодулей. Используйте отдельный клон без инициализированных подмодулей.');
   seen.add(canonical);
-  if (gitConfigKeys(repo).some((key) => /^filter\..*\.(?:clean|smudge|process)$/i.test(key)))
+  if (gitConfigKeys(repo).some((key) => /^filter\.[\s\S]*\.(?:clean|smudge|process)$/i.test(key)))
     throw new Error('Git-фильтры не поддерживаются. Используйте отдельный клон без filter.*.clean/process/smudge. Git LFS требует отдельной обработки.');
   if (repo.text(['rev-parse', '--is-bare-repository']) === 'true') return;
   const index = repo.git(['ls-files', '--stage', '-z']);
@@ -238,12 +238,8 @@ function assertStatusFilters(repo: Repository, seen = new Set<string>()): void {
 }
 
 export function gitConfigKeys(repo: Repository): string[] {
-  return repo
-    .git(['config', '--null', '--list'])
-    .toString('utf8')
-    .split('\0')
-    .filter(Boolean)
-    .map((record) => record.split('\n', 1)[0]);
+  // Read names separately so multiline values cannot be mistaken for keys.
+  return repo.git(['config', '--null', '--name-only', '--list']).toString('utf8').split('\0').filter(Boolean);
 }
 
 /** Escape terminal controls without changing values after JSON.parse. */
