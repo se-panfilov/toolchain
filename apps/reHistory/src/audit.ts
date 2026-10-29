@@ -1,7 +1,7 @@
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { field, parts, readMetadataBatches,type Repository } from '@reHistory/engine';
+import { field, parts, readMetadataBatches, type Repository } from '@reHistory/engine';
 
 export type Stamp = { identity: string; timestamp: number; timezone: string };
 export type AuditReport = {

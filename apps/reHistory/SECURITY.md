@@ -571,6 +571,28 @@ Other source changes from this stage are formatting only.
 Dependency installation retained min-release-age=7 and disabled installation scripts.
 typescript-eslint 8.72.0 was selected because the newer patch did not meet the age requirement.
 
+### Adapted ESLint rules
+
+The shared configuration now includes selected rules from anarchy-engine.
+Typed spread and type-export checks use each application's TypeScript project.
+Only Node.js globals are available. Browser and Vue settings are excluded.
+Import sorting and explicit type boundaries do not replace input validation or Git safety checks.
+Mutable buffers, TTY state, and the deferred interruption getter remain supported.
+The rules do not require spellcheck, ts-morph, or the functional plugin.
+
+eslint-plugin-simple-import-sort 14.0.0 is a pinned root development dependency.
+It declares no runtime dependencies or installation scripts.
+It does not enter the application archive.
+ESLint plugins execute trusted development code. They are not a sandbox for untrusted source.
+
+Migration checks passed TypeScript, Vite, and 149 tests on macOS with Node.js 26.5.1 and 24.12.0.
+The minimum Node.js run used Git 2.56.0. The Node.js 26 run used Apple Git 2.39.5.
+A Linux-specific invalid-UTF-8 filename test was skipped on macOS.
+The actual twelve-file npm archive passed offline CLI, audit, export, and verification checks.
+The separate security pass retained the Git, filesystem, network, and interruption protections.
+Repository formatting helpers also reject Git content filters before diff to prevent unintended command execution.
+The helper and its tests are not included in the application archive.
+
 ## Review after tooling migrations
 
 The review found a repository selection defect in export verification.

@@ -36,6 +36,13 @@ The check command runs formatting checks, lint, and all workspace tests.
 Each application test command builds and checks TypeScript before testing.
 Build output in each application's `dist/` is the runtime for local use and npx.
 
+Use `npm run clean:reinstall` to reinstall the locked dependencies with installation scripts disabled.
+Use `npm run prettier:changed -- --check` to check tracked changes without writes.
+Use `npm run prettier:changed` to format those files.
+Use `npm run pretty-quick` to format staged files without updating the index.
+The staged command rejects files that also have unstaged changes.
+See the [formatting command limits](docs/ESLINT.md#repository-formatting-commands) before use.
+
 Select an application with its workspace name:
 
 ```sh
@@ -60,3 +67,4 @@ The CLI interface uses Russian.
 - [Package requirements](docs/PACKAGES.md) define workspace layout, versions, TypeScript, and distribution.
 - [Agent setup](docs/AI_AGENTS.md) describes vendor integration.
 - [Writing rules](docs/WRITING.md) apply ASD-STE100 writing principles.
+- [ESLint rules](docs/ESLINT.md) describe the CLI adaptations and migration checks.

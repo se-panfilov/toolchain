@@ -1,5 +1,5 @@
 import { stdin, stdout } from 'node:process';
-import { clearScreenDown,createInterface, cursorTo, emitKeypressEvents, moveCursor } from 'node:readline';
+import { clearScreenDown, createInterface, cursorTo, emitKeypressEvents, moveCursor } from 'node:readline';
 import type { ReadStream, WriteStream } from 'node:tty';
 
 export class PromptCancelled extends Error {
