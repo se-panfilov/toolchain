@@ -1,6 +1,6 @@
 {
   "name": "tx-rehistory",
-  "version": "2.3.3",
+  "version": "2.4.0",
   "description": "Interactive normalization, audit and verifiable export of Git history",
   "private": false,
   "type": "module",
@@ -18,6 +18,7 @@
     "dist/src/export.js",
     "dist/src/demo.js",
     "dist/src/prompts.js",
+    "dist/src/remote.js",
     "README.md",
     "SECURITY.md",
     "TERMINOLOGY.md",

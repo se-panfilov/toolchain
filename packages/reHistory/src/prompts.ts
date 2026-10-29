@@ -84,10 +84,15 @@ export class TerminalPrompts {
 
   /** Use exclusive checkboxes. Arrows move focus. Space selects an answer. */
   async confirm(question: string, defaultYes: boolean): Promise<boolean> {
+    return (await this.select(question, ['Да', 'Нет'], defaultYes ? 0 : 1)) === 0;
+  }
+
+  async select(question: string, choices: readonly string[], initial = 0): Promise<number> {
     this.check();
+    if (!choices.length || !Number.isInteger(initial) || initial < 0 || initial >= choices.length) throw new Error('Некорректный список вариантов.');
     const wasRaw = Boolean(this.input.isRaw);
     const wasFlowing = this.input.readableFlowing === true;
-    let selected = defaultYes ? 0 : 1;
+    let selected = initial;
     let focused = selected;
     let drawn = false;
     let pasting = false;
@@ -96,16 +101,16 @@ export class TerminalPrompts {
     let keypress = (_text: string | undefined, _key: Key) => {};
     const render = () => {
       if (drawn) {
-        moveCursor(this.output, 0, -2);
+        moveCursor(this.output, 0, -choices.length);
         cursorTo(this.output, 0);
         clearScreenDown(this.output);
       }
       this.output.write(
-        ['Да', 'Нет']
+        choices
           .map((label, index) => {
             const cursor = focused === index ? this.style.accent('›') : ' ';
             const mark = selected === index ? this.style.success('☑') : this.style.muted('☐');
-            const text = focused === index ? this.style.accent(label) : this.style.muted(label);
+            const text = focused === index ? this.style.accent(safe(label)) : this.style.muted(safe(label));
             return `  ${cursor} ${mark} ${text}\n`;
           })
           .join('')
@@ -113,12 +118,12 @@ export class TerminalPrompts {
       drawn = true;
     };
     try {
-      return await new Promise<boolean>((resolve, reject) => {
+      return await new Promise<number>((resolve, reject) => {
         const finish = (error?: Error) => {
           if (settled) return;
           settled = true;
           if (error) reject(error);
-          else resolve(selected === 0);
+          else resolve(selected);
         };
         cancel = () => finish(new PromptCancelled());
         this.active = cancel;
@@ -138,7 +143,7 @@ export class TerminalPrompts {
           }
           if (pasting || key.ctrl || key.meta) return;
           if (key.name === 'up' || key.name === 'down') {
-            focused = 1 - focused;
+            focused = (focused + (key.name === 'up' ? -1 : 1) + choices.length) % choices.length;
             render();
           } else if (key.name === 'space') {
             selected = focused;
