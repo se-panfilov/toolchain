@@ -114,11 +114,11 @@ Run these commands from the repository root when relevant:
 
 ```sh
 npm --prefix packages/reHistory test
+npm --prefix packages/reHistory run typecheck
 npm --prefix packages/reHistory run build
 node packages/reHistory/dist/cli.js --help
 ```
 
-The current reHistory build still strips types without a TypeScript type check.
-Its current start script runs TypeScript source directly, and it has no tsconfig.json.
-These are existing migration gaps. They do not meet the compilation requirements above.
+reHistory uses strict compilation with tsconfig.json and locked development dependencies.
+Its local start script builds first, then runs the same dist/cli.js entry point as the npm bin.
 There is no repository-wide test, lint, or type-check command at present.

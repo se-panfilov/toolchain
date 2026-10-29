@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
-test('сканер скрывает распознанные секреты во всех полях JSON и не меняет проверяемые файлы', t => {
+test('scanner hides recognized secrets in all JSON fields and does not modify checked files', t => {
   const directory = mkdtempSync(join(tmpdir(), 'toolchain-skill-scan-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const name = directory.split(/[\\/]/).at(-1)!;
