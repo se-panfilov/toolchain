@@ -440,3 +440,27 @@ Other source changes from this stage are formatting only.
 
 Dependency installation retained min-release-age=7 and disabled installation scripts.
 typescript-eslint 8.72.0 was selected because the newer patch did not meet the age requirement.
+
+## Review after tooling migrations
+
+The review found a repository selection defect in export verification.
+A child directory containing only a copied manifest could pass verification against its parent bare repository.
+This was a false success for incomplete output. The reproducer did not write repository data.
+
+The verifier now requires HEAD, config, objects, and refs inside the selected export directory.
+It checks these elements before constructing a Git repository wrapper.
+It also compares the actual Git directory and common directory with the selected root after path resolution.
+Tests reproduce the earlier false success in SHA-1 and SHA-256 fixtures.
+An additional test covers each missing required element and confirms unchanged bytes.
+
+The separate security pass used compiled JavaScript in isolated synthetic repositories.
+It checked repository discovery, missing metadata, file links, unsafe config, environment routing, and terminal control characters.
+All checks passed after the fix.
+The complete formatting, lint, type-check, and Vitest command passed all 81 tests on Node.js 24.12.0.
+An independent pseudoterminal check completed dry-run, rewriting, and export through the actual interactive CLI.
+Dry-run preserved source bytes. Rewriting preserved the backup and another branch.
+The selected date and time reached all commit dates.
+Export preserved the source and passed verification.
+
+The review did not remove runtime safety checks or change the distribution to a single bundle.
+The existing trust assumptions, resource limits, and unsigned-manifest limits remain applicable.
