@@ -6,12 +6,12 @@ npm does not require a source directory named `lib`.
 
 ## Directory structure
 
-| Directory | Contents |
-| --- | --- |
-| `src/` | TypeScript runtime source. |
-| `test/` | Vitest tests and isolated fixtures. |
-| `scripts/` | Build and maintenance tools. |
-| `dist/` | Vite output for local execution and npm packaging. |
+| Directory  | Contents                                           |
+| ---------- | -------------------------------------------------- |
+| `src/`     | TypeScript runtime source.                         |
+| `test/`    | Vitest tests and isolated fixtures.                |
+| `scripts/` | Build and maintenance tools.                       |
+| `dist/`    | Vite output for local execution and npm packaging. |
 
 Keep package metadata, tsconfig.json, package-lock.json, README.md, and LICENSE at the application root.
 Keep security documentation there when the application changes user data.
@@ -68,6 +68,13 @@ The generated modules must work in local builds and installed packages.
 
 ## Build and verification
 
+Provide Prettier configuration and an ESLint flat configuration in every application.
+Use recommended JavaScript and TypeScript ESLint rules.
+Use eslint-config-prettier to disable conflicting formatting rules. Keep Prettier separate from ESLint.
+Provide format, format:check, lint, and check commands.
+Before completing work, format changed maintained files and run the format check and application lint.
+Exclude generated output, dependencies, coverage, and reports from these tools.
+Preserve existing formatting choices and ignore files.
 Use Vite for every TypeScript application build.
 Run `tsc --noEmit` before the Vite build. Vite does not check types.
 Use `ESNext` modules and `Bundler` resolution in TypeScript for Vite applications.

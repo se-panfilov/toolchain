@@ -11,15 +11,19 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const out = join(root, 'dist');
 const runtime = ['engine', 'audit', 'export', 'demo', 'prompts', 'cli'];
 const tests = ['engine.test', 'features.test', 'prompts.test'];
-const expected = runtime.map(name => `src/${name}.js`).sort();
-const legacy = [...[...runtime, ...tests].map(name => `${name}.js`), ...tests.map(name => `test/${name}.js`)];
+const expected = runtime.map((name) => `src/${name}.js`).sort();
+const legacy = [...[...runtime, ...tests].map((name) => `${name}.js`), ...tests.map((name) => `test/${name}.js`)];
 const directories = new Set(['src', 'test']);
 
 // Inspect every output path without following links. Unknown files need manual review.
 function filesIn(directory, prefix = '', allowLegacy = false) {
   let stat;
-  try { stat = lstatSync(directory); }
-  catch (error) { if (error.code === 'ENOENT') return []; throw error; }
+  try {
+    stat = lstatSync(directory);
+  } catch (error) {
+    if (error.code === 'ENOENT') return [];
+    throw error;
+  }
   if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('dist и его подкаталоги должны быть обычными каталогами.');
   const files = [];
   for (const entry of readdirSync(directory)) {
@@ -45,7 +49,9 @@ async function build() {
     const require = createRequire(import.meta.url);
     const compiler = require.resolve('typescript/lib/tsc.js');
     const result = spawnSync(process.execPath, [compiler, '--project', join(root, 'tsconfig.json'), '--noEmit', '--pretty', 'false'], {
-      cwd: root, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024,
+      cwd: root,
+      encoding: 'utf8',
+      maxBuffer: 32 * 1024 * 1024
     });
     if (result.error) throw new Error(`Не удалось запустить TypeScript: ${result.error.message}`);
     if (result.status !== 0) throw new Error(`Компиляция не выполнена. dist не изменён.\n${result.stdout}${result.stderr}`);
@@ -62,8 +68,11 @@ async function build() {
     chmodSync(join(out, 'src/cli.js'), 0o755);
     // Remove only known flat files from the previous generated layout after success.
     for (const file of legacy) {
-      try { unlinkSync(join(out, file)); }
-      catch (error) { if (error.code !== 'ENOENT') throw error; }
+      try {
+        unlinkSync(join(out, file));
+      } catch (error) {
+        if (error.code !== 'ENOENT') throw error;
+      }
     }
     console.log('Сборка и проверка типов завершены: dist/src/cli.js');
   } finally {
@@ -71,8 +80,9 @@ async function build() {
   }
 }
 
-try { await build(); }
-catch (error) {
+try {
+  await build();
+} catch (error) {
   console.error(`Ошибка сборки: ${error instanceof Error ? error.message : String(error)}`);
   process.exitCode = 1;
 }

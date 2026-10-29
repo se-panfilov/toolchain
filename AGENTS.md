@@ -85,6 +85,9 @@ Keep utility-specific requirements in the relevant utility documentation.
 
 ## Verification and delivery
 
+- Before completing work, run Prettier on changed maintained files and run ESLint for each affected application.
+- Use the existing formatting configuration. Exclude generated output and vendored skills from automatic formatting.
+- After formatting, run the format check and fix lint errors. Do not silently skip either check.
 - Use Vitest for unit and integration tests in all TypeScript applications. Preserve meaningful security regressions during test migration.
 - Test source through Vitest and Vite transforms. Also verify the built CLI and installed archive without source loaders.
 - Test behavior and failure modes in isolated temporary directories with synthetic data.
@@ -119,6 +122,9 @@ Run these commands from the repository root when relevant:
 
 ```sh
 npm --prefix packages/reHistory test
+npm --prefix packages/reHistory run format
+npm --prefix packages/reHistory run format:check
+npm --prefix packages/reHistory run lint
 npm --prefix packages/reHistory run typecheck
 npm --prefix packages/reHistory run build
 node packages/reHistory/dist/src/cli.js --help

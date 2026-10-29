@@ -8,28 +8,43 @@ import { TerminalPrompts, PromptCancelled, terminalStyle } from '@reHistory/prom
 class Input extends PassThrough {
   isTTY = true;
   isRaw = false;
-  setRawMode(value: boolean): this { this.isRaw = value; return this; }
+  setRawMode(value: boolean): this {
+    this.isRaw = value;
+    return this;
+  }
 }
 class Output extends Writable {
   isTTY = true;
   columns = 100;
   text = '';
-  override _write(chunk: Buffer, _encoding: string, callback: () => void): void { this.text += chunk.toString(); callback(); }
+  override _write(chunk: Buffer, _encoding: string, callback: () => void): void {
+    this.text += chunk.toString();
+    callback();
+  }
 }
 function fixture(t: { onTestFinished: (fn: () => void) => void }) {
   // Model an ANSI terminal, not the TERM=dumb shell used by CI.
-  const term = process.env.TERM; process.env.TERM = 'xterm-256color';
-  t.onTestFinished(() => { if (term === undefined) delete process.env.TERM; else process.env.TERM = term; });
-  const input = new Input(); const output = new Output();
+  const term = process.env.TERM;
+  process.env.TERM = 'xterm-256color';
+  t.onTestFinished(() => {
+    if (term === undefined) delete process.env.TERM;
+    else process.env.TERM = term;
+  });
+  const input = new Input();
+  const output = new Output();
   const prompts = new TerminalPrompts(input as unknown as ReadStream, output as unknown as WriteStream);
-  t.onTestFinished(() => { prompts.close(); input.destroy(); output.destroy(); });
+  t.onTestFinished(() => {
+    prompts.close();
+    input.destroy();
+    output.destroy();
+  });
   return { input, output, prompts };
 }
 
-test('чекбокс по умолчанию выбран; цифры не меняют ответ', async t => {
+test('чекбокс по умолчанию выбран; цифры не меняют ответ', async (t) => {
   const { input, output, prompts } = fixture(t);
   const answer = prompts.confirm('Применить?', false);
-  assert.match(stripVTControlCharacters(output.text), /☐ Да\n  › ☑ Нет/);
+  assert.match(stripVTControlCharacters(output.text), /☐ Да\n {2}› ☑ Нет/);
   assert(!output.text.includes('Выберите номер'));
   assert(!output.text.includes('Enter'));
   assert(!output.text.includes('пробел'));
@@ -39,7 +54,7 @@ test('чекбокс по умолчанию выбран; цифры не ме�
   assert.equal(input.listenerCount('keypress'), 0);
 });
 
-test('стрелка меняет только фокус; пробел выбирает единственный вариант', async t => {
+test('стрелка меняет только фокус; пробел выбирает единственный вариант', async (t) => {
   const { input, prompts } = fixture(t);
   let answer = prompts.confirm('Применить?', false);
   input.write('\x1b[A\r');
@@ -49,44 +64,57 @@ test('стрелка меняет только фокус; пробел выби
   assert.equal(await answer, true);
 });
 
-test('выбранное Да принимается Enter; стрелка и пробел переключают на Нет', async t => {
+test('выбранное Да принимается Enter; стрелка и пробел переключают на Нет', async (t) => {
   const { input, prompts } = fixture(t);
   let answer = prompts.confirm('Бекап?', true);
-  input.write('\r'); assert.equal(await answer, true);
+  input.write('\r');
+  assert.equal(await answer, true);
   answer = prompts.confirm('Бекап?', true);
-  input.write('\x1b[B \r'); assert.equal(await answer, false);
+  input.write('\x1b[B \r');
+  assert.equal(await answer, false);
 });
 
-test('вставка bracketed paste не выбирает и не подтверждает применение', async t => {
+test('вставка bracketed paste не выбирает и не подтверждает применение', async (t) => {
   const { input, prompts } = fixture(t);
   let resolved = false;
-  const answer = prompts.confirm('Применить?', false).then(value => { resolved = true; return value; });
+  const answer = prompts.confirm('Применить?', false).then((value) => {
+    resolved = true;
+    return value;
+  });
   input.write('\x1b[200~\x1b[A \r\x1b[201~');
   await Promise.resolve();
   assert.equal(resolved, false);
-  input.write('\r'); assert.equal(await answer, false);
+  input.write('\r');
+  assert.equal(await answer, false);
 });
 
-test('значение по умолчанию находится в редактируемой строке, Enter его принимает', async t => {
+test('значение по умолчанию находится в редактируемой строке, Enter его принимает', async (t) => {
   const { input, output, prompts } = fixture(t);
   const answer = prompts.text('Интервал', '12');
   assert.match(stripVTControlCharacters(output.text), /Интервал: 12/);
   assert(!output.text.includes('[12]'));
-  input.write('\r'); assert.equal(await answer, '12');
+  input.write('\r');
+  assert.equal(await answer, '12');
   assert.equal(input.isRaw, false);
 });
 
-test('предзаполненный текст можно редактировать и полностью очистить', async t => {
+test('предзаполненный текст можно редактировать и полностью очистить', async (t) => {
   const { input, prompts } = fixture(t);
   let answer = prompts.text('Интервал', '12');
-  input.write('\x7f'); input.write('3'); input.write('\r'); assert.equal(await answer, '13');
+  input.write('\x7f');
+  input.write('3');
+  input.write('\r');
+  assert.equal(await answer, '13');
   answer = prompts.text('Интервал', '12');
-  input.write('\x15'); input.write('\r'); assert.equal(await answer, '');
+  input.write('\x15');
+  input.write('\r');
+  assert.equal(await answer, '');
 });
 
-test('Ctrl+C отменяет выбор/ввод, восстанавливает raw mode и снимает обработчики', async t => {
+test('Ctrl+C отменяет выбор/ввод, восстанавливает raw mode и снимает обработчики', async (t) => {
   const { input, prompts } = fixture(t);
-  const sigint = process.listenerCount('SIGINT'); const sigterm = process.listenerCount('SIGTERM');
+  const sigint = process.listenerCount('SIGINT');
+  const sigterm = process.listenerCount('SIGTERM');
   for (const answer of [() => prompts.confirm('Применить?', false), () => prompts.text('Дата', '2026-10-28')]) {
     const pending = answer();
     input.write('\x03');
@@ -98,19 +126,23 @@ test('Ctrl+C отменяет выбор/ввод, восстанавливае�
   }
 });
 
-test('закрытие диалога отменяет незавершённый ввод и сохраняет исходный raw mode', async t => {
+test('закрытие диалога отменяет незавершённый ввод и сохраняет исходный raw mode', async (t) => {
   const { input, prompts } = fixture(t);
-  input.isRaw = true; input.resume();
+  input.isRaw = true;
+  input.resume();
   const text = prompts.text('Значение', 'текст');
-  input.write('\r'); await text;
-  assert.equal(input.isRaw, true); assert.equal(input.readableFlowing, true);
+  input.write('\r');
+  await text;
+  assert.equal(input.isRaw, true);
+  assert.equal(input.readableFlowing, true);
   const pending = prompts.confirm('Применить?', false);
-  prompts.close(); await assert.rejects(pending, PromptCancelled);
+  prompts.close();
+  await assert.rejects(pending, PromptCancelled);
   assert.equal(input.isRaw, true);
   await assert.rejects(prompts.text('Имя'), PromptCancelled);
 });
 
-test('управляющие символы в вопросе/начальном тексте не уходят в терминал', async t => {
+test('управляющие символы в вопросе/начальном тексте не уходят в терминал', async (t) => {
   const { input, output, prompts } = fixture(t);
   const pending = prompts.text('Вопрос\x1b[31m', 'текст\x1b[2J');
   input.write('\r');
@@ -119,25 +151,33 @@ test('управляющие символы в вопросе/начальном
   assert(!output.text.includes('\x1b[2J'));
 });
 
-
-test('неподдерживаемый терминал отклоняется до смены raw mode и вывода', async t => {
+test('неподдерживаемый терминал отклоняется до смены raw mode и вывода', async (t) => {
   const { input, output, prompts } = fixture(t);
   input.isTTY = false;
   await assert.rejects(prompts.text('Имя'), /TTY/);
-  input.isTTY = true; process.env.TERM = 'dumb';
+  input.isTTY = true;
+  process.env.TERM = 'dumb';
   await assert.rejects(prompts.confirm('Применить?', false), /TERM=dumb/);
-  assert.equal(input.isRaw, false); assert.equal(output.text, '');
+  assert.equal(input.isRaw, false);
+  assert.equal(output.text, '');
 });
 
-
-test('цвета доступны только в TTY и отключаются NO_COLOR', t => {
+test('цвета доступны только в TTY и отключаются NO_COLOR', (t) => {
   const env = { TERM: process.env.TERM, NO_COLOR: process.env.NO_COLOR, FORCE_COLOR: process.env.FORCE_COLOR };
-  t.onTestFinished(() => { for (const [key, value] of Object.entries(env)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; } });
-  process.env.TERM = 'xterm-256color'; delete process.env.NO_COLOR; delete process.env.FORCE_COLOR;
-  assert.match(terminalStyle({ isTTY: true }).accent('текст'), /\x1b\[36mтекст\x1b\[0m/);
+  t.onTestFinished(() => {
+    for (const [key, value] of Object.entries(env)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+  process.env.TERM = 'xterm-256color';
+  delete process.env.NO_COLOR;
+  delete process.env.FORCE_COLOR;
+  assert.equal(terminalStyle({ isTTY: true }).accent('текст'), '\x1b[36mтекст\x1b[0m');
   assert.equal(terminalStyle({ isTTY: false }).accent('текст'), 'текст');
   process.env.NO_COLOR = '1';
   assert.equal(terminalStyle({ isTTY: true }).accent('текст'), 'текст');
-  delete process.env.NO_COLOR; process.env.FORCE_COLOR = '0';
+  delete process.env.NO_COLOR;
+  process.env.FORCE_COLOR = '0';
   assert.equal(terminalStyle({ isTTY: true }).accent('текст'), 'текст');
 });
