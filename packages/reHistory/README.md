@@ -466,7 +466,13 @@ Read the warnings and object data in the report.
 ## Package preparation
 
 The package has no runtime dependencies.
-The npm bin name is `rehistory`.
+The npm package and bin name is `tx-rehistory`.
+The source directory remains `packages/reHistory`.
+After npm publication, use this command:
+
+```sh
+npx tx-rehistory --help
+```
 
 1. Open the package directory.
 
@@ -509,7 +515,7 @@ Use the archive name from the npm output for a local bin check.
 Replace `PACKAGE.tgz` with that archive name.
 
 ```sh
-npx --offline --yes --package /path/to/PACKAGE.tgz rehistory --help
+npx --offline --yes --package /path/to/PACKAGE.tgz tx-rehistory --help
 ```
 
 Before publication, select an available package name.
