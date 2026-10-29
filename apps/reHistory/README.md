@@ -1,6 +1,7 @@
 # reHistory
 
-reHistory changes commit dates in the current Git branch.
+reHistory changes the metadata of commits in the current Git branch.
+Each run does one of three flows: commit dates, commit authors, or commit messages.
 It can make an export without changes to the source repository.
 The user interface uses Russian.
 
@@ -40,11 +41,15 @@ A changed history has different object IDs.
 **CAUTION: Stop other Git operations before you start this program.**
 Close Git tools that can change the same repository.
 
+**CAUTION: Push the current branch before a history change.**
+The server copy keeps the initial history if a local change goes wrong.
+
 Changed dates do not show the time of the work.
 Other copies can keep the initial dates.
 Files, messages, tag names, and submodules can also contain dates.
 The program does not examine file contents for these dates.
 You can replace commit messages with one selected message.
+You can replace the names and email addresses of all authors and committers.
 
 ## Requirements
 
@@ -54,6 +59,7 @@ You can replace commit messages with one selected message.
 - A complete repository with a local branch that contains a commit.
 - Git in an absolute PATH directory. Empty and relative PATH entries are ignored.
 - No configured clean, process, or smudge filters for rewrite and export.
+- For a history change, branch commits in a remote-tracking ref, or an explicit confirmation without remote-tracking refs.
 
 macOS is the test platform.
 Native Linux and Windows checks are configured in CI.
@@ -141,36 +147,91 @@ The dry-run gives a plan without writes.
    node /path/to/toolchain/apps/reHistory/dist/src/cli.js --repo /path/to/project --dry-run
    ```
 
-2. Enter the required values.
-3. Do a check of the plan.
-4. Start the program without `--dry-run`.
+2. Select one flow at `Что переписать?`.
+3. Enter the required values.
+4. Do a check of the plan.
+5. Start the program without `--dry-run`.
 
    ```sh
    node /path/to/toolchain/apps/reHistory/dist/src/cli.js --repo /path/to/project
    ```
 
-5. Enter the required values again.
-6. If the plan is correct, select Yes to give permission for the change.
+6. Select the same flow and enter the same values again.
+7. If the plan is correct, select Yes to give permission for the change.
+8. Push the result before you start a different flow.
 
-Enter these values at the program questions:
+### Flows
 
-| Item                   | Initial value               | Effect                                                        |
-| ---------------------- | --------------------------- | ------------------------------------------------------------- |
-| Backup                 | Yes                         | Keep the initial branch and the selected tags.                |
-| Backup branch          | `rehistory-backup/original` | Stop if there is a branch with this name.                     |
-| Commit interval        | `1` second                  | Use an integer from 1 to 31536000.                            |
-| First date             | Today                       | Use `YYYY-MM-DD`.                                             |
-| First time             | `00:00:00`                  | Use local time unless you add an offset.                      |
-| Commit identity change | No                          | Change all selected authors and committers if you select Yes. |
-| Tag date change        | Yes                         | Set each annotated tag date to its target commit date.        |
-| Tagger identity change | No                          | Enter a different name and email address.                     |
-| Commit message change  | No                          | Replace all selected commit messages with one UTF-8 message.  |
-| Final push             | No                          | Offer a separate server operation after a local rewrite.      |
-| Permission to write    | No                          | Write only after a specified Yes.                             |
+One run changes one type of metadata.
+The program asks only the questions of the selected flow.
 
-If you change the commit identity, the initial tagger choice is Yes.
-This choice uses the same name and email address for taggers.
+| Flow (`Что переписать?`) | Changes                                    | Keeps                                            |
+| ------------------------ | ------------------------------------------ | ------------------------------------------------ |
+| `Время коммитов`         | Author and committer dates, and tag dates. | Identities, messages, and taggers.               |
+| `Авторы коммитов`        | Author and committer names and emails.     | Dates, time zones, messages, and tag dates.      |
+| `Сообщения коммитов`     | All commit messages.                       | Dates, time zones, identities, and all tag data. |
+
+To change more than one type of metadata, run the flows one after the other.
+Push the result of each flow before you start the next flow.
+
+These questions are the same for all flows:
+
+| Item                | Initial value               | Effect                                                   |
+| ------------------- | --------------------------- | -------------------------------------------------------- |
+| Flow                | `Время коммитов`            | Select the type of metadata to change.                   |
+| Backup              | Yes                         | Keep the initial branch and the selected tags.           |
+| Backup branch       | `rehistory-backup/original` | Stop if there is a branch with this name.                |
+| Final push          | No                          | Offer a separate server operation after a local rewrite. |
+| Permission to write | No                          | Write only after a specified Yes.                        |
+
+The `Время коммитов` flow asks these questions:
+
+| Item            | Initial value | Effect                                                 |
+| --------------- | ------------- | ------------------------------------------------------ |
+| Commit interval | `1` second    | Use an integer from 1 to 31536000.                     |
+| First date      | Today         | Use `YYYY-MM-DD`.                                      |
+| First time      | `00:00:00`    | Use local time unless you add an offset.               |
+| Tag date change | Yes           | Set each annotated tag date to its target commit date. |
+
+The `Авторы коммитов` flow asks these questions:
+
+| Item                   | Initial value | Effect                                                   |
+| ---------------------- | ------------- | -------------------------------------------------------- |
+| Name                   | Empty         | Use 1 to 200 characters without `<`, `>`, and controls.  |
+| Email                  | Empty         | Use the format `name@example.org`.                       |
+| Same identity for tags | Yes           | Replace the tagger name and email of the selected tags.  |
+
 The program does not get an identity from Git config.
+If you select No for tags, taggers do not change.
+Tag dates do not change in this flow.
+
+The `Сообщения коммитов` flow asks one question:
+
+| Item        | Initial value | Effect                                                 |
+| ----------- | ------------- | ------------------------------------------------------ |
+| New message | Empty         | Replace all selected commit messages with one message. |
+
+If the plan does not change an object, the program stops before the write.
+It shows `Изменений нет` and makes no backup.
+
+### Remote copy check
+
+Before a history change, the program compares the current branch with the remote-tracking refs (`refs/remotes/*`).
+It reads only local refs. It does not connect to a server.
+
+| State                                                       | Result                                                    |
+| ----------------------------------------------------------- | --------------------------------------------------------- |
+| All branch commits are in a remote-tracking ref.            | The program continues.                                    |
+| Some branch commits are not in a remote-tracking ref.       | The program stops before the first question.              |
+| The repository has no remote-tracking refs.                 | The program asks `Продолжить без копии на сервере?` (No). |
+
+A dry-run shows these warnings and continues without a question.
+An export does not do this check, because it does not change the source.
+Uncommitted changes always stop a history change and an export.
+
+To continue after a stop, push the branch.
+If you pushed with a different tool, run `git fetch` to update the remote-tracking refs.
+Remote-tracking refs can be out of date. The program cannot see server changes after the last fetch or push.
 
 You can change the backup branch name.
 The program does not add a date, time, or counter to this name.
@@ -237,22 +298,24 @@ A tag is different from a branch.
 A tag on a shared ancestor can change although another branch stays with no changes.
 
 The program keeps trees, file contents, empty commits, and the order of parent links.
-It keeps commit messages unless you select their replacement.
+It keeps commit messages unless you select the `Сообщения коммитов` flow.
 The replacement is nonempty UTF-8 text with a final newline.
 Input is limited to 64 KiB and cannot contain hidden control characters.
 The engine also accepts line breaks and tabs.
 The terminal question accepts one line.
 Old encoding headers are removed when messages change.
-It puts each parent before its child in the date sequence.
+
+In the `Время коммитов` flow, the program puts each parent before its child in the date sequence.
 Each pair of adjacent commits has the selected interval.
 A parent and child can have a larger interval in a merge graph.
-
 The author date and committer date are equal for each new commit.
-The program keeps each initial identity unless you select an identity change.
+
+The `Авторы коммитов` and `Сообщения коммитов` flows keep each initial date and UTC offset.
+The program keeps each initial identity unless you select the `Авторы коммитов` flow.
 
 The program keeps annotated tag names and messages.
-It changes the target object and the selected tagger fields.
-A nested tag uses the date of its target commit.
+It changes the target object and the tagger fields of the selected flow.
+In the `Время коммитов` flow, a nested tag uses the date of its target commit.
 As an alternative, you can keep the initial tagger date and offset.
 A tag without a tagger causes the program to stop.
 
@@ -292,7 +355,12 @@ The push contains the current branch and its selected tags.
 For the branch upstream remote, the destination is its configured upstream branch.
 Otherwise, the destination has the current branch name.
 Backup refs, other branches, and other tags are excluded.
-The program does not delete server refs or update remote-tracking refs.
+The program does not delete server refs.
+
+After a successful push, the program updates the remote-tracking branch of the destination.
+This is the same result as `git push <remote>`.
+The update occurs only for the standard fetch refspec `+refs/heads/*:refs/remotes/<remote>/*`.
+For other refspecs, the program shows a warning. Run `git fetch` before the next flow.
 
 Each destination has an explicit `--force-with-lease=<ref>:<expected-object-id>`.
 The server branch must be absent, already rewritten, or part of the selected initial history.
@@ -364,12 +432,18 @@ It does not use source file links.
 The program does not change submodule entries.
 The export does not include the different submodule histories.
 
-The file `rehistory-export.json` contains the new refs, object IDs, and date policy.
+The file `rehistory-export.json` contains the new refs, object IDs, and the flow policy.
+Manifest version 2 contains the flow and only the values of that flow.
+The check still accepts version 1 manifests from earlier releases. They always describe a date change.
 It does not contain old commit IDs, old tag IDs, or the source path.
 On POSIX systems, the file has mode `0600`.
 
 The export check compares the refs and the full object inventory with the plan.
-It examines reachability, dates, identities, parent order, and tag signatures.
+It examines reachability, parent order, tag signatures, and the values of the flow.
+For the `Время коммитов` flow, it examines the commit and tag dates.
+For the `Авторы коммитов` flow, it examines the identities.
+For the `Сообщения коммитов` flow, it examines the messages.
+The export has no source data. The check cannot prove that other metadata stayed the same.
 It rejects unexpected files, config entries, symbolic links, hard links, and special files.
 The file check includes all nested directories.
 Unexpected metadata stops verification before Git reads the object store.
@@ -439,7 +513,7 @@ The demo does these operations:
 4. It sends main and its tags to the server.
 5. It makes three other branches, each with two commits and tags.
 6. It sends all generated branches and tags to the server.
-7. It changes main with the normal engine and automatic demo answers.
+7. It changes the main dates with the normal engine and automatic demo answers.
 8. It does an audit of the source.
 9. It makes an export of main and its three tags.
 10. It does the export check and another audit.
@@ -586,6 +660,9 @@ A history change and an export reject these states:
 - Incomplete merge, rebase, cherry-pick, revert, sequencer, or bisect operations.
 - Symbolic local branches or tags.
 - Unsupported refs, including stash, notes, and replace refs.
+
+A history change also rejects branch commits that are not in a remote-tracking ref.
+See [Remote copy check](#remote-copy-check).
 
 The program does not change ignored files.
 You can use SHA-1 and SHA-256 repositories.
