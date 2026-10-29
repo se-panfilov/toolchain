@@ -306,6 +306,8 @@ async function main(): Promise<void> {
       const result = applyPlan(plan);
       print(`✓ Готово · коммиты: ${plan.commits}`, 'success');
       print(`Восстановление: ${result.recovery}${result.backupPrefix ? `\nБекап-ссылки: ${result.backupPrefix}` : ''}`, 'muted');
+      // A confirmation can resume from poll. Two check phases include the next poll.
+      await nextTurn();
       await nextTurn();
       if (result.interrupted) {
         print('Прервано. Локальная история сохранена; push не выполнялся.', 'warning');
