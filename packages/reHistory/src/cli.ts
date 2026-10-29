@@ -2,7 +2,7 @@
 import { stdin, stdout } from 'node:process';
 import { pathToFileURL } from 'node:url';
 import { realpathSync } from 'node:fs';
-import { Repository, makePlan, applyPlan, validateIdentity, normalizeCommitMessage, defaultBackupBranch, type Plan } from '@reHistory/engine';
+import { Repository, makePlan, applyPlan, validateIdentity, normalizeCommitMessage, terminalJSON, defaultBackupBranch, type Plan } from '@reHistory/engine';
 import { pushRemotes, preparePush, executePush } from '@reHistory/remote';
 import { auditRepository, auditText } from '@reHistory/audit';
 import { exportDestination, exportPlan, verifyExport } from '@reHistory/export';
@@ -139,7 +139,7 @@ async function main(): Promise<void> {
   }
   if (mode.verify) {
     const report = verifyExport(mode.verify);
-    if (mode.json) console.log(JSON.stringify(report, null, 2));
+    if (mode.json) console.log(terminalJSON(report));
     else {
       print(`${report.ok ? '✓ Экспорт проверен' : '✕ Проверка не пройдена'} · коммиты: ${report.commits} · теги: ${report.tags} · объекты: ${report.objects}`, report.ok ? 'success' : 'error');
       print(report.repository, 'muted');
@@ -151,7 +151,7 @@ async function main(): Promise<void> {
   const repo = new Repository(mode.path);
   if (mode.audit) {
     const report = auditRepository(repo);
-    if (mode.json) console.log(JSON.stringify(report, null, 2));
+    if (mode.json) console.log(terminalJSON(report));
     else for (const line of auditText(report).split('\n')) print(line, line.startsWith('АУДИТ:') ? 'accent' : line.startsWith('Внимание:') ? 'warning' : 'plain');
     if (!report.complete) process.exitCode = 2;
     return;

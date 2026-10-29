@@ -1,8 +1,9 @@
 import { spawnSync } from 'node:child_process';
-import { constants, existsSync, openSync, closeSync, unlinkSync, writeFileSync, fsyncSync, readdirSync, readSync } from 'node:fs';
-import { join, resolve } from 'node:path';
-import { randomUUID } from 'node:crypto';
-import { devNull } from 'node:os';
+import { constants, existsSync, openSync, closeSync, unlinkSync, writeFileSync, fsyncSync, readdirSync, readSync, statSync, accessSync, realpathSync, mkdtempSync, rmSync, lstatSync } from 'node:fs';
+import { join, resolve, dirname, win32, posix } from 'node:path';
+import { randomUUID, createHash } from 'node:crypto';
+import { devNull, tmpdir } from 'node:os';
+import { deflateSync } from 'node:zlib';
 
 export const defaultBackupBranch = 'rehistory-backup/original';
 
@@ -48,9 +49,33 @@ Object.assign(env, {
   GIT_CONFIG_SYSTEM: devNull,
   GIT_CONFIG_GLOBAL: devNull
 });
-export function runGit(path: string, args: string[], input?: Buffer | string, extraEnv: Record<string, string> = {}): Buffer {
+/** Resolve only absolute PATH entries. Never search the current directory implicitly. */
+export function findGitExecutable(pathValue: string, platform = process.platform, probe?: (candidate: string) => string | undefined): string {
+  const windows = platform === 'win32';
+  const paths = windows ? win32 : posix;
+  for (let directory of pathValue.split(windows ? ';' : ':')) {
+    if (windows && directory.startsWith('"') && directory.endsWith('"')) directory = directory.slice(1, -1);
+    if (!paths.isAbsolute(directory) || (windows && !/^(?:[a-z]:[\\/]|\\\\[^\\]+\\[^\\]+)/i.test(directory))) continue;
+    const candidate = paths.join(directory, windows ? 'git.exe' : 'git');
+    try {
+      if (probe) {
+        const found = probe(candidate);
+        if (found) return found;
+      } else if (statSync(candidate).isFile()) {
+        accessSync(candidate, windows ? constants.F_OK : constants.X_OK);
+        return realpathSync(candidate);
+      }
+    } catch {
+      /* Continue to the next explicit PATH entry. */
+    }
+  }
+  throw new Error('Git не найден в абсолютных каталогах PATH. Установите Git и проверьте PATH.');
+}
+let gitExecutable: string | undefined;
+export function runGit(path: string, args: string[], input?: Buffer | string | number, extraEnv: Record<string, string> = {}, output?: number): Buffer {
+  gitExecutable ??= findGitExecutable(Object.entries(env).find(([key]) => key.toUpperCase() === 'PATH')?.[1] ?? '');
   const result = spawnSync(
-    'git',
+    gitExecutable,
     [
       '--no-pager',
       '-c',
@@ -61,6 +86,8 @@ export function runGit(path: string, args: string[], input?: Buffer | string, ex
       'gc.auto=0',
       '-c',
       'maintenance.auto=false',
+      '-c',
+      'pack.writeReverseIndex=false',
       '-c',
       'commit.gpgSign=false',
       '-c',
@@ -78,19 +105,24 @@ export function runGit(path: string, args: string[], input?: Buffer | string, ex
       '-c',
       'protocol.ext.allow=never',
       '-C',
-      path,
+      resolve(path),
       ...args
     ],
     {
       env: { ...env, ...extraEnv },
-      input,
+      cwd: dirname(gitExecutable),
+      input: typeof input === 'number' ? undefined : input,
+      stdio: [typeof input === 'number' ? input : 'pipe', output ?? 'pipe', 'pipe'],
       maxBuffer: 256 * 1024 * 1024,
       windowsHide: true
     }
   );
-  if (result.error) throw new Error(`Не удалось запустить Git: ${result.error.message}`);
+  if (result.error) {
+    if ((result.error as NodeJS.ErrnoException).code === 'ENOBUFS') throw new Error('Ответ Git превышает лимит 256 МиБ. Уменьшите объём метаданных или используйте отдельный репозиторий.');
+    throw new Error(`Не удалось запустить Git: ${result.error.message}`);
+  }
   if (result.status !== 0) throw new Error(`Git ${args[0]}: ${result.stderr?.toString('utf8').trim() || `код ${result.status}`}`);
-  return result.stdout;
+  return result.stdout ?? Buffer.alloc(0);
 }
 
 export class Repository {
@@ -100,10 +132,10 @@ export class Repository {
     this.path = resolve(path);
     this.common = this.text(['rev-parse', '--path-format=absolute', '--git-common-dir']);
   }
-  git(args: string[], input?: Buffer | string, extraEnv: Record<string, string> = {}): Buffer {
-    return runGit(this.path, args, input, extraEnv);
+  git(args: string[], input?: Buffer | string | number, extraEnv: Record<string, string> = {}, output?: number): Buffer {
+    return runGit(this.path, args, input, extraEnv, output);
   }
-  text(args: string[], input?: Buffer | string, extraEnv: Record<string, string> = {}): string {
+  text(args: string[], input?: Buffer | string | number, extraEnv: Record<string, string> = {}): string {
     return this.git(args, input, extraEnv).toString('utf8').trim();
   }
   refs(): Ref[] {
@@ -155,6 +187,7 @@ export class Repository {
   }
   inspectFull(): { refs: Ref[]; head: string; headOid: string } {
     const config = this.text(['config', '--list']);
+    assertStatusFilters(this);
     if (/^(remote\..*\.promisor(?:=|$)|extensions\.partialclone(?:=|$))/im.test(config)) throw new Error('Partial clone не поддерживается: нужен полный локальный репозиторий.');
     const refs = this.refs();
     if (refs.some((r) => r.symbolic && /^refs\/(heads|tags)\//.test(r.name))) throw new Error('Символические ссылки внутри локальных веток/тегов не поддерживаются.');
@@ -178,6 +211,49 @@ export class Repository {
     if (!refs.some((r) => r.name === head && r.name.startsWith('refs/heads/'))) throw new Error('HEAD должен указывать на существующую локальную ветку.');
     return { refs, head, headOid };
   }
+}
+
+/** Status can recurse into initialized submodules and run their filters too. */
+function assertStatusFilters(repo: Repository, seen = new Set<string>()): void {
+  const canonical = realpathSync(repo.path);
+  if (seen.has(canonical)) return;
+  if (seen.size >= 256) throw new Error('Проверка ограничена 256 рабочими деревьями подмодулей. Используйте отдельный клон без инициализированных подмодулей.');
+  seen.add(canonical);
+  if (gitConfigKeys(repo).some((key) => /^filter\..*\.(?:clean|smudge|process)$/i.test(key)))
+    throw new Error('Git-фильтры не поддерживаются. Используйте отдельный клон без filter.*.clean/process/smudge. Git LFS требует отдельной обработки.');
+  if (repo.text(['rev-parse', '--is-bare-repository']) === 'true') return;
+  const index = repo.git(['ls-files', '--stage', '-z']);
+  const entries = index.toString('utf8');
+  if (!Buffer.from(entries).equals(index)) throw new Error('Пути индекса должны иметь корректную кодировку UTF-8.');
+  for (const entry of entries.split('\0')) {
+    if (!entry.startsWith('160000 ')) continue;
+    const name = entry.slice(entry.indexOf('\t') + 1);
+    const path = resolve(repo.path, name);
+    if (!existsSync(join(path, '.git'))) continue;
+    if (lstatSync(path).isSymbolicLink() || lstatSync(join(path, '.git')).isSymbolicLink()) throw new Error('Символическая ссылка в рабочем дереве подмодуля не поддерживается.');
+    const child = new Repository(path);
+    if (realpathSync(child.text(['rev-parse', '--show-toplevel'])) !== realpathSync(path)) throw new Error('Не удалось однозначно определить рабочее дерево подмодуля.');
+    assertStatusFilters(child, seen);
+  }
+}
+
+export function gitConfigKeys(repo: Repository): string[] {
+  return repo
+    .git(['config', '--null', '--list'])
+    .toString('utf8')
+    .split('\0')
+    .filter(Boolean)
+    .map((record) => record.split('\n', 1)[0]);
+}
+
+/** Escape terminal controls without changing values after JSON.parse. */
+export function terminalJSON(value: unknown): string {
+  return JSON.stringify(value, null, 2).replace(/[\u0080-\u009f\p{Cf}]/gu, (character) =>
+    character
+      .split('')
+      .map((unit) => `\\u${unit.charCodeAt(0).toString(16).padStart(4, '0')}`)
+      .join('')
+  );
 }
 
 export function parts(data: Buffer): { headers: Buffer[]; message: Buffer } {
@@ -231,6 +307,78 @@ export function stripTagSignature(message: Buffer): { message: Buffer; stripped:
   return { message: message.subarray(0, offset), stripped: true };
 }
 
+export function objectFormat(repo: Repository): 'sha1' | 'sha256' {
+  const value = repo.text(['rev-parse', '--show-object-format']);
+  if (value !== 'sha1' && value !== 'sha256') throw new Error('Неподдерживаемый формат объектов Git.');
+  return value;
+}
+function hashObject(format: 'sha1' | 'sha256', type: ObjectData['type'], data: Buffer): string {
+  return createHash(format).update(`${type} ${data.length}\0`).update(data).digest('hex');
+}
+
+/** Read bounded metadata groups with one cat-file process per group. */
+export function* readMetadataBatches(repo: Repository, ids: string[]): Generator<[number, string, string, Buffer]> {
+  for (let start = 0; start < ids.length; start += 128) {
+    const batch = ids.slice(start, start + 128);
+    const data = repo.git(['cat-file', '--batch'], batch.join('\n') + '\n');
+    let offset = 0;
+    for (const [index, oid] of batch.entries()) {
+      const end = data.indexOf(10, offset);
+      const header = data.subarray(offset, end).toString('ascii').split(' ');
+      const size = Number(header[2]);
+      if (end < offset || header[0] !== oid || !['commit', 'tag'].includes(header[1]) || !Number.isSafeInteger(size) || size < 0 || end + size + 2 > data.length || data[end + size + 1] !== 10)
+        throw new Error('Некорректный ответ cat-file при чтении метаданных.');
+      const raw = data.subarray(end + 1, end + size + 1);
+      yield [start + index, oid, header[1], raw];
+      offset = end + size + 2;
+    }
+    if (offset !== data.length) throw new Error('Лишние данные в ответе cat-file.');
+  }
+}
+
+/** Write one metadata pack. Git validates it before refs can change. */
+export function writeObjects(repo: Repository, objects: ObjectData[]): void {
+  if (!objects.length) return;
+  const format = objectFormat(repo);
+  const directory = mkdtempSync(join(tmpdir(), 'rehistory-metadata-'));
+  let fd: number | undefined;
+  try {
+    const file = join(directory, 'metadata.pack');
+    fd = openSync(file, 'wx', 0o600);
+    const digest = createHash(format);
+    const write = (data: Buffer) => {
+      writeFileSync(fd!, data);
+      digest.update(data);
+    };
+    const header = Buffer.alloc(12);
+    header.write('PACK');
+    header.writeUInt32BE(2, 4);
+    header.writeUInt32BE(objects.length, 8);
+    write(header);
+    for (const object of objects) {
+      if (hashObject(format, object.type, object.data) !== object.oid) throw new Error('Объект плана изменился после проверки.');
+      let size = object.data.length;
+      const bytes = [(object.type === 'commit' ? 1 : 4) * 16 + (size % 16)];
+      size = Math.floor(size / 16);
+      while (size > 0) {
+        bytes[bytes.length - 1] |= 128;
+        bytes.push(size % 128);
+        size = Math.floor(size / 128);
+      }
+      write(Buffer.from(bytes));
+      write(deflateSync(object.data));
+    }
+    writeFileSync(fd, digest.digest());
+    closeSync(fd);
+    fd = undefined;
+    fd = openSync(file, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+    repo.git(['index-pack', '--stdin', '--strict'], fd);
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+
 export function makePlan(repo: Repository, options: Options): Plan {
   const replacementMessage = options.commitMessage === undefined ? undefined : normalizeCommitMessage(options.commitMessage);
   if (!Number.isSafeInteger(options.interval) || options.interval < 1 || options.interval > 31536000) throw new Error('Интервал: целое число от 1 до 31536000 секунд.');
@@ -258,6 +406,7 @@ export function makePlan(repo: Repository, options: Options): Plan {
   if (!commits.length) throw new Error('Нет коммитов для переписывания.');
   const last = options.start + (commits.length - 1) * options.interval;
   if (!Number.isSafeInteger(options.start) || options.start < 0 || !Number.isSafeInteger(last) || last > 253402300799) throw new Error('Даты должны находиться между 1970 и 9999 годом.');
+  const format = objectFormat(repo);
   const mapping = new Map<string, string>();
   const objects: ObjectData[] = [];
   let stripped = 0;
@@ -265,13 +414,16 @@ export function makePlan(repo: Repository, options: Options): Plan {
   const add = (old: string, type: ObjectData['type'], data: Buffer): string => {
     totalBytes += data.length;
     if (totalBytes > 128 * 1024 * 1024) throw new Error('Объём метаданных истории превышает безопасный лимит 128 МиБ.');
-    const oid = repo.text(['hash-object', '-t', type, '--stdin'], data);
+    if (data.includes(0)) throw new Error('История содержит NUL в метаданных коммита или тега. Переписывание не поддерживается; исходные данные не изменены.');
+    const oid = hashObject(format, type, data);
     objects.push({ type, data, oid });
     mapping.set(old, oid);
     return oid;
   };
-  for (const [index, old] of commits.entries()) {
-    const { headers, message } = parts(repo.git(['cat-file', 'commit', old]));
+  for (const [index, old, type, raw] of readMetadataBatches(repo, commits)) {
+    if (type !== 'commit') throw new Error('Ожидался объект коммита.');
+    if (raw.includes(0)) throw new Error(`Коммит ${old} содержит NUL в метаданных. История не поддерживается; исходные данные не изменены.`);
+    const { headers, message } = parts(raw);
     const updated: Buffer[] = [];
     for (const h of headers) {
       const key = field(h);
@@ -297,7 +449,9 @@ export function makePlan(repo: Repository, options: Options): Plan {
     if (active.has(old)) throw new Error('Циклическая ссылка тегов.');
     active.add(old);
     if (repo.text(['cat-file', '-t', old]) !== 'tag') throw new Error('Тег указывает на дерево/blob. Такие теги не поддерживаются.');
-    const { headers, message } = parts(repo.git(['cat-file', 'tag', old]));
+    const raw = repo.git(['cat-file', 'tag', old]);
+    if (raw.includes(0)) throw new Error(`Тег ${old} содержит NUL в метаданных. История не поддерживается; исходные данные не изменены.`);
+    const { headers, message } = parts(raw);
     const target = headers
       .find((h) => field(h) === 'object')
       ?.subarray(7)
@@ -330,7 +484,33 @@ export function makePlan(repo: Repository, options: Options): Plan {
 export function applyPlan(plan: Plan): { recovery: string; backupPrefix?: string } {
   const { repo, options } = plan;
   const lock = join(repo.common, 'rehistory.lock');
-  const fd = openSync(lock, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600);
+  let fd: number;
+  try {
+    fd = openSync(lock, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+    let owner = 'неизвестен';
+    let existing: number | undefined;
+    try {
+      if (statSync(lock).isFile()) {
+        existing = openSync(lock, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+        const buffer = Buffer.alloc(64);
+        const text = buffer
+          .subarray(0, readSync(existing, buffer, 0, buffer.length, 0))
+          .toString()
+          .trim();
+        if (/^[1-9][0-9]*$/.test(text)) owner = text;
+      }
+    } catch {
+      /* Report an unreadable lock without changing it. */
+    } finally {
+      if (existing !== undefined) closeSync(existing);
+    }
+    throw new Error(`reHistory заблокирован. PID: ${owner}. Проверьте процесс и файл ${lock}. Удаляйте lock только после остановки процесса и проверки восстановления.`, { cause: error });
+  }
+  // Defer Ctrl+C until synchronous writes return and the finally block removes our lock.
+  const deferInterrupt = () => {};
+  process.on('SIGINT', deferInterrupt);
   let recovery = '';
   try {
     writeFileSync(fd, `${process.pid}\n`);
@@ -355,9 +535,7 @@ export function applyPlan(plan: Plan): { recovery: string; backupPrefix?: string
     } finally {
       closeSync(recoveryFd);
     }
-    for (const object of plan.objects) {
-      if (repo.text(['hash-object', '-w', '-t', object.type, '--stdin'], object.data) !== object.oid) throw new Error('Контрольная сумма записанного объекта не совпала.');
-    }
+    writeObjects(repo, plan.objects);
     // Verify all original direct refs, including refs that stay unchanged.
     // Use no-deref to prevent writes through a substituted symbolic ref.
     // Compare old object IDs to detect concurrent branch changes.
@@ -379,7 +557,11 @@ export function applyPlan(plan: Plan): { recovery: string; backupPrefix?: string
   } catch (error) {
     throw new Error(`${error instanceof Error ? error.message : error}${recovery ? `\nПлан восстановления: ${recovery}` : ''}`, { cause: error });
   } finally {
-    closeSync(fd);
-    unlinkSync(lock);
+    try {
+      closeSync(fd);
+      unlinkSync(lock);
+    } finally {
+      process.removeListener('SIGINT', deferInterrupt);
+    }
   }
 }
