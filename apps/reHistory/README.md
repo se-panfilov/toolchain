@@ -715,7 +715,7 @@ The dry-run command adds `--dry-run` to the final npm publish step.
 The pack step writes `tx-rehistory-<version>.tgz` in the application directory.
 A repeated pack replaces the archive with the same name.
 The publish helper sends that exact archive to the public npm registry.
-It runs npm publish ./tx-rehistory-<version>.tgz with lifecycle scripts disabled.
+It runs `npm publish ./tx-rehistory-<version>.tgz` with lifecycle scripts disabled.
 The helper uses Node.js to resolve the version on macOS, Linux, and Windows.
 It accepts only --dry-run and rejects missing archives and linked files.
 Do not change source files or the archive while release runs.

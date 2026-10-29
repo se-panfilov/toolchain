@@ -14,6 +14,11 @@ The root package is private.
 
 ## Development
 
+Do all work on a task branch. Do not work directly on `master` or `main`.
+You may commit task changes and push the task branch to the repository remote.
+When GitHub access is available, open a pull request for the task branch.
+Follow the [Git authorization rules](AGENTS.md#authorization-and-git) and [commit and pull request writing rules](docs/WRITING.md#commits-and-pull-requests).
+
 Use Node.js 24.12 or later.
 Run installation and repository commands from this directory:
 
