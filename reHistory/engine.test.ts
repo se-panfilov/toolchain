@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync, readdirSync, readFileSync, mkdirSyn
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { Repository, makePlan, applyPlan, validateIdentity, runGit, defaultBackupBranch } from './engine.ts';
+import { Repository, makePlan, applyPlan, validateIdentity, runGit, defaultBackupBranch, withoutGitEnvironment } from './engine.ts';
 import { parseDate, parseStart } from './cli.ts';
 
 function fixture(t: { after: (fn: () => void) => void }, format?: string): Repository {
@@ -179,6 +179,23 @@ test('удаляются подписи и mergetag, бинарное сообщ
   assert(!repo.git(['cat-file', 'tag', 'signed']).includes(Buffer.from('BEGIN PGP')));
 });
 
+test('неполная подпись и текст после подписи тега не обрезаются', t => {
+  const repo = fixture(t);
+  for (const message of [
+    'notes\n-----BEGIN PGP SIGNATURE-----\nincomplete example\nkeep this text\n',
+    'notes\n-----BEGIN PGP SIGNATURE-----\nfake\n-----END PGP SIGNATURE-----\nkeep this text\n',
+    'notes\n-----BEGIN SSH SIGNATURE-----\nfake\n-----END PGP SIGNATURE-----\n',
+    'notes\n-----BEGIN SIGNED MESSAGE-----\nkeep this text\n',
+  ]) {
+    const raw = Buffer.from(`object ${repo.text(['rev-parse', 'HEAD'])}\ntype commit\ntag ambiguous\ntagger Test <test@example.org> 1000000000 +0000\n\n${message}`);
+    const oid = repo.text(['hash-object', '-w', '-t', 'tag', '--stdin'], raw);
+    repo.git(['update-ref', 'refs/tags/ambiguous', oid]);
+    const before = snapshot(repo);
+    assert.throws(() => makePlan(repo, options), /Неоднозначная подпись тега/);
+    assert.deepEqual(snapshot(repo), before);
+  }
+});
+
 test('не исполняются локальные hooks; блокируется второй процесс', t => {
   const repo = fixture(t);
   const marker = join(repo.path, 'hook-ran');
@@ -229,6 +246,13 @@ test('файл восстановления возвращает ветку и �
   repo.git(['update-ref', '--stdin'], commands.join('\n'));
   for (const ref of before) assert.equal(repo.text(['rev-parse', ref.name]), ref.oid);
   repo.git(['fsck', '--strict']);
+});
+
+test('изоляция окружения Git не зависит от регистра имён переменных', () => {
+  const source = { PATH: '/trusted/bin', TERM: 'xterm', GIT_DIR: '/other', git_work_tree: '/other', Git_Config_Count: '1', gIt_cOnFiG_kEy_0: 'core.hooksPath', GITHUB_ACTIONS: 'true' };
+  const before = { ...source };
+  assert.deepEqual(withoutGitEnvironment(source), { PATH: '/trusted/bin', TERM: 'xterm', GITHUB_ACTIONS: 'true' });
+  assert.deepEqual(source, before);
 });
 
 test('переменные GIT_* не перенаправляют работу в другой репозиторий', t => {
