@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { constants, existsSync, openSync, closeSync, unlinkSync, writeFileSync, fsyncSync } from 'node:fs';
+import { constants, existsSync, openSync, closeSync, unlinkSync, writeFileSync, fsyncSync, readdirSync, readSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { devNull } from 'node:os';
@@ -41,7 +41,32 @@ export class Repository {
   text(args: string[], input?: Buffer | string, extraEnv: Record<string, string> = {}): string { return this.git(args, input, extraEnv).toString('utf8').trim(); }
   refs(): Ref[] {
     const output = this.text(['for-each-ref', '--format=%(refname)%00%(objectname)%00%(symref)']);
-    return output ? output.split('\n').map(line => { const [name, oid, symbolic] = line.split('\0'); return { name, oid, symbolic }; }) : [];
+    const refs = output ? output.split('\n').map(line => { const [name, oid, symbolic] = line.split('\0'); return { name, oid, symbolic }; }) : [];
+    const known = new Set(refs.map(ref => ref.name));
+    const missing: Ref[] = [];
+    // for-each-ref omits symbolic refs whose targets are missing.
+    // Inspect only regular loose files and never follow directory links.
+    const visit = (directory: string, prefix: string): void => {
+      for (const entry of readdirSync(directory, { withFileTypes: true })) {
+        const file = join(directory, entry.name);
+        const name = `${prefix}/${entry.name}`;
+        if (entry.isDirectory()) { visit(file, name); continue; }
+        if (!entry.isFile() || known.has(name)) continue;
+        const fd = openSync(file, 'r');
+        const buffer = Buffer.alloc(8192);
+        let bytes: number;
+        try { bytes = readSync(fd, buffer, 0, buffer.length, 0); }
+        finally { closeSync(fd); }
+        const text = buffer.subarray(0, bytes).toString('utf8');
+        if (!text.startsWith('ref: ')) continue;
+        try { this.git(['check-ref-format', name]); }
+        catch { continue; } // Git lock files and invalid names are not refs.
+        missing.push({ name, oid: '', symbolic: text.slice(5).trim() });
+      }
+    };
+    const directory = join(this.common, 'refs');
+    if (existsSync(directory)) visit(directory, 'refs');
+    return [...refs, ...missing.sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0)];
   }
   inspect(): { refs: Ref[]; head: string; headOid: string } {
     if (this.text(['rev-parse', '--is-shallow-repository']) !== 'false') throw new Error('Shallow-репозиторий: сначала получите полную историю.');
@@ -92,6 +117,21 @@ function identity(header: Buffer, timestamp: number, replacement?: Options['iden
   const who = replacement ? Buffer.from(`${replacement.name} <${replacement.email}>`, 'utf8') : Buffer.from(match[2], 'latin1');
   return Buffer.concat([Buffer.from(`${match[1]} `), who, Buffer.from(` ${timestamp} +0000`)]);
 }
+
+/** Remove one trailing signature block without discarding ambiguous message text. */
+export function stripTagSignature(message: Buffer): { message: Buffer; stripped: boolean } {
+  const marker = /(?:^|\n)-----BEGIN (?:PGP SIGNATURE|SSH SIGNATURE|SIGNED MESSAGE)-----/.exec(message.toString('latin1'));
+  if (!marker) return { message, stripped: false };
+  const offset = marker.index + (message[marker.index] === 10 ? 1 : 0);
+  const block = message.subarray(offset).toString('latin1');
+  const boundaries = [...block.matchAll(/^-----(?:BEGIN|END) [A-Z0-9 ]+-----\r?$/gm)];
+  const complete = /^-----BEGIN (PGP SIGNATURE|SSH SIGNATURE)-----\r?\n[\s\S]*\r?\n-----END \1-----[\r\n]*$/.test(block);
+  if (!complete || boundaries.length !== 2) {
+    throw new Error('Неоднозначная подпись тега: незакрытый или вложенный блок, несколько подписей либо текст после подписи. История не изменена.');
+  }
+  return { message: message.subarray(0, offset), stripped: true };
+}
+
 export function makePlan(repo: Repository, options: Options): Plan {
   if (!Number.isSafeInteger(options.interval) || options.interval < 1 || options.interval > 31536000) throw new Error('Интервал: целое число от 1 до 31536000 секунд.');
   if (options.identity) validateIdentity(options.identity.name, options.identity.email);
@@ -152,17 +192,8 @@ export function makePlan(repo: Repository, options: Options): Plan {
     const target = headers.find(h => field(h) === 'object')?.subarray(7).toString('ascii');
     if (!target) throw new Error('Тег без object.');
     const rewritten = rewriteTag(target);
-    let body = message;
-    const marker = /(?:^|\n)-----BEGIN (?:PGP SIGNATURE|SSH SIGNATURE|SIGNED MESSAGE)-----/m.exec(message.toString('latin1'));
-    if (marker) {
-      const offset = marker.index + (message[marker.index] === 10 ? 1 : 0);
-      const block = message.subarray(offset).toString('latin1');
-      // Reject ambiguous markers. Never discard text after an incomplete signature.
-      if (!/^-----BEGIN (PGP SIGNATURE|SSH SIGNATURE)-----\r?\n[\s\S]*\r?\n-----END \1-----[\r\n]*$/.test(block)) {
-        throw new Error('Неоднозначная подпись тега: незакрытый блок или текст после подписи. История не изменена.');
-      }
-      body = message.subarray(0, offset); stripped++;
-    }
+    const signature = stripTagSignature(message);
+    if (signature.stripped) stripped++;
     const date = dates.get(target);
     if (date === undefined) throw new Error('Не удалось определить дату конечного коммита тега.');
     if (!headers.some(h => field(h) === 'tagger')) throw new Error('Annotated-тег без tagger: обработка остановлена.');
@@ -175,7 +206,7 @@ export function makePlan(repo: Repository, options: Options): Plan {
       if (!match) throw new Error('Некорректная дата tagger.');
       return Buffer.concat([Buffer.from(`tagger ${options.tagIdentity.name} <${options.tagIdentity.email}>`), Buffer.from(match[0])]);
     });
-    const result = add(old, 'tag', assemble(updated, body));
+    const result = add(old, 'tag', assemble(updated, signature.message));
     dates.set(old, date);
     active.delete(old); return result;
   }
