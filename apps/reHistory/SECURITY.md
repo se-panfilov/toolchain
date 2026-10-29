@@ -108,6 +108,31 @@ A lost response can leave the final server state uncertain.
 Examine the server before a retry.
 Neither atomic push nor message replacement erases other copies or server objects.
 
+After a successful push, the program updates one remote-tracking branch.
+It does this only for the standard fetch refspec of the selected remote.
+The ref name is validated with Git. The update compares the old object ID, or requires an absent ref.
+It does not write through a symbolic ref.
+A failure of this update does not change the push result. The program shows a warning.
+
+## Flow and remote copy controls
+
+One run changes one type of metadata: dates, authors, or messages.
+The engine rejects an unknown flow and the parameters of a different flow.
+This also applies to direct engine calls without the terminal interface.
+
+Before an in-place change, the program counts current-branch commits that no remote-tracking ref contains.
+Unpushed commits stop the change before the first question.
+Without remote-tracking refs, the program asks for an explicit confirmation. The initial answer is No.
+The program repeats the count for the planned head before the write.
+Plan application then rejects any ref change after planning, including remote-tracking refs.
+A dry-run shows the same warnings and writes nothing.
+An export does not do this check, because it does not change the source.
+
+This check prevents mistakes. It is not an access control.
+It reads only local refs and does not connect to a server.
+A local user can make a remote-tracking ref without a push.
+Remote-tracking refs can be out of date after a server change.
+
 ## Input controls
 
 The program validates branch names with Git.
@@ -184,14 +209,17 @@ Use the lock procedure in the README after a process error.
 ## Object controls
 
 The new commits keep trees, file contents, and parent order.
-Messages stay unchanged unless the user selects their replacement.
+Messages stay unchanged unless the user selects the messages flow.
 Replacement messages use UTF-8 without an inherited encoding header.
 The export verifier checks replacement bytes and rejects encoding headers.
-A parent date is before its child date.
-The author date and committer date are equal.
+In the dates flow, a parent date is before its child date.
+In the dates flow, the author date and committer date are equal.
+The authors and messages flows copy each initial date and UTC offset without change.
+The initial identity bytes stay unchanged unless the user selects the authors flow.
 
-The program changes annotated tag dates and identities only under the selected policy.
-Nested tags use their target commit dates.
+The program changes annotated tag dates only in the dates flow.
+It changes tagger identities only in the authors flow, after a separate choice.
+Nested tags use their target commit dates in the dates flow.
 The program removes invalid signatures and mergetag headers with user permission.
 It does not make replacement signatures.
 
@@ -212,7 +240,11 @@ It does not use hard links or alternates.
 The manifest contains only new object IDs, refs, and policy data.
 It does not record old commit IDs, old tag IDs, or the source path.
 The program compares the complete inventory with this manifest.
-It examines dates, identities, parent order, and reachability.
+It examines parent order, reachability, and the values of the recorded flow.
+Manifest version 2 accepts only the keys of one flow.
+Version 1 manifests from earlier releases stay supported and always describe a date change.
+For the authors and messages flows, the export contains no source data.
+The check cannot prove that dates or other metadata stayed the same.
 It rejects extra refs, config, files, links, and special files.
 It also uses strict Git fsck with only `fsck.zeroPaddedFilemode=ignore`.
 
@@ -311,6 +343,8 @@ Inspect the registry before a retry.
 - The server can hide refs from the demo probe.
 - Atomic push must be available on the server.
 - The program does not examine file contents for dates or personal data.
+- The remote copy check uses local remote-tracking refs. It cannot detect server changes after the last fetch or push.
+- Without remote-tracking refs, a confirmed run can follow another run without a push.
 
 The limit for new commit and tag metadata is 128 MiB.
 The limit for one captured Git response is 256 MiB.
@@ -324,6 +358,47 @@ Large histories, disk limits, and Git memory use can cause an operation to stop.
 Temporary packs use private directories outside the source repository.
 A normal return or handled error removes them.
 An abrupt process termination can leave those private files.
+
+## Flow split security audit: 2026-10-29
+
+This audit examined the three flows, the remote copy check, the remote-tracking update, and the export manifest.
+
+| Area                | Result                                                                                                |
+| ------------------- | ----------------------------------------------------------------------------------------------------- |
+| Flow selection      | A fixed list. The engine rejects unknown flows and the parameters of other flows.                     |
+| Dates flow          | Unchanged date logic. Identities, messages, and taggers keep their bytes.                             |
+| Authors flow        | Names and emails pass identity validation. Dates and offsets are copied from validated header digits. |
+| Messages flow       | Message validation is unchanged. Dates, identities, and all tag data keep their bytes.                |
+| Signatures          | All flows remove signatures only after a separate permission. No flow makes new signatures.           |
+| Remote copy check   | Read-only `rev-list` and `for-each-ref` calls with the existing Git isolation. No network access.     |
+| Remote-tracking ref | Written only after a successful atomic push, with Git name validation and an old-value comparison.    |
+| No change plan      | The terminal interface stops before a write when the plan keeps every selected ref.                   |
+| Export manifest     | Version 2 has strict keys for each flow. Version 1 is still verified as a date change.                |
+| Terminal output     | New plan lines use the existing control character removal.                                            |
+
+No confirmed defect remains open from this audit.
+The audit found one design gap during development.
+The first remote copy check ran only before the questions.
+A commit made after the check and before planning could enter the plan.
+The program now repeats the check for the planned head before the write.
+
+A manual test after the audit found a second defect, which is older than the flow split.
+A start from a subdirectory, such as `apps/reHistory` without `--repo`, stopped at the strict pack import.
+In a subdirectory, `index-pack --stdin` used a relative `.git/objects` path in that subdirectory.
+It did not find existing trees, and it left a `tmp_pack_*` file in `<subdirectory>/.git/objects/pack`.
+Also, `ls-files` listed only that subdirectory for the submodule filter check.
+The pack import now names the common Git directory with `--git-dir`.
+The program also uses the top-level directory of the working tree for all other Git commands.
+The pack import failed before the ref transaction, so refs did not change.
+Planning also examines all referenced trees and gives a clear error if one is missing.
+
+These limits remain. A human decides whether to accept them:
+
+- The remote copy check trusts local remote-tracking refs and can use out-of-date data.
+- A repository without remote-tracking refs depends on an explicit confirmation for each run.
+- An export of the authors or messages flow cannot prove that dates stayed the same.
+
+Regression tests: [flows](test/flows.test.ts) and [push](test/remote.test.ts).
 
 ## Previous implementation checks
 

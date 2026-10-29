@@ -6,10 +6,10 @@ import { pathToFileURL } from 'node:url';
 
 import { auditRepository, auditText } from '@reHistory/audit';
 import { runDemo, validateDemoURL } from '@reHistory/demo';
-import { applyPlan, defaultBackupBranch, makePlan, normalizeCommitMessage, type Plan, Repository, terminalJSON, validateIdentity } from '@reHistory/engine';
+import { applyPlan, defaultBackupBranch, type Flow, flows, makePlan, normalizeCommitMessage, type Options, type Plan, Repository, terminalJSON, validateIdentity } from '@reHistory/engine';
 import { exportDestination, exportPlan, verifyExport } from '@reHistory/export';
 import { PromptCancelled, TerminalPrompts, terminalStyle } from '@reHistory/prompts';
-import { executePush, preparePush, pushRemotes } from '@reHistory/remote';
+import { executePush, preparePush, pushRemotes, type RemoteCopy, remoteCopy, updateTrackingRef } from '@reHistory/remote';
 
 // Git metadata and errors can contain terminal control characters.
 function safe(value: unknown): string {
@@ -20,7 +20,7 @@ function print(value: unknown, tone: keyof ReturnType<typeof terminalStyle> = 'p
   console.log(style[tone](safe(value)));
 }
 function help(): void {
-  print(`reHistory — нормализация истории текущей ветки и её тегов.
+  print(`reHistory — переписывание времени, авторов или сообщений коммитов текущей ветки и её тегов.
 Node.js 24.12+, Git 2.39+. Запуск: node /путь/toolchain/apps/reHistory/dist/src/cli.js [параметры]
 
   --repo PATH          Исходный репозиторий (по умолчанию текущий каталог).
@@ -34,8 +34,10 @@ Node.js 24.12+, Git 2.39+. Запуск: node /путь/toolchain/apps/reHistory
   --demo-dir NEW_PATH  Новый каталог demo; по умолчанию — системный temp.
   --help               Справка.
 
-Переписывание и экспорт интерактивны. После переписывания можно отдельно
-подтвердить push ветки и её тегов с точными force-with-lease. По умолчанию push выключен.
+Переписывание и экспорт интерактивны. За один запуск выполняется один флоу:
+время, авторы или сообщения коммитов. Переписывание на месте требует, чтобы
+коммиты ветки были в remote-ветках (refs/remotes/*). После переписывания можно
+отдельно подтвердить push ветки и её тегов с точными force-with-lease. По умолчанию push выключен.
 Demo отправляет только тестовые данные на явно указанный сервер. Публикация npm не выполняется.
 Подробности и восстановление: README.md и SECURITY.md пакета.`);
 }
@@ -83,6 +85,16 @@ export function parseStart(date: string, time: string): number {
   const timestamp = local.getTime() / 1000;
   if (!Number.isSafeInteger(timestamp) || timestamp < 0 || timestamp > 253402300799) throw new Error('Дата и время должны находиться в пределах 1970–9999 годов.');
   return timestamp;
+}
+
+/**
+ * Decide if an in-place rewrite can start. Unpushed commits stop it.
+ * A repository without remote-tracking refs needs an explicit confirmation. A dry-run only shows warnings.
+ */
+export function remoteGate(copy: RemoteCopy, dryRun: boolean): 'ok' | 'block' | 'warn' | 'confirm' | 'notice' {
+  if (copy.tracking && copy.unpushed) return dryRun ? 'warn' : 'block';
+  if (!copy.tracking) return dryRun ? 'notice' : 'confirm';
+  return 'ok';
 }
 
 export type Arguments = {
@@ -210,6 +222,13 @@ async function main(): Promise<void> {
       }
       executePush(push);
       print('✓ Push выполнен.', 'success');
+      try {
+        const tracking = updateTrackingRef(push);
+        if (tracking) print(`Remote-ветка обновлена: ${tracking}`, 'muted');
+        else print('Remote-ветка не обновлена локально. Перед следующим флоу выполните git fetch.', 'warning');
+      } catch (error) {
+        print(`Remote-ветка не обновлена локально. Перед следующим флоу выполните git fetch.\n${error instanceof Error ? error.message : error}`, 'warning');
+      }
     } catch (error) {
       if (error instanceof PromptCancelled) {
         print('Push отменён. Локальная история сохранена.');
@@ -218,25 +237,8 @@ async function main(): Promise<void> {
       throw new Error(`Локальная история сохранена. Push не подтверждён; проверьте remote перед повтором.\n${error instanceof Error ? error.message : error}`, { cause: error });
     }
   }
-  try {
-    let backupBranch: string | undefined;
-    if (!mode.destination) {
-      if (await choose('Создать бекап?', true)) {
-        for (;;) {
-          const candidate = await ask('Ветка бекапа', defaultBackupBranch);
-          try {
-            repo.git(['check-ref-format', `refs/heads/${candidate}`]);
-          } catch (error) {
-            print(error instanceof Error ? error.message : error);
-            continue;
-          }
-          // Stop if the name exists. Do not add a suffix or overwrite the branch.
-          if (repo.refs().some((r) => r.name === `refs/heads/${candidate}`)) throw new Error('Бекап-ветка уже существует.');
-          backupBranch = candidate;
-          break;
-        }
-      } else print('Без бекапа восстановление не гарантируется.', 'warning');
-    } else print(`Экспорт → ${mode.destination}`, 'muted');
+  const flowLabels: Record<Flow, string> = { dates: 'Время коммитов', authors: 'Авторы коммитов', messages: 'Сообщения коммитов' };
+  async function askDates(): Promise<Options> {
     let interval: number;
     for (;;) {
       const value = await ask('Интервал (в секундах)', '1');
@@ -267,37 +269,95 @@ async function main(): Promise<void> {
         print(error instanceof Error ? error.message : error);
       }
     }
-    const identity = (await choose('Заменить авторов и коммитеров?', false)) ? await newIdentity() : undefined;
     const tagPolicy = (await choose('Нормализовать даты тегов?', true)) ? 'normalize' : 'preserve';
-    let tagIdentity: { name: string; email: string } | undefined;
-    if (identity) {
-      if (await choose('То же имя/email для тегов?', true)) tagIdentity = identity;
-    } else if (await choose('Заменить создателей тегов?', false)) tagIdentity = await newIdentity();
-    let commitMessage: string | undefined;
-    if (await choose('Заменить сообщения всех коммитов?', false)) {
-      for (;;) {
-        const value = await ask('Новое сообщение');
-        try {
-          normalizeCommitMessage(value);
-          commitMessage = value;
-          break;
-        } catch (error) {
-          print(error instanceof Error ? error.message : error);
-        }
+    return { flow: 'dates', start, interval, tagPolicy };
+  }
+  async function askAuthors(): Promise<Options> {
+    const identity = await newIdentity();
+    const tagIdentity = (await choose('То же имя/email для создателей тегов?', true)) ? identity : undefined;
+    return { flow: 'authors', identity, tagIdentity };
+  }
+  async function askMessages(): Promise<Options> {
+    for (;;) {
+      const value = await ask('Новое сообщение');
+      try {
+        normalizeCommitMessage(value);
+        return { flow: 'messages', commitMessage: value };
+      } catch (error) {
+        print(error instanceof Error ? error.message : error);
       }
     }
+  }
+  function describe(options: Options, plan: Plan): void {
+    const tags = plan.selected.filter((r) => r.name.startsWith('refs/tags/')).length;
+    print(`Флоу: ${flowLabels[options.flow]} · коммиты: ${plan.commits} · теги: ${tags}`);
+    if (options.flow === 'dates') {
+      print(`${new Date(options.start * 1000).toISOString()} → ${new Date((options.start + (plan.commits - 1) * options.interval) * 1000).toISOString()} · шаг: ${options.interval} с`);
+      print(`Даты тегов: ${options.tagPolicy === 'preserve' ? 'сохранить исходными' : 'нормализовать'}`);
+      print('Авторы и сообщения: без изменений', 'muted');
+    } else if (options.flow === 'authors') {
+      print(`Автор и коммитер: ${options.identity.name} <${options.identity.email}>`);
+      print(`Создатель тегов: ${options.tagIdentity ? `${options.tagIdentity.name} <${options.tagIdentity.email}>` : 'без изменений'}`);
+      print('Даты и сообщения: без изменений', 'muted');
+    } else {
+      print(`Сообщения: ${options.commitMessage}`);
+      print('Даты, авторы и теги: без изменений', 'muted');
+    }
+  }
+  try {
+    // Rewrite in place only after the current history has a remote copy. Run one flow, push, then run the next flow.
+    let gate: ReturnType<typeof remoteGate> = 'ok';
+    if (!mode.destination) {
+      const copy = remoteCopy(repo, state.headOid);
+      gate = remoteGate(copy, mode.dryRun);
+      const unpushed = `Незапушенные коммиты: ${copy.unpushed}. Сначала отправьте ветку на сервер и обновите remote-ссылки (git fetch).`;
+      if (gate === 'block') throw new Error(unpushed);
+      if (gate === 'warn') print(`${unpushed} Без dry-run запуск будет остановлен.`, 'warning');
+      if (gate === 'confirm' || gate === 'notice') print('Нет remote-веток (refs/remotes/*): копия истории на сервере не найдена.', 'warning');
+      if (gate === 'confirm' && !(await choose('Продолжить без копии на сервере?', false))) {
+        print('Отменено.');
+        return;
+      }
+    }
+    const flow =
+      flows[
+        await prompts.select(
+          'Что переписать?',
+          flows.map((item) => flowLabels[item]),
+          0
+        )
+      ];
+    let backupBranch: string | undefined;
+    if (!mode.destination) {
+      if (await choose('Создать бекап?', true)) {
+        for (;;) {
+          const candidate = await ask('Ветка бекапа', defaultBackupBranch);
+          try {
+            repo.git(['check-ref-format', `refs/heads/${candidate}`]);
+          } catch (error) {
+            print(error instanceof Error ? error.message : error);
+            continue;
+          }
+          // Stop if the name exists. Do not add a suffix or overwrite the branch.
+          if (repo.refs().some((r) => r.name === `refs/heads/${candidate}`)) throw new Error('Бекап-ветка уже существует.');
+          backupBranch = candidate;
+          break;
+        }
+      } else print('Без бекапа восстановление не гарантируется.', 'warning');
+    } else print(`Экспорт → ${mode.destination}`, 'muted');
+    const options: Options = { ...(flow === 'dates' ? await askDates() : flow === 'authors' ? await askAuthors() : await askMessages()), backupBranch };
     print('Готовлю план…');
-    const plan = makePlan(repo, { start, interval, identity, backupBranch, tagPolicy, tagIdentity, commitMessage });
+    const plan = makePlan(repo, options);
     print('\nПлан', 'accent');
-    print(`Коммиты: ${plan.commits} · шаг: ${interval} с · теги: ${plan.selected.filter((r) => r.name.startsWith('refs/tags/')).length}`);
-    print(`${new Date(start * 1000).toISOString()} → ${new Date((start + (plan.commits - 1) * interval) * 1000).toISOString()}`);
-    print(`Автор и коммитер: ${identity ? `${identity.name} <${identity.email}>` : 'без изменений'}`);
-    print(`Сообщения: ${commitMessage === undefined ? 'без изменений' : commitMessage}`);
-    print(`Теги: даты ${tagPolicy === 'normalize' ? 'нормализовать' : 'сохранить исходными'}; создатель ${tagIdentity ? `${tagIdentity.name} <${tagIdentity.email}>` : 'без изменений'}`);
+    describe(options, plan);
     print(mode.destination ? 'Исходник сохранится.' : `Бекап: ${backupBranch || 'нет'}`, 'muted');
     for (const ref of plan.selected) print(`  ${ref.name}  ${ref.oid.slice(0, 12)} → ${plan.mapping.get(ref.oid)!.slice(0, 12)}`, 'muted');
     if (plan.stripped) print(`Подписи и mergetag к удалению: ${plan.stripped}`, 'warning');
-    print('Даты условные; старые копии сохраняют исходную историю.', 'muted');
+    if (options.flow === 'dates') print('Даты условные; старые копии сохраняют исходную историю.', 'muted');
+    if (!mode.destination && plan.selected.every((ref) => plan.mapping.get(ref.oid) === ref.oid)) {
+      print('Изменений нет: история уже соответствует параметрам.', 'success');
+      return;
+    }
     if (mode.dryRun) {
       print('Dry-run завершён. Без изменений.', 'success');
       return;
@@ -315,6 +375,9 @@ async function main(): Promise<void> {
       print(`✓ Экспорт проверен · коммиты: ${result.commits} · теги: ${result.tags}`, 'success');
       print(result.repository, 'muted');
     } else {
+      // Repeat the remote copy check for the planned head. Plan application then rejects any later ref change.
+      const recheck = remoteGate(remoteCopy(repo, plan.headOid), false);
+      if (recheck === 'block' || (recheck === 'confirm' && gate !== 'confirm')) throw new Error('Ветка или remote-ссылки изменились после проверки. Запустите скрипт заново.');
       const result = applyPlan(plan);
       print(`✓ Готово · коммиты: ${plan.commits}`, 'success');
       print(`Восстановление: ${result.recovery}${result.backupPrefix ? `\nБекап-ссылки: ${result.backupPrefix}` : ''}`, 'muted');

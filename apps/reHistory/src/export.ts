@@ -3,17 +3,24 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 
 import { inventory, objectClosure, stamp } from '@reHistory/audit';
-import { field, normalizeCommitMessage, type Options, parts, type Plan, readMetadataBatches, Repository, runGit, validateIdentity, writeObjects } from '@reHistory/engine';
+import { field, type Identity, normalizeCommitMessage, parts, type Plan, readMetadataBatches, Repository, runGit, validateIdentity, writeObjects } from '@reHistory/engine';
 
 export const manifestName = 'rehistory-export.json';
+type DatesPolicy = { flow: 'dates'; start: number; interval: number; tagPolicy: 'normalize' | 'preserve' };
+type AuthorsPolicy = { flow: 'authors'; identity: Identity; tagIdentity?: Identity };
+type MessagesPolicy = { flow: 'messages'; commitMessage: string };
+// Version 1 manifests come from releases before the flow split. They always describe normalized dates.
+type LegacyPolicy = { start: number; interval: number; tagPolicy: 'normalize' | 'preserve'; identity?: Identity; tagIdentity?: Identity; commitMessage?: string };
 type Manifest = {
-  version: 1;
+  version: 1 | 2;
   head: string;
   refs: { name: string; oid: string }[];
   objects: string[];
   commitOrder: string[];
-  policy: { start: number; interval: number; tagPolicy: 'normalize' | 'preserve'; identity?: Options['identity']; tagIdentity?: Options['tagIdentity']; commitMessage?: string };
+  policy: LegacyPolicy | DatesPolicy | AuthorsPolicy | MessagesPolicy;
 };
+/** The properties that verification can prove from the export alone. */
+type Expectations = { dates?: { start: number; interval: number; tagPolicy: 'normalize' | 'preserve' }; identity?: Identity; tagIdentity?: Identity; commitMessage?: string };
 function within(parent: string, child: string): boolean {
   const rel = relative(parent, child);
   return rel === '' || (!rel.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`) && rel !== '..' && !isAbsolute(rel));
@@ -63,28 +70,59 @@ function loadManifest(path: string): Manifest {
   const oid = (item: unknown): boolean => typeof item === 'string' && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(item);
   const ref = (item: unknown): boolean => exactKeys(item, ['name', 'oid']) && typeof item.name === 'string' && /^(refs\/heads\/|refs\/tags\/)/.test(item.name) && oid(item.oid);
   const unique = (items: string[]): boolean => new Set(items).size === items.length;
-  if (m.version !== 1 || typeof m.head !== 'string' || !m.head.startsWith('refs/heads/')) fail();
+  if ((m.version !== 1 && m.version !== 2) || typeof m.head !== 'string' || !m.head.startsWith('refs/heads/')) fail();
   if (!Array.isArray(m.refs) || !m.refs.length || !m.refs.every(ref) || !unique(m.refs.map((r) => r.name))) fail();
   if (!Array.isArray(m.objects) || !m.objects.every(oid) || !unique(m.objects)) fail();
   if (!Array.isArray(m.commitOrder) || !m.commitOrder.length || !m.commitOrder.every(oid) || !unique(m.commitOrder)) fail();
   const width = m.commitOrder[0].length;
   if (![...m.objects, ...m.commitOrder, ...m.refs.map((r) => r.oid)].every((item) => item.length === width)) fail();
-  if (!exactKeys(m.policy, ['start', 'interval', 'tagPolicy'], ['identity', 'tagIdentity', 'commitMessage'])) fail();
-  const { start, interval, tagPolicy, identity, tagIdentity } = m.policy;
-  if (!Number.isSafeInteger(start) || start < 0 || !Number.isSafeInteger(interval) || interval < 1 || interval > 31536000) fail();
-  const last = start + (m.commitOrder.length - 1) * interval;
-  if (!Number.isSafeInteger(last) || last > 253402300799 || !['normalize', 'preserve'].includes(tagPolicy)) fail();
-  if (identity !== undefined && !validIdentity(identity)) fail();
-  if (tagIdentity !== undefined && !validIdentity(tagIdentity)) fail();
-  if (m.policy.commitMessage !== undefined) {
-    if (typeof m.policy.commitMessage !== 'string') fail();
+  const dates = (policy: Record<string, unknown>): void => {
+    const { start, interval, tagPolicy } = policy;
+    if (!Number.isSafeInteger(start) || (start as number) < 0 || !Number.isSafeInteger(interval) || (interval as number) < 1 || (interval as number) > 31536000) fail();
+    const last = (start as number) + (m.commitOrder.length - 1) * (interval as number);
+    if (!Number.isSafeInteger(last) || last > 253402300799 || !['normalize', 'preserve'].includes(tagPolicy as string)) fail();
+  };
+  const message = (value: unknown): void => {
+    if (typeof value !== 'string') fail();
     try {
-      normalizeCommitMessage(m.policy.commitMessage);
+      normalizeCommitMessage(value as string);
     } catch {
       fail();
     }
+  };
+  if (m.version === 1) {
+    if (!exactKeys(m.policy, ['start', 'interval', 'tagPolicy'], ['identity', 'tagIdentity', 'commitMessage'])) fail();
+    const policy = m.policy as Record<string, unknown>;
+    dates(policy);
+    if (policy.identity !== undefined && !validIdentity(policy.identity)) fail();
+    if (policy.tagIdentity !== undefined && !validIdentity(policy.tagIdentity)) fail();
+    if (policy.commitMessage !== undefined) message(policy.commitMessage);
+  } else {
+    const policy = m.policy as Record<string, unknown>;
+    if (!policy || typeof policy !== 'object') fail();
+    if (policy.flow === 'dates') {
+      if (!exactKeys(policy, ['flow', 'start', 'interval', 'tagPolicy'])) fail();
+      dates(policy);
+    } else if (policy.flow === 'authors') {
+      if (!exactKeys(policy, ['flow', 'identity'], ['tagIdentity']) || !validIdentity(policy.identity)) fail();
+      if (policy.tagIdentity !== undefined && !validIdentity(policy.tagIdentity)) fail();
+    } else if (policy.flow === 'messages') {
+      if (!exactKeys(policy, ['flow', 'commitMessage'])) fail();
+      message(policy.commitMessage);
+    } else fail();
   }
   return m;
+}
+
+function expectations(manifest: Manifest): Expectations {
+  const policy = manifest.policy;
+  if (!('flow' in policy)) {
+    const { start, interval, tagPolicy, identity, tagIdentity, commitMessage } = policy;
+    return { dates: { start, interval, tagPolicy }, identity, tagIdentity, commitMessage };
+  }
+  if (policy.flow === 'dates') return { dates: { start: policy.start, interval: policy.interval, tagPolicy: policy.tagPolicy } };
+  if (policy.flow === 'authors') return { identity: policy.identity, tagIdentity: policy.tagIdentity };
+  return { commitMessage: policy.commitMessage };
 }
 
 /** Check metadata and every nested path before Git reads the object store. */
@@ -317,26 +355,29 @@ export function verifyExport(path: string): ExportReport {
     ),
     'Набор коммитов не соответствует плану.'
   );
-  const times = new Map<string, number>();
+  const expect = expectations(manifest);
+  const dateOf = (index: number): number | undefined => (expect.dates ? expect.dates.start + index * expect.dates.interval : undefined);
+  // Each commit maps to its position in the planned topological order.
+  const positions = new Map<string, number>();
   attempt(() => {
     for (const [index, oid, type, raw] of readMetadataBatches(repo, manifest.commitOrder))
       attempt(() => {
         check(type === 'commit', `Ожидался коммит ${oid}.`);
         const a = stamp(raw, 'author');
         const c = stamp(raw, 'committer');
-        const expected = manifest.policy.start + index * manifest.policy.interval;
-        if (manifest.policy.commitMessage !== undefined) check(parts(raw).message.equals(normalizeCommitMessage(manifest.policy.commitMessage)), `Неверное сообщение коммита ${oid}.`);
-        check(a.timestamp === expected && c.timestamp === expected && a.timezone === '+0000' && c.timezone === '+0000', `Неверные даты коммита ${oid}.`);
-        if (manifest.policy.identity) {
-          const who = `${manifest.policy.identity.name} <${manifest.policy.identity.email}>`;
+        const expected = dateOf(index);
+        if (expect.commitMessage !== undefined) check(parts(raw).message.equals(normalizeCommitMessage(expect.commitMessage)), `Неверное сообщение коммита ${oid}.`);
+        if (expected !== undefined) check(a.timestamp === expected && c.timestamp === expected && a.timezone === '+0000' && c.timezone === '+0000', `Неверные даты коммита ${oid}.`);
+        if (expect.identity) {
+          const who = `${expect.identity.name} <${expect.identity.email}>`;
           check(a.identity === who && c.identity === who, `Неверная идентичность коммита ${oid}.`);
         }
         for (const h of parts(raw).headers) {
-          if (manifest.policy.commitMessage !== undefined) check(field(h) !== 'encoding', `Неверная кодировка сообщения коммита ${oid}.`);
+          if (expect.commitMessage !== undefined) check(field(h) !== 'encoding', `Неверная кодировка сообщения коммита ${oid}.`);
           check(!['gpgsig', 'gpgsig-sha256', 'mergetag'].includes(field(h)), `Остался заголовок подписи в ${oid}.`);
-          if (field(h) === 'parent') check(times.has(h.subarray(7).toString('ascii')) && times.get(h.subarray(7).toString('ascii'))! < expected, `Неверный порядок родителей ${oid}.`);
+          if (field(h) === 'parent') check(positions.has(h.subarray(7).toString('ascii')) && positions.get(h.subarray(7).toString('ascii'))! < index, `Неверный порядок родителей ${oid}.`);
         }
-        times.set(oid, expected);
+        positions.set(oid, index);
       });
   });
   for (const object of objects.filter((o) => o.type === 'tag'))
@@ -344,15 +385,23 @@ export function verifyExport(path: string): ExportReport {
       const raw = repo.git(['cat-file', 'tag', object.oid]);
       const tagger = stamp(raw, 'tagger');
       const target = repo.text(['rev-parse', '--verify', `${object.oid}^{}`]);
-      check(times.has(target), `Тег ${object.oid} указывает вне выбранной истории.`);
-      if (manifest.policy.tagPolicy === 'normalize') check(tagger.timestamp === times.get(target) && tagger.timezone === '+0000', `Неверная дата тега ${object.oid}.`);
-      if (manifest.policy.tagIdentity) check(tagger.identity === `${manifest.policy.tagIdentity.name} <${manifest.policy.tagIdentity.email}>`, `Неверный tagger ${object.oid}.`);
+      check(positions.has(target), `Тег ${object.oid} указывает вне выбранной истории.`);
+      if (expect.dates?.tagPolicy === 'normalize')
+        check(positions.has(target) && tagger.timestamp === dateOf(positions.get(target)!) && tagger.timezone === '+0000', `Неверная дата тега ${object.oid}.`);
+      if (expect.tagIdentity) check(tagger.identity === `${expect.tagIdentity.name} <${expect.tagIdentity.email}>`, `Неверный tagger ${object.oid}.`);
       check(!/(?:^|\n)-----BEGIN (?:PGP SIGNATURE|SSH SIGNATURE|SIGNED MESSAGE)-----/m.test(parts(raw).message.toString('latin1')), `Осталась подпись тега ${object.oid}.`);
     });
   attempt(() => {
     repo.git(['-c', 'fsck.zeroPaddedFilemode=ignore', 'fsck', '--full', '--strict', '--no-reflogs']);
   });
   return { ok: errors.length === 0, repository: repo.path, commits: manifest.commitOrder.length, tags: refs.filter((r) => r.name.startsWith('refs/tags/')).length, objects: objects.length, errors };
+}
+
+function manifestPolicy(plan: Plan): DatesPolicy | AuthorsPolicy | MessagesPolicy {
+  const options = plan.options;
+  if (options.flow === 'dates') return { flow: 'dates', start: options.start, interval: options.interval, tagPolicy: options.tagPolicy ?? 'normalize' };
+  if (options.flow === 'authors') return { flow: 'authors', identity: options.identity, ...(options.tagIdentity ? { tagIdentity: options.tagIdentity } : {}) };
+  return { flow: 'messages', commitMessage: options.commitMessage };
 }
 
 export function exportPlan(plan: Plan, destination: string): ExportReport {
@@ -394,7 +443,7 @@ export function exportPlan(plan: Plan, destination: string): ExportReport {
       closeSync(fd);
       fd = undefined;
       fd = openSync(file, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
-      output.git(['index-pack', '--stdin', '--strict=zeroPaddedFilemode=ignore'], fd);
+      output.git([`--git-dir=${output.common}`, 'index-pack', '--stdin', '--strict=zeroPaddedFilemode=ignore'], fd);
     } finally {
       if (fd !== undefined) closeSync(fd);
       rmSync(transfer, { recursive: true, force: true });
@@ -404,19 +453,12 @@ export function exportPlan(plan: Plan, destination: string): ExportReport {
     const refs = plan.selected.map((r) => ({ name: r.name, oid: plan.mapping.get(r.oid)! }));
     output.git(['update-ref', '--stdin'], ['start', ...refs.map((r) => `create ${r.name} ${r.oid}`), 'prepare', 'commit', ''].join('\n'));
     const manifest: Manifest = {
-      version: 1,
+      version: 2,
       head: plan.head,
       refs,
       objects: [...expectedObjects].sort(),
       commitOrder: plan.commitOrder,
-      policy: {
-        start: plan.options.start,
-        interval: plan.options.interval,
-        identity: plan.options.identity,
-        tagPolicy: plan.options.tagPolicy || 'normalize',
-        tagIdentity: plan.options.tagIdentity,
-        commitMessage: plan.options.commitMessage
-      }
+      policy: manifestPolicy(plan)
     };
     // Exclude old commit and tag IDs, source paths, and other branch names.
     writeFileSync(join(target, manifestName), JSON.stringify(manifest, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
