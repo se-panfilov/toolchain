@@ -171,6 +171,10 @@ If the decision is unclear, keep the safer state and ask.
 ## Current utility
 
 reHistory changes the current Git branch and its corresponding tags.
+It has three independent flows: commit dates, commit authors, and commit messages.
+Keep one flow per run. Ask only the questions of the selected flow.
+Keep the remote copy check before an in-place change.
+A change to combine flows or to weaken that check needs a human decision.
 Read its [README](apps/reHistory/README.md) and [security notes](apps/reHistory/SECURITY.md) before changing its behavior.
 Use its [terminology](apps/reHistory/TERMINOLOGY.md) for reHistory documentation.
 Its README describes local npm archive preparation. Publication requires separate explicit authorization.

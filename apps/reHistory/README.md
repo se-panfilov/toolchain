@@ -195,11 +195,11 @@ The `Время коммитов` flow asks these questions:
 
 The `Авторы коммитов` flow asks these questions:
 
-| Item                   | Initial value | Effect                                                   |
-| ---------------------- | ------------- | -------------------------------------------------------- |
-| Name                   | Empty         | Use 1 to 200 characters without `<`, `>`, and controls.  |
-| Email                  | Empty         | Use the format `name@example.org`.                       |
-| Same identity for tags | Yes           | Replace the tagger name and email of the selected tags.  |
+| Item                   | Initial value | Effect                                                  |
+| ---------------------- | ------------- | ------------------------------------------------------- |
+| Name                   | Empty         | Use 1 to 200 characters without `<`, `>`, and controls. |
+| Email                  | Empty         | Use the format `name@example.org`.                      |
+| Same identity for tags | Yes           | Replace the tagger name and email of the selected tags. |
 
 The program does not get an identity from Git config.
 If you select No for tags, taggers do not change.
@@ -219,11 +219,11 @@ It shows `Изменений нет` and makes no backup.
 Before a history change, the program compares the current branch with the remote-tracking refs (`refs/remotes/*`).
 It reads only local refs. It does not connect to a server.
 
-| State                                                       | Result                                                    |
-| ----------------------------------------------------------- | --------------------------------------------------------- |
-| All branch commits are in a remote-tracking ref.            | The program continues.                                    |
-| Some branch commits are not in a remote-tracking ref.       | The program stops before the first question.              |
-| The repository has no remote-tracking refs.                 | The program asks `Продолжить без копии на сервере?` (No). |
+| State                                                 | Result                                                    |
+| ----------------------------------------------------- | --------------------------------------------------------- |
+| All branch commits are in a remote-tracking ref.      | The program continues.                                    |
+| Some branch commits are not in a remote-tracking ref. | The program stops before the first question.              |
+| The repository has no remote-tracking refs.           | The program asks `Продолжить без копии на сервере?` (No). |
 
 A dry-run shows these warnings and continues without a question.
 An export does not do this check, because it does not change the source.
