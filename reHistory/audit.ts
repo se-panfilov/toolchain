@@ -22,7 +22,7 @@ export function objectClosure(repo: Repository, roots: string[]): Set<string> {
   return new Set(repo.text(['rev-list', '--objects', '--no-object-names', '--stdin'], roots.join('\n') + '\n').split('\n').filter(Boolean));
 }
 
-/** Аудит читает все ссылки и объекты, включая не входящие в выбранную ветку. */
+/** Read all refs and objects, including objects outside the selected branch. */
 export function auditRepository(repo: Repository) {
   const warnings: string[] = [];
   let complete = true;
@@ -39,7 +39,7 @@ export function auditRepository(repo: Repository) {
     complete = false;
     warnings.push('Partial clone, shallow или grafts: полнота истории не гарантируется; загрузка недостающих объектов отключена.');
   }
-  // Не пытаемся разыменовать отсутствующие объекты partial clone.
+  // Do not resolve missing objects in a partial clone.
   let objects: ReturnType<typeof inventory> = [];
   try { objects = inventory(repo); } catch (error) { complete = false; warnings.push(String(error)); }
   let headOid = '';

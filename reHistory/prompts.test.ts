@@ -17,7 +17,7 @@ class Output extends Writable {
   _write(chunk: Buffer, _encoding: string, callback: () => void): void { this.text += chunk.toString(); callback(); }
 }
 function fixture(t: { after: (fn: () => void) => void }) {
-  // Фикстура моделирует ANSI-терминал, а не TERM=dumb оболочки CI.
+  // Model an ANSI terminal, not the TERM=dumb shell used by CI.
   const term = process.env.TERM; process.env.TERM = 'xterm-256color';
   t.after(() => { if (term === undefined) delete process.env.TERM; else process.env.TERM = term; });
   const input = new Input(); const output = new Output();

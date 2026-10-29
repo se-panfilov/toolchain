@@ -6,7 +6,7 @@ import { Repository, runGit, makePlan, applyPlan } from './engine.ts';
 import { auditRepository, auditText } from './audit.ts';
 import { exportPlan } from './export.ts';
 
-/** Разрешены только явные сетевые назначения, без токенов в URL и remote helpers. */
+/** Accept explicit network URLs. Reject URL credentials and remote helpers. */
 export function validateDemoURL(value: string | undefined): string {
   if (!value) throw new Error('Для demo обязателен --demo-remote URL. Ничего не создано.');
   if (/[\s\p{Cc}\p{Cf}]/u.test(value)) throw new Error('URL demo содержит пробелы или управляющие символы.');
@@ -24,11 +24,11 @@ const transport: DemoTransport = {
   push(repo, url, refspecs) { repo.git([...networkArgs, 'push', '--atomic', '--', url, ...refspecs], undefined, networkEnv); },
 };
 
-/** Общий движок переписывания; автоматические ответы разрешены только для новой demo-копии. */
+/** Use the shared rewrite engine. Supply automatic answers only for a new demo copy. */
 export function runDemo(options: { remote: string; directory?: string; print?: (text: string) => void }, connection: DemoTransport = transport) {
   const url = validateDemoURL(options.remote); // До любых записей на диск.
   const log = options.print || (() => {});
-  // Пустоту сервера проверяем до создания demo-каталога. Никаких запросов push.
+  // Make sure that the server is empty before demo creation. Do not push yet.
   if (runRemoteProbe(url, connection)) throw new Error('Demo требует пустой серверный репозиторий. Push не выполнялся.');
   let root: string;
   if (options.directory) { root = resolve(options.directory); mkdirSync(root, { mode: 0o700 }); }
@@ -76,7 +76,7 @@ export function runDemo(options: { remote: string; directory?: string; print?: (
     const audit = auditRepository(repo);
     log(auditText(audit));
     if (!audit.complete || !audit.refs.some(r => r.backup) || !audit.commits.some(c => !c.inCurrentHistory)) throw new Error('Demo-аудит не обнаружил ожидаемую исходную историю вне main.');
-    // Повторное применение тех же настроек идемпотентно: source уже нормализован.
+    // The source already has these dates. The same settings give the same objects.
     const exported = exportPlan(makePlan(repo, { ...settings, backupBranch: undefined }), join(root, 'export.git'));
     const exportAudit = auditRepository(new Repository(exported.repository));
     if (!exportAudit.complete || exportAudit.reflog.entries || exportAudit.unreachable.count || exportAudit.refs.some(r => r.backup || !r.inCurrentHistory)) throw new Error('Экспорт demo содержит посторонние метаданные.');
@@ -90,8 +90,8 @@ export function runDemo(options: { remote: string; directory?: string; print?: (
   }
 }
 function runRemoteProbe(url: string, connection: DemoTransport): string {
-  // Изолируем ls-remote от случайного локального config в CWD или родителях.
-  // Каталог не является репозиторием; после пробы удаляется только он сам.
+  // Isolate ls-remote from local config in the current directory or its parents.
+  // The probe directory is not a repository. Remove only this directory.
   const directory = mkdtempSync(join(tmpdir(), 'rehistory-probe-'));
   try {
     const probe = Object.create(Repository.prototype) as Repository;

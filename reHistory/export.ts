@@ -12,7 +12,7 @@ function within(parent: string, child: string): boolean {
   const rel = relative(parent, child);
   return rel === '' || (!rel.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`) && rel !== '..' && !isAbsolute(rel));
 }
-/** Проверка не создаёт каталог, поэтому подходит и для dry-run. */
+/** Validate the destination without directory creation. Use this for dry-run too. */
 export function exportDestination(repo: Repository, destination: string): string {
   const absolute = resolve(destination);
   const target = join(realpathSync(dirname(absolute)), basename(absolute));
@@ -33,7 +33,7 @@ function loadManifest(path: string): Manifest {
   return m;
 }
 
-/** Проверяет физическую опись, достижимость, ссылки, даты и целостность. Ничего не пишет. */
+/** Read the object inventory, graph, refs, and dates. Verify integrity without writes. */
 export function verifyExport(path: string) {
   const repo = new Repository(path);
   const manifest = loadManifest(repo.path);
@@ -105,7 +105,7 @@ export function exportPlan(plan: Plan, destination: string) {
   const target = exportDestination(repo, destination);
   const sourceBefore = repo.inspect();
   if (JSON.stringify(sourceBefore.refs) !== JSON.stringify(plan.refs) || sourceBefore.head !== plan.head || sourceBefore.headOid !== plan.headOid) throw new Error('Исходный репозиторий изменился после построения плана.');
-  // mkdir без recursive эксклюзивно занимает новый путь. Чужие каталоги не удаляем.
+  // Create a new directory without recursive mode. Do not remove existing directories.
   mkdirSync(target, { mode: 0o700 });
   try {
     const format = repo.text(['rev-parse', '--show-object-format']);
@@ -115,7 +115,7 @@ export function exportPlan(plan: Plan, destination: string) {
     const original = [...objectClosure(repo, plan.selected.map(r => r.oid))];
     const info = repo.text(['cat-file', '--batch-check=%(objectname) %(objecttype)'], original.join('\n') + '\n');
     const expectedObjects = new Set<string>();
-    // Копируются только исходные tree/blob, без исходных commit/tag и без checkout.
+    // Copy only source tree and blob objects. Do not copy source commits or tags.
     for (const line of info.split('\n').filter(Boolean)) {
       const [oid, type] = line.split(' ');
       if (type !== 'tree' && type !== 'blob') continue;
@@ -133,7 +133,7 @@ export function exportPlan(plan: Plan, destination: string) {
       version: 1, head: plan.head, refs, objects: [...expectedObjects].sort(), commitOrder: plan.commitOrder,
       policy: { start: plan.options.start, interval: plan.options.interval, identity: plan.options.identity, tagPolicy: plan.options.tagPolicy || 'normalize', tagIdentity: plan.options.tagIdentity },
     };
-    // Манифест не содержит старых commit/tag-хешей, путей и имён других веток.
+    // Exclude old commit and tag IDs, source paths, and other branch names.
     writeFileSync(join(target, manifestName), JSON.stringify(manifest, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
     if (JSON.stringify(repo.inspect()) !== JSON.stringify(sourceBefore)) throw new Error('Исходный репозиторий изменился во время экспорта. Результат требует повторной проверки.');
     const verification = verifyExport(target);
