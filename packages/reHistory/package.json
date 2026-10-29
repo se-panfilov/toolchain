@@ -9,29 +9,44 @@
     "node": ">=24.12.0"
   },
   "bin": {
-    "tx-rehistory": "dist/cli.js"
+    "tx-rehistory": "dist/src/cli.js"
   },
   "files": [
-    "dist/cli.js",
-    "dist/engine.js",
-    "dist/audit.js",
-    "dist/export.js",
-    "dist/demo.js",
-    "dist/prompts.js",
+    "dist/src/cli.js",
+    "dist/src/engine.js",
+    "dist/src/audit.js",
+    "dist/src/export.js",
+    "dist/src/demo.js",
+    "dist/src/prompts.js",
     "README.md",
     "SECURITY.md",
     "TERMINOLOGY.md",
     "LICENSE"
   ],
   "scripts": {
-    "test": "npm run build && node --test build.test.mjs dist/engine.test.js dist/features.test.js dist/prompts.test.js",
-    "start": "npm run build && node dist/cli.js",
+    "test": "npm run build && node --test test/build.test.mjs dist/test/engine.test.js dist/test/features.test.js dist/test/prompts.test.js",
+    "start": "npm run build && node dist/src/cli.js",
     "typecheck": "tsc --project tsconfig.json --noEmit",
-    "build": "node build.mjs",
+    "build": "node scripts/build.mjs",
     "prepack": "npm run build"
   },
   "devDependencies": {
     "@types/node": "24.10.1",
     "typescript": "5.9.3"
-  }
+  },
+  "imports": {
+    "#rehistory/*": "./dist/src/*.js"
+  },
+  "exports": {},
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/se-panfilov/toolchain.git",
+    "directory": "packages/reHistory"
+  },
+  "keywords": [
+    "git",
+    "cli",
+    "history",
+    "timestamps"
+  ]
 }

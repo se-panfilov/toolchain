@@ -6,28 +6,36 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const root = fileURLToPath(new URL('.', import.meta.url));
+const root = fileURLToPath(new URL('../', import.meta.url));
 const metadata = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
 const modules = ['engine', 'audit', 'export', 'demo', 'prompts', 'cli', 'engine.test', 'features.test', 'prompts.test'];
 function fixture(t) {
   const directory = mkdtempSync(join(tmpdir(), 'tx-rehistory-compiler-test-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
-  for (const file of ['build.mjs', 'tsconfig.json', ...modules.map(name => `${name}.ts`)]) copyFileSync(join(root, file), join(directory, file));
+  mkdirSync(join(directory, 'scripts'));
+  copyFileSync(join(root, 'scripts/build.mjs'), join(directory, 'scripts/build.mjs'));
+  copyFileSync(join(root, 'tsconfig.json'), join(directory, 'tsconfig.json'));
+  for (const folder of ['src', 'test']) {
+    mkdirSync(join(directory, folder));
+    for (const name of modules.filter(name => name.endsWith('.test') === (folder === 'test'))) {
+      copyFileSync(join(root, folder, `${name}.ts`), join(directory, folder, `${name}.ts`));
+    }
+  }
   writeFileSync(join(directory, 'package.json'), JSON.stringify(metadata));
   symlinkSync(join(root, 'node_modules'), join(directory, 'node_modules'), 'junction');
   return directory;
 }
 function build(directory) {
-  return spawnSync(process.execPath, [join(directory, 'build.mjs')], { cwd: directory, encoding: 'utf8', timeout: 60000 });
+  return spawnSync(process.execPath, [join(directory, 'scripts/build.mjs')], { cwd: directory, encoding: 'utf8', timeout: 60000 });
 }
 
 test('ошибка типов сохраняет dist и не позволяет npm start запустить старую сборку', t => {
   const directory = fixture(t);
   const marker = join(directory, 'unexpected-start');
-  mkdirSync(join(directory, 'dist'));
+  mkdirSync(join(directory, 'dist/src'), { recursive: true });
   const stale = `import { writeFileSync } from 'node:fs'; writeFileSync(${JSON.stringify(marker)}, 'started');\n`;
-  writeFileSync(join(directory, 'dist', 'cli.js'), stale);
-  writeFileSync(join(directory, 'cli.ts'), '\nconst compilationMustFail: string = 1;\n', { flag: 'a' });
+  writeFileSync(join(directory, 'dist/src', 'cli.js'), stale);
+  writeFileSync(join(directory, 'src/cli.ts'), '\nconst compilationMustFail: string = 1;\n', { flag: 'a' });
   // Keep npm configuration and logs isolated from account settings.
   const userConfig = join(directory, 'user.npmrc');
   const globalConfig = join(directory, 'global.npmrc');
@@ -42,7 +50,7 @@ test('ошибка типов сохраняет dist и не позволяет
   assert.notEqual(result.status, 0);
   assert.match(result.stdout + result.stderr, /TS2322/);
   assert.equal(existsSync(marker), false);
-  assert.equal(readFileSync(join(directory, 'dist', 'cli.js'), 'utf8'), stale);
+  assert.equal(readFileSync(join(directory, 'dist/src', 'cli.js'), 'utf8'), stale);
 });
 
 test('сборка отклоняет ссылки в dist и сохраняет внешние файлы', t => {
@@ -56,10 +64,17 @@ test('сборка отклоняет ссылки в dist и сохраняет
   const linkedDirectory = build(directory);
   assert.equal(linkedDirectory.error, undefined);
   assert.notEqual(linkedDirectory.status, 0);
-  assert.match(linkedDirectory.stderr, /dist должен/);
+  assert.match(linkedDirectory.stderr, /dist и его подкаталоги/);
   unlinkSync(out);
   mkdirSync(out);
-  const destination = join(out, 'cli.js');
+  symlinkSync(externalDirectory, join(out, 'src'), 'junction');
+  const linkedSubdirectory = build(directory);
+  assert.equal(linkedSubdirectory.error, undefined);
+  assert.notEqual(linkedSubdirectory.status, 0);
+  assert.match(linkedSubdirectory.stderr, /Файл сборки/);
+  unlinkSync(join(out, 'src'));
+  mkdirSync(join(out, 'src'));
+  const destination = join(out, 'src/cli.js');
   for (const makeLink of [() => symlinkSync(external, destination), () => linkSync(external, destination)]) {
     makeLink();
     const result = build(directory);
@@ -69,4 +84,16 @@ test('сборка отклоняет ссылки в dist и сохраняет
     assert.equal(readFileSync(external, 'utf8'), 'protected');
     rmSync(destination);
   }
+});
+
+test('сборка сохраняет неизвестные файлы dist и требует их отдельной проверки', t => {
+  const directory = fixture(t);
+  mkdirSync(join(directory, 'dist'));
+  const file = join(directory, 'dist', 'private-note.txt');
+  writeFileSync(file, 'protected');
+  const result = build(directory);
+  assert.equal(result.error, undefined);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /Неизвестный файл в dist/);
+  assert.equal(readFileSync(file, 'utf8'), 'protected');
 });
