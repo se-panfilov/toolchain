@@ -2,7 +2,8 @@
 # See the Dependabot section in docs/GITHUB_ACTIONS.md.
 #
 # Dependabot cannot change the `dependabot/` branch prefix or use the pull request template.
-# For this reason, the pr-rules job rejects the branch name and the description of Dependabot pull requests.
+# The pr-rules job identifies Dependabot by the pull request author and the branch prefix, and skips only
+# the branch name and description checks. The commit, version, lockfile, and npm audit checks stay.
 
 version: 2
 

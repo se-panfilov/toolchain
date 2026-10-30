@@ -179,8 +179,12 @@ The [Dependabot configuration](../.github/dependabot.yml) makes version update p
 Dependabot pull requests go through the same Tests workflow as other pull requests.
 The `pr-rules` job checks the lockfile, the npm registry source, the integrity values, install scripts, and `npm audit` for them.
 Dependabot cannot change its `dependabot/` branch prefix or use the pull request template.
-For this reason, `pr-rules` rejects the branch name and the description of Dependabot pull requests.
-A change to `pr-rules` for Dependabot requires a human decision. See [Enforced rules](ENFORCED_RULES.md).
+For this reason, `pr-rules` does not check the branch name and the description when both conditions are true:
+
+- The pull request author is `dependabot[bot]`. GitHub sets this login, and a person cannot use it.
+- The branch name starts with `dependabot/`.
+
+A person with a `dependabot/` branch gets all checks. The commit, version, lockfile, and `npm audit` checks apply to Dependabot too. See [Enforced rules](ENFORCED_RULES.md).
 
 A human examines each Dependabot pull request and merges it. Examine the release notes and the lockfile changes in the job summary.
 
