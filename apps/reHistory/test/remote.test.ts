@@ -326,6 +326,52 @@ test('tags of other branches move on the server only after a separate choice', (
   assert.equal(git(['--git-dir', server, 'rev-parse', 'refs/tags/release']).toString().trim(), plan.mapping.get(plan.selected.find((ref) => ref.name === 'refs/tags/release')!.oid));
 });
 
+test('a single-branch clone keeps server tags of other branches for a separate choice', (t) => {
+  const { repo, connection, git, server } = fixture(t);
+  repo.git(['checkout', '-q', '-b', 'feature']);
+  repo.git(['commit', '-q', '--allow-empty', '-m', 'feature']);
+  git(['push', server, 'feature']);
+  repo.git(['update-ref', 'refs/remotes/origin/feature', 'feature']);
+  // A single-branch clone has no local copy of other branches. A new commit on the server main is unknown locally.
+  repo.git(['branch', '-D', 'main', 'side']);
+  const unknown = git(['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.org', '--git-dir', server, 'commit-tree', '-p', 'main', '-m', 'server only', 'main^{tree}']).toString().trim();
+  git(['--git-dir', server, 'update-ref', 'refs/heads/main', unknown]);
+  const release = git(['--git-dir', server, 'rev-parse', 'refs/tags/release']).toString().trim();
+  const plan = makePlan(repo, settings);
+  applyPlan(plan);
+  assert.deepEqual(sharedTags(plan), new Set());
+  const push = preparePush(plan, 'origin', connection);
+  assert.deepEqual(
+    push.refs.map((ref) => ref.destination),
+    ['refs/heads/feature']
+  );
+  assert.deepEqual(
+    push.optional.map((ref) => [ref.destination, ref.reasons]),
+    [['refs/tags/release', ['unverified']]]
+  );
+  executePush(push, connection);
+  assert.equal(git(['--git-dir', server, 'rev-parse', 'refs/tags/release']).toString().trim(), release);
+  git(['--git-dir', server, 'merge-base', '--is-ancestor', 'refs/tags/release^{}', 'main']);
+});
+
+test('server branches that exist only as local objects still mark shared tags', (t) => {
+  const { repo, connection, git, server } = fixture(t);
+  repo.git(['checkout', '-q', '-b', 'feature']);
+  repo.git(['commit', '-q', '--allow-empty', '-m', 'feature']);
+  git(['push', server, 'feature']);
+  repo.git(['update-ref', 'refs/remotes/origin/feature', 'feature']);
+  // The objects of main and side stay in the local repository without local refs.
+  repo.git(['branch', '-D', 'main', 'side']);
+  const plan = makePlan(repo, settings);
+  applyPlan(plan);
+  assert.deepEqual(sharedTags(plan), new Set());
+  const push = preparePush(plan, 'origin', connection);
+  assert.deepEqual(
+    push.optional.map((ref) => [ref.destination, ref.reasons]),
+    [['refs/tags/release', ['shared']]]
+  );
+});
+
 test('the network adapter disables helpers, askpass, redirects, and custom SSH commands', () => {
   let observed: { args: string[]; env: NodeJS.ProcessEnv } | undefined;
   const repo = {
