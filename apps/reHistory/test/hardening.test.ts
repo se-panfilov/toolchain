@@ -26,7 +26,7 @@ function fixture(t: { onTestFinished: (fn: () => void) => void }): { root: strin
 const settings = { flow: 'dates' as const, start: 1700000000, interval: 1 };
 const cli = fileURLToPath(new URL('../dist/src/cli.js', import.meta.url));
 
-test('поиск Git игнорирует пустые и относительные PATH-каталоги на POSIX и Windows', () => {
+test('the Git search ignores empty and relative PATH directories on POSIX and Windows', () => {
   const posix: string[] = [];
   assert.equal(
     findGitExecutable(':.:relative:/trusted/bin', 'linux', (path) => {
@@ -48,7 +48,7 @@ test('поиск Git игнорирует пустые и относительн
   assert.throws(() => findGitExecutable('.:relative:', 'linux', () => assert.fail('relative path probed')), /Git не найден/);
 });
 
-test('audit запускает Git из PATH, а не подложенный executable в cwd', (t) => {
+test('audit runs Git from PATH, not a planted executable in cwd', (t) => {
   const { root, repo } = fixture(t);
   const marker = join(root, 'executed');
   const impostor = join(repo.path, process.platform === 'win32' ? 'git.exe' : 'git');
@@ -63,7 +63,7 @@ test('audit запускает Git из PATH, а не подложенный exe
 });
 
 for (const key of ['http.sslVerify', 'http.https://example.invalid/.sslVerify', 'http.https://example.invalid/.followRedirects', 'http.extraHeader', 'http.proxy', 'http.sslCAInfo']) {
-  test(`сетевой адаптер и подготовка push отклоняют ${key} до соединения`, (t) => {
+  test(`the network adapter and push preparation reject ${key} before connection`, (t) => {
     const { repo } = fixture(t);
     repo.git(['remote', 'add', 'origin', 'https://example.invalid/repo.git']);
     repo.git(['config', key, 'false']);
@@ -76,7 +76,7 @@ for (const key of ['http.sslVerify', 'http.https://example.invalid/.sslVerify', 
 }
 
 for (const kind of ['clean', 'process', 'smudge']) {
-  test(`filter.${kind} блокируется до status; аудит не исполняет фильтр`, (t) => {
+  test(`filter.${kind} is blocked before status, and the audit does not run the filter`, (t) => {
     const { root, repo } = fixture(t);
     writeFileSync(join(repo.path, '.gitattributes'), 'data filter=fixture\n');
     writeFileSync(join(repo.path, 'data'), 'content\n');
@@ -94,7 +94,7 @@ for (const kind of ['clean', 'process', 'smudge']) {
   });
 }
 
-test('JSON экранирует C1 и Cf, сохраняя значения и supplementary Unicode', () => {
+test('JSON escapes C1 and Cf and keeps values and supplementary Unicode', () => {
   const original = { identity: 'name\u009b31m\u202e\u200b\u{e0001}', path: 'normal', c0: '\u001b' };
   const result = terminalJSON(original);
   assert(!/[\u0080-\u009f\p{Cf}]/u.test(result));
@@ -103,7 +103,7 @@ test('JSON экранирует C1 и Cf, сохраняя значения и s
   assert(result.includes('\\udb40\\udc01'));
 });
 
-test('audit --json экранирует управляющую идентичность тега', (t) => {
+test('audit --json escapes a tag identity with control characters', (t) => {
   const { repo } = fixture(t);
   const raw = Buffer.from(`object ${repo.text(['rev-parse', 'HEAD'])}\ntype commit\ntag unsafe\ntagger name\u009b31m\u202e <fixture@example.org> 1700000000 +0000\n\ntag\n`);
   const oid = repo.text(['hash-object', '-w', '-t', 'tag', '--stdin'], raw);
@@ -114,7 +114,7 @@ test('audit --json экранирует управляющую идентичн�
   assert(JSON.stringify(JSON.parse(result.stdout)).includes('name\u009b31m\u202e'));
 });
 
-test('NUL в старом коммите отклоняется до любых записей независимо от версии Git', (t) => {
+test('NUL in an old commit is rejected before any write, for all Git versions', (t) => {
   const { repo } = fixture(t);
   const original = repo.git(['cat-file', 'commit', 'HEAD']);
   const raw = Buffer.concat([original.subarray(0, original.indexOf('\n\n') + 2), Buffer.from([65, 0, 66])]);
@@ -126,7 +126,7 @@ test('NUL в старом коммите отклоняется до любых 
   assert.equal(existsSync(join(repo.common, 'rehistory.lock')), false);
 });
 
-test('оставшаяся блокировка показывает PID и не удаляется автоматически', (t) => {
+test('a remaining lock shows the PID and is not removed automatically', (t) => {
   const { repo } = fixture(t);
   const plan = makePlan(repo, settings);
   const file = join(repo.common, 'rehistory.lock');
@@ -135,7 +135,7 @@ test('оставшаяся блокировка показывает PID и не
   assert.equal(readFileSync(file, 'utf8'), '12345\n');
 });
 
-test('экспорт файла больше 256 МиБ не буферизует blob в stdout Node.js', (t) => {
+test('export of a file larger than 256 MiB does not buffer the blob in Node.js stdout', (t) => {
   const { repo, root } = fixture(t);
   const file = join(repo.path, 'large.bin');
   const fd = openSync(file, 'wx');
@@ -152,7 +152,7 @@ test('экспорт файла больше 256 МиБ не буферизуе�
   assert.equal(output.text(['cat-file', '-s', blob]), String(257 * 1024 * 1024));
 });
 
-test('pack метаданных сохраняет байты на границах кодирования размера', (t) => {
+test('the metadata pack keeps bytes at size encoding boundaries', (t) => {
   const { repo } = fixture(t);
   const original = repo.git(['cat-file', 'commit', 'HEAD']);
   const headers = original.subarray(0, original.indexOf('\n\n') + 2);
@@ -191,7 +191,7 @@ test.skipIf(process.platform === 'win32')('SIGINT родителя во врем
   assert.deepEqual(JSON.parse(result.stdout), { interrupted: true, lock: false, handlersRestored: true });
 });
 
-test('status не запускает clean-фильтр внутри инициализированного подмодуля', (t) => {
+test('status does not run a clean filter in an initialized submodule', (t) => {
   const { repo, root } = fixture(t);
   const path = join(repo.path, 'sub');
   repo.git(['init', '-q', '--template=', '-b', 'main', path]);
@@ -212,7 +212,7 @@ test('status не запускает clean-фильтр внутри иници�
   assert.equal(existsSync(marker), false);
 });
 
-test('verify-export --json экранирует управляющие символы в пути', (t) => {
+test('verify-export --json escapes control characters in a path', (t) => {
   const { root, repo } = fixture(t);
   const path = join(root, 'export\u202erepo.git');
   exportPlan(makePlan(repo, settings), path);
@@ -223,7 +223,7 @@ test('verify-export --json экранирует управляющие симв�
   assert((JSON.parse(result.stdout) as { repository: string }).repository.includes('\u202e'));
 });
 
-test('история больше одного batch обрабатывается без процесса на каждый коммит', (t) => {
+test('a history larger than one batch is processed without one process for each commit', (t) => {
   const { repo, root } = fixture(t);
   const raw = repo.git(['cat-file', 'commit', 'HEAD']);
   const split = raw.indexOf('\n\n');
@@ -258,7 +258,7 @@ test('история больше одного batch обрабатываетс�
   assert.equal(verifyExport(target).ok, true);
 });
 
-test('многострочные значения config не подменяют список имён настроек', (t) => {
+test('multiline config values do not change the list of setting names', (t) => {
   const { repo } = fixture(t);
   repo.git(['config', 'rehistory.note', 'note\nfilter.fake.clean=cat']);
   assert.equal(makePlan(repo, settings).commits, 1);
@@ -321,7 +321,7 @@ for (const completion of ['microtask', 'stdin']) {
   });
 }
 
-test('несколько синхронных применений используют один SIGINT-обработчик и очищают его после turn', async (t) => {
+test('several synchronous apply steps use one SIGINT handler and remove it after the turn', async (t) => {
   const { repo } = fixture(t);
   await nextTurn();
   await nextTurn();
@@ -335,7 +335,7 @@ test('несколько синхронных применений исполь�
   assert.equal(process.listenerCount('SIGINT'), before);
 });
 
-test('checkout с core.autocrlf=true сохраняет LF для Prettier и исключения для bat/binary', (t) => {
+test('checkout with core.autocrlf=true keeps LF for Prettier and the bat/binary exceptions', (t) => {
   const { repo } = fixture(t);
   writeFileSync(join(repo.path, '.gitattributes'), readFileSync(new URL('../../../.gitattributes', import.meta.url)));
   repo.git(['config', 'core.autocrlf', 'true']);

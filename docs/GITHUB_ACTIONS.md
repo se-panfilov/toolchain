@@ -8,11 +8,11 @@ Release also calls it and publishes only after a successful scan of the same com
 See [Git hooks and secret checks](GIT_HOOKS.md) for its configuration, setup, and limits.
 The separate [CodeQL workflow](../.github/workflows/codeql.yml) does static security analysis. See [CodeQL](#codeql).
 
-| Workflow                                    | Start                                                            | Result                                                                      |
-| ------------------------------------------- | ---------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| [Tests](../.github/workflows/test.yml)      | Pull request, push to `master`, manual start, call from Release. | Formatting, lint, workflow checks, and application tests on three OSs.      |
-| [Build](../.github/workflows/build.yml)     | Manual start, call from Release.                                 | Type check, Vite build, `npm pack`, archive checks, and an archive bin run. |
-| [Release](../.github/workflows/release.yml) | Manual start only.                                               | Tests, build, npm publication, Git tag, and GitHub Release.                 |
+| Workflow                                    | Start                                                            | Result                                                                                                       |
+| ------------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| [Tests](../.github/workflows/test.yml)      | Pull request, push to `master`, manual start, call from Release. | Formatting, lint, configuration and workflow checks, pull request rules, and application tests on three OSs. |
+| [Build](../.github/workflows/build.yml)     | Manual start, call from Release.                                 | Type check, Vite build, `npm pack`, archive checks, and an archive bin run.                                  |
+| [Release](../.github/workflows/release.yml) | Manual start only.                                               | Tests, build, npm publication, Git tag, and GitHub Release.                                                  |
 
 ## Manual start
 
@@ -34,6 +34,8 @@ Only users with write access to the repository can start a workflow manually.
 | `dry_run` | `true` or `false`.                      | `false` for Tests and Build. `true` for Release. |
 
 Pull requests and pushes to `master` start Tests with `app=all` and `dry_run=false`.
+On a pull request, the `pr-rules` job also checks the branch name, description, commit messages, versions, and lockfile changes.
+A change to the pull request title or description starts only `pr-rules` again. See [Enforced rules](ENFORCED_RULES.md).
 
 The `plan` job of each workflow checks the input again with [scripts/ci/apps.mjs](../scripts/ci/apps.mjs).
 It accepts only `all` or the exact directory name.

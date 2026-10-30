@@ -97,6 +97,7 @@ Run these commands from the repository root:
 
 ```sh
 npm install --ignore-scripts
+npm run check:config
 npm run check:workflows
 npm run format
 npm run format:check
