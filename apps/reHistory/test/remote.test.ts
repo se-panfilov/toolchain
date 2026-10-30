@@ -67,7 +67,7 @@ for (const format of ['sha1', 'sha256']) {
     const target = join(root, 'export.git');
     exportPlan(plan, target);
     assert.equal(verifyExport(target).ok, true);
-    const manifest = JSON.parse(readFileSync(join(target, manifestName), 'utf8'));
+    const manifest = JSON.parse(readFileSync(join(target, manifestName), 'utf8')) as { policy: Record<string, unknown> };
     manifest.policy.commitMessage = 'Substitute';
     writeFileSync(join(target, manifestName), JSON.stringify(manifest));
     assert(verifyExport(target).errors.some((error) => error.includes('сообщение коммита')));
@@ -89,7 +89,7 @@ for (const format of ['sha1', 'sha256']) {
       ['push.gpgSign', 'true'],
       ['push.recurseSubmodules', 'on-demand'],
       ['push.pushOption', 'unexpected']
-    ])
+    ] as const)
       repo.git(['config', key, value]);
     const plan = makePlan(repo, { flow: 'messages', backupBranch: 'backup', commitMessage: 'Uniform' });
     applyPlan(plan);

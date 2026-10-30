@@ -70,7 +70,7 @@ test('флоу времени меняет только даты коммито�
   applyPlan(makePlan(repo, { flow: 'dates', start: 1700000000, interval: 5 }));
   const after = commits(repo);
   for (const [index, line] of after.entries()) {
-    const old = before[index].split('|');
+    const old = (before[index] ?? '').split('|');
     const next = line.split('|');
     assert.deepEqual(next.slice(0, 4), old.slice(0, 4));
     assert.deepEqual(next.slice(4, 6), [`${1700000000 + index * 5} +0000`, `${1700000000 + index * 5} +0000`]);
@@ -86,7 +86,7 @@ test('флоу авторов сохраняет даты, часовые поя
   const tag = tagger(repo);
   applyPlan(makePlan(repo, { flow: 'authors', identity }));
   for (const [index, line] of commits(repo).entries()) {
-    const old = before[index].split('|');
+    const old = (before[index] ?? '').split('|');
     const next = line.split('|');
     assert.deepEqual(next.slice(0, 4), [identity.name, identity.email, identity.name, identity.email]);
     assert.deepEqual(next.slice(4), old.slice(4));
@@ -109,7 +109,7 @@ test('флоу сообщений сохраняет даты, авторов и
   const plan = makePlan(repo, { flow: 'messages', commitMessage: 'Общее сообщение' });
   applyPlan(plan);
   for (const [index, line] of commits(repo).entries()) {
-    const old = before[index].split('|');
+    const old = (before[index] ?? '').split('|');
     const next = line.split('|');
     assert.deepEqual(next.slice(0, 6), old.slice(0, 6));
     assert.equal(next.slice(6).join('|'), 'Общее сообщение');
@@ -133,7 +133,7 @@ for (const format of ['sha1', 'sha256'])
       const target = join(repo.path, '..', `export-${index}.git`);
       exportPlan(makePlan(repo, options), target);
       const file = join(target, manifestName);
-      const manifest = JSON.parse(readFileSync(file, 'utf8'));
+      const manifest = JSON.parse(readFileSync(file, 'utf8')) as { version: number; policy: Record<string, unknown> };
       assert.equal(manifest.version, 2);
       assert.equal(manifest.policy.flow, options.flow);
       assert.equal(verifyExport(target).ok, true);
@@ -153,7 +153,7 @@ test('экспорт старого формата (version 1) проверяе�
   const target = join(repo.path, '..', 'legacy.git');
   exportPlan(makePlan(repo, { flow: 'dates', start: 1700000000, interval: 2, tagPolicy: 'normalize' }), target);
   const file = join(target, manifestName);
-  const manifest = JSON.parse(readFileSync(file, 'utf8'));
+  const manifest = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
   writeFileSync(file, JSON.stringify({ ...manifest, version: 1, policy: { start: 1700000000, interval: 2, tagPolicy: 'normalize' } }));
   assert.equal(verifyExport(target).ok, true);
   writeFileSync(file, JSON.stringify({ ...manifest, version: 1, policy: { start: 1700000000, interval: 2, tagPolicy: 'normalize', identity } }));

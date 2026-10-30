@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 
 import { inventory, objectClosure, stamp } from '@reHistory/audit';
-import { field, type Identity, normalizeCommitMessage, parts, type Plan, readMetadataBatches, Repository, runGit, validateIdentity, writeObjects } from '@reHistory/engine';
+import { field, type Identity, mapped, normalizeCommitMessage, parts, type Plan, readMetadataBatches, Repository, runGit, validateIdentity, writeObjects } from '@reHistory/engine';
 
 export const manifestName = 'rehistory-export.json';
 type DatesPolicy = { flow: 'dates'; start: number; interval: number; tagPolicy: 'normalize' | 'preserve' };
@@ -20,7 +20,12 @@ type Manifest = {
   policy: LegacyPolicy | DatesPolicy | AuthorsPolicy | MessagesPolicy;
 };
 /** The properties that verification can prove from the export alone. */
-type Expectations = { dates?: { start: number; interval: number; tagPolicy: 'normalize' | 'preserve' }; identity?: Identity; tagIdentity?: Identity; commitMessage?: string };
+type Expectations = {
+  dates?: { start: number; interval: number; tagPolicy: 'normalize' | 'preserve' } | undefined;
+  identity?: Identity | undefined;
+  tagIdentity?: Identity | undefined;
+  commitMessage?: string | undefined;
+};
 function within(parent: string, child: string): boolean {
   const rel = relative(parent, child);
   return rel === '' || (!rel.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`) && rel !== '..' && !isAbsolute(rel));
@@ -74,7 +79,7 @@ function loadManifest(path: string): Manifest {
   if (!Array.isArray(m.refs) || !m.refs.length || !m.refs.every(ref) || !unique(m.refs.map((r) => r.name))) fail();
   if (!Array.isArray(m.objects) || !m.objects.every(oid) || !unique(m.objects)) fail();
   if (!Array.isArray(m.commitOrder) || !m.commitOrder.length || !m.commitOrder.every(oid) || !unique(m.commitOrder)) fail();
-  const width = m.commitOrder[0].length;
+  const width = m.commitOrder[0]?.length;
   if (![...m.objects, ...m.commitOrder, ...m.refs.map((r) => r.oid)].every((item) => item.length === width)) fail();
   const dates = (policy: Record<string, unknown>): void => {
     const { start, interval, tagPolicy } = policy;
@@ -142,7 +147,8 @@ function checkExportFiles(root: string, manifest: Manifest): { errors: string[];
   const metadata = new Set(['HEAD', 'config', 'packed-refs', manifestName]);
   const present = new Set<string>();
   const packs = new Map<string, Set<string>>();
-  const width = manifest.commitOrder[0].length;
+  const [first = ''] = manifest.commitOrder;
+  const width = first.length;
   const loose = new RegExp(`^objects/([a-f0-9]{2})/([a-f0-9]{${width - 2}})$`);
   const packed = new RegExp(`^objects/pack/(pack-[a-f0-9]{${width}})\\.(pack|idx)$`);
   const read = (relative: string): string => readFileSync(join(root, relative), 'utf8');
@@ -167,16 +173,17 @@ function checkExportFiles(root: string, manifest: Manifest): { errors: string[];
         continue;
       }
       check(stat.nlink === 1, `В экспорте есть файл с общей hardlink: ${relative}.`);
-      const object = loose.exec(relative);
-      const pack = packed.exec(relative);
-      const allowed = metadata.has(relative) || refs.has(relative) || Boolean(object && objects.has(object[1] + object[2])) || Boolean(pack);
+      const [, looseDirectory, looseName] = loose.exec(relative) ?? [];
+      const [, packName, packType] = packed.exec(relative) ?? [];
+      const allowed = metadata.has(relative) || refs.has(relative) || (looseDirectory !== undefined && looseName !== undefined && objects.has(looseDirectory + looseName)) || packName !== undefined;
       check(allowed, `Неожиданный служебный файл: ${relative}.`);
       if (!allowed) continue;
-      if (pack) {
-        if (!packs.has(pack[1])) packs.set(pack[1], new Set());
-        packs.get(pack[1])!.add(pack[2]);
+      if (packName !== undefined && packType !== undefined) {
+        const kinds = packs.get(packName) ?? new Set<string>();
+        packs.set(packName, kinds);
+        kinds.add(packType);
         const hashBytes = width / 2;
-        const tailBytes = pack[2] === 'idx' ? hashBytes * 2 : hashBytes;
+        const tailBytes = packType === 'idx' ? hashBytes * 2 : hashBytes;
         const footer = Buffer.alloc(tailBytes);
         const fd = openSync(path, 'r');
         let bytes = 0;
@@ -185,7 +192,7 @@ function checkExportFiles(root: string, manifest: Manifest): { errors: string[];
         } finally {
           closeSync(fd);
         }
-        check(bytes === tailBytes && footer.subarray(0, hashBytes).toString('hex') === pack[1].slice(5), `Неверное имя pack/idx: ${relative}.`);
+        check(bytes === tailBytes && footer.subarray(0, hashBytes).toString('hex') === packName.slice(5), `Неверное имя pack/idx: ${relative}.`);
       }
       if (refs.has(relative)) {
         check(stat.size <= 8192 && read(relative) === `${refs.get(relative)}\n`, `Посторонние данные или неверная ссылка: ${relative}.`);
@@ -229,15 +236,15 @@ function canonicalConfig(text: string): boolean {
   const seen = new Set<string>();
   for (const line of text.split(/\r?\n/)) {
     if (!line.trim()) continue;
-    const header = /^\s*\[(core|extensions)\]\s*$/i.exec(line);
-    if (header) {
-      section = header[1].toLowerCase();
+    const [, name] = /^\s*\[(core|extensions)\]\s*$/i.exec(line) ?? [];
+    if (name !== undefined) {
+      section = name.toLowerCase();
       continue;
     }
-    const item = /^\s*([a-z]+)\s*=\s*([a-z0-9]+)\s*$/i.exec(line);
-    if (!item) return false;
-    const key = `${section}.${item[1].toLowerCase()}`;
-    if (seen.has(key) || !allowed[key]?.includes(item[2].toLowerCase())) return false;
+    const [, option, value] = /^\s*([a-z]+)\s*=\s*([a-z0-9]+)\s*$/i.exec(line) ?? [];
+    if (option === undefined || value === undefined) return false;
+    const key = `${section}.${option.toLowerCase()}`;
+    if (seen.has(key) || !allowed[key]?.includes(value.toLowerCase())) return false;
     seen.add(key);
   }
   return true;
@@ -247,7 +254,7 @@ function parsePackedRefs(text: string, refs: Map<string, string>, objects: Set<s
   const lines = text.split('\n');
   if (lines.pop() !== '') return undefined;
   if (lines[0]?.startsWith('#')) {
-    const header = /^# pack-refs with: (?:peeled|fully-peeled|sorted)(?: (?:peeled|fully-peeled|sorted))* ?$/.test(lines.shift()!);
+    const header = /^# pack-refs with: (?:peeled|fully-peeled|sorted)(?: (?:peeled|fully-peeled|sorted))* ?$/.test(lines.shift() ?? '');
     if (!header) return undefined;
   }
   const record = new RegExp(`^([a-f0-9]{${width}}) (refs/(?:heads|tags)/.+)$`);
@@ -262,10 +269,10 @@ function parsePackedRefs(text: string, refs: Map<string, string>, objects: Set<s
       tag = undefined;
       continue;
     }
-    const item = record.exec(line);
-    if (!item || refs.get(item[2]) !== item[1] || seen.has(item[2])) return undefined;
-    seen.add(item[2]);
-    tag = item[2].startsWith('refs/tags/') ? item[2] : undefined;
+    const [, oid, name] = record.exec(line) ?? [];
+    if (oid === undefined || name === undefined || refs.get(name) !== oid || seen.has(name)) return undefined;
+    seen.add(name);
+    tag = name.startsWith('refs/tags/') ? name : undefined;
   }
   return peeledRefs;
 }
@@ -304,11 +311,13 @@ export function verifyExport(path: string): ExportReport {
   const refObjects = new Map(manifest.refs.map((ref) => [ref.name, ref.oid]));
   for (const [name, target] of peeledRefs)
     attempt(() => {
-      const oid = refObjects.get(name)!;
-      check(repo.text(['rev-parse', '--verify', `${oid}^{}`]) === target, `Неверная peeled-ссылка в packed-refs: ${name}.`);
+      const oid = refObjects.get(name);
+      check(oid !== undefined && repo.text(['rev-parse', '--verify', `${oid}^{}`]) === target, `Неверная peeled-ссылка в packed-refs: ${name}.`);
     });
   check(repo.text(['rev-parse', '--is-bare-repository']) === 'true', 'Экспорт должен быть bare-репозиторием.');
-  attempt(() => check(repo.text(['symbolic-ref', '-q', 'HEAD']) === manifest.head, 'HEAD не соответствует манифесту.'));
+  attempt(() => {
+    check(repo.text(['symbolic-ref', '-q', 'HEAD']) === manifest.head, 'HEAD не соответствует манифесту.');
+  });
   const refs = repo.refs();
   check(
     refs.every((r) => !r.symbolic),
@@ -330,7 +339,7 @@ export function verifyExport(path: string): ExportReport {
     ),
     'В хранилище отсутствуют ожидаемые объекты или присутствуют лишние.'
   );
-  attempt(() =>
+  attempt(() => {
     check(
       equalSet(
         [
@@ -342,8 +351,8 @@ export function verifyExport(path: string): ExportReport {
         objects.map((o) => o.oid)
       ),
       'Есть недостижимые объекты либо недостающие объекты графа.'
-    )
-  );
+    );
+  });
   check(!existsSync(join(repo.common, 'objects', 'info', 'alternates')) && !existsSync(join(repo.common, 'objects', 'info', 'http-alternates')), 'Экспорт зависит от внешнего хранилища объектов.');
   check(repo.text(['rev-parse', '--is-shallow-repository']) === 'false', 'Экспорт оказался shallow.');
   check(!existsSync(join(repo.common, 'info', 'grafts')), 'В экспорте обнаружены grafts.');
@@ -375,7 +384,9 @@ export function verifyExport(path: string): ExportReport {
         for (const h of parts(raw).headers) {
           if (expect.commitMessage !== undefined) check(field(h) !== 'encoding', `Неверная кодировка сообщения коммита ${oid}.`);
           check(!['gpgsig', 'gpgsig-sha256', 'mergetag'].includes(field(h)), `Остался заголовок подписи в ${oid}.`);
-          if (field(h) === 'parent') check(positions.has(h.subarray(7).toString('ascii')) && positions.get(h.subarray(7).toString('ascii'))! < index, `Неверный порядок родителей ${oid}.`);
+          if (field(h) !== 'parent') continue;
+          const parent = positions.get(h.subarray(7).toString('ascii'));
+          check(parent !== undefined && parent < index, `Неверный порядок родителей ${oid}.`);
         }
         positions.set(oid, index);
       });
@@ -385,9 +396,9 @@ export function verifyExport(path: string): ExportReport {
       const raw = repo.git(['cat-file', 'tag', object.oid]);
       const tagger = stamp(raw, 'tagger');
       const target = repo.text(['rev-parse', '--verify', `${object.oid}^{}`]);
-      check(positions.has(target), `Тег ${object.oid} указывает вне выбранной истории.`);
-      if (expect.dates?.tagPolicy === 'normalize')
-        check(positions.has(target) && tagger.timestamp === dateOf(positions.get(target)!) && tagger.timezone === '+0000', `Неверная дата тега ${object.oid}.`);
+      const position = positions.get(target);
+      check(position !== undefined, `Тег ${object.oid} указывает вне выбранной истории.`);
+      if (expect.dates?.tagPolicy === 'normalize') check(position !== undefined && tagger.timestamp === dateOf(position) && tagger.timezone === '+0000', `Неверная дата тега ${object.oid}.`);
       if (expect.tagIdentity) check(tagger.identity === `${expect.tagIdentity.name} <${expect.tagIdentity.email}>`, `Неверный tagger ${object.oid}.`);
       check(!/(?:^|\n)-----BEGIN (?:PGP SIGNATURE|SSH SIGNATURE|SIGNED MESSAGE)-----/m.test(parts(raw).message.toString('latin1')), `Осталась подпись тега ${object.oid}.`);
     });
@@ -428,7 +439,7 @@ export function exportPlan(plan: Plan, destination: string): ExportReport {
     // Pack only explicitly enumerated content objects. Do not traverse source commits or tags.
     const content: string[] = [];
     for (const line of info.split('\n').filter(Boolean)) {
-      const [oid, type] = line.split(' ');
+      const [oid = '', type] = line.split(' ');
       if (type !== 'tree' && type !== 'blob') continue;
       content.push(oid);
       expectedObjects.add(oid);
@@ -450,7 +461,7 @@ export function exportPlan(plan: Plan, destination: string): ExportReport {
     }
     writeObjects(output, plan.objects);
     for (const object of plan.objects) expectedObjects.add(object.oid);
-    const refs = plan.selected.map((r) => ({ name: r.name, oid: plan.mapping.get(r.oid)! }));
+    const refs = plan.selected.map((r) => ({ name: r.name, oid: mapped(plan.mapping, r.oid) }));
     output.git(['update-ref', '--stdin'], ['start', ...refs.map((r) => `create ${r.name} ${r.oid}`), 'prepare', 'commit', ''].join('\n'));
     const manifest: Manifest = {
       version: 2,
@@ -467,6 +478,6 @@ export function exportPlan(plan: Plan, destination: string): ExportReport {
     if (!verification.ok) throw new Error(`Проверка экспорта не пройдена:\n${verification.errors.join('\n')}`);
     return verification;
   } catch (error) {
-    throw new Error(`${error instanceof Error ? error.message : error}\nНезавершённый экспорт оставлен в ${target}. Исходный репозиторий не переписывался.`, { cause: error });
+    throw new Error(`${error instanceof Error ? error.message : String(error)}\nНезавершённый экспорт оставлен в ${target}. Исходный репозиторий не переписывался.`, { cause: error });
   }
 }

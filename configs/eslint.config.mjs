@@ -51,10 +51,26 @@ export default defineConfig([
   },
   {
     files: ['apps/*/**/*.ts'],
+    extends: [tseslint.configs.recommendedTypeChecked],
     languageOptions: {
       parserOptions: { projectService: true, tsconfigRootDir: fileURLToPath(new URL('..', import.meta.url)) }
     },
-    rules: { '@typescript-eslint/no-misused-spread': 'error', '@typescript-eslint/consistent-type-exports': 'error' }
+    rules: {
+      '@typescript-eslint/no-misused-spread': 'error',
+      '@typescript-eslint/consistent-type-exports': 'error',
+      '@typescript-eslint/restrict-template-expressions': ['error', { allowNumber: true }]
+    }
+  },
+  {
+    files: ['apps/*/src/**/*.ts'],
+    extends: [tseslint.configs.strictTypeChecked],
+    rules: {
+      '@typescript-eslint/restrict-template-expressions': ['error', { allowNumber: true }],
+      // These rules trust static types over runtime values. Keep runtime checks of untrusted input, platform constants, and TTY state.
+      '@typescript-eslint/no-unnecessary-condition': 'off',
+      '@typescript-eslint/no-unnecessary-type-conversion': 'off',
+      '@typescript-eslint/no-useless-default-assignment': 'off'
+    }
   },
   {
     files: ['apps/reHistory/src/**/*.ts'],

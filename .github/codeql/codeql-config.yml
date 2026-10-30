@@ -1,0 +1,12 @@
+# CodeQL configuration for the CodeQL workflow.
+# Analyze maintained source only. Generated output and vendored skills are outside the scope.
+name: Toolchain CodeQL configuration
+
+queries:
+  - uses: security-extended
+
+paths-ignore:
+  - '**/dist/**'
+  - '**/node_modules/**'
+  - '.agents/**'
+  - '.claude/skills/**'

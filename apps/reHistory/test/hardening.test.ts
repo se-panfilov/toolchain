@@ -58,7 +58,7 @@ test('audit запускает Git из PATH, а не подложенный exe
   repo.git(['commit', '-q', '-m', 'synthetic executable']);
   const result = spawnSync(process.execPath, [cli, '--audit', '--json'], { cwd: repo.path, encoding: 'utf8', timeout: 30000 });
   assert.equal(result.status, 0, result.stderr);
-  assert.equal(JSON.parse(result.stdout).complete, true);
+  assert.equal((JSON.parse(result.stdout) as { complete: boolean }).complete, true);
   assert.equal(existsSync(marker), false);
 });
 
@@ -219,8 +219,8 @@ test('verify-export --json экранирует управляющие симв�
   const result = spawnSync(process.execPath, [cli, '--verify-export', path, '--json'], { encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
   assert(!/[\u0080-\u009f\p{Cf}]/u.test(result.stdout));
-  assert.equal(JSON.parse(result.stdout).ok, true);
-  assert(JSON.parse(result.stdout).repository.includes('\u202e'));
+  assert.equal((JSON.parse(result.stdout) as { ok: boolean }).ok, true);
+  assert((JSON.parse(result.stdout) as { repository: string }).repository.includes('\u202e'));
 });
 
 test('история больше одного batch обрабатывается без процесса на каждый коммит', (t) => {
