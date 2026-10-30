@@ -625,9 +625,12 @@ Exclusive filesystem access remains necessary during output writes.
 A filesystem error during publication of compiled files can leave a partial build.
 The start command stops on this failure. Rebuild successfully before direct execution.
 
-TypeScript 5.9.3 and Node.js types 24.10.1 are exact development dependencies.
-The lockfile also pins undici-types 7.16.0 and records archive integrity values.
-These three packages have no installation hooks.
+TypeScript 7.0.2 and Node.js types 26.6.5 are exact development dependencies.
+The build and the `typecheck` script use the TypeScript 7 compiler from the npm alias `@typescript/native`.
+The name `typescript` is an npm alias of `@typescript/typescript6` 6.0.2, because typescript-eslint requires the TypeScript 6 API.
+That package installs TypeScript 6.0.3 as `@typescript/old`.
+The lockfile also pins undici-types 8.9.0, the TypeScript 7 platform packages, and records archive integrity values.
+These packages have no installation hooks.
 They are not runtime dependencies and do not enter the publication allowlist.
 The dependency audit reported no known vulnerabilities for this locked tree.
 This result does not prove the absence of dependency defects.
