@@ -96,6 +96,10 @@ describe('environment and settings', () => {
     expect(args.at(-1)).toBe(`${'a'.repeat(40)}:refs/heads/movetorepo/ab12cd34`);
     expect(() => pushArguments('u', '+abc', 'b')).toThrow(/ID коммита/);
   });
+
+  test.each(['main', 'master', 'movetorepo/main', 'movetorepo/ab12cd34/x', 'movetorepo/AB12CD34', 'refs/heads/main', 'x/movetorepo/ab12cd34'])('push to %j is rejected', (branch) => {
+    expect(() => pushArguments('https://github.com/me/notes.git', 'a'.repeat(40), branch)).toThrow(/только в новую ветку/);
+  });
 });
 
 describe('helpers', () => {

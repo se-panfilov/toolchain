@@ -29,7 +29,7 @@ npx tx-movetorepo --repo https://github.com/OWNER/REPO --base main \
   --dest to-B ./from-B/some4.txt ./from-B/some5.txt
 ```
 
-The program uses your write access to all your repositories. Give a fixed version, for example `npx tx-movetorepo@0.3.0`,
+The program uses your write access to all your repositories. Give a fixed version, for example `npx tx-movetorepo@0.3.1`,
 so that a different later release does not start without your check.
 
 This example makes one pull request with these files:
@@ -97,6 +97,7 @@ The program stops before any network access when one of these rules fails:
    If another user with write access creates the same branch between the check and the push, the push can move that branch forward.
    The target branch does not change. See SECURITY.md.
 8. Opens a pull request with `gh pr create`. The title and the body list the files.
+   The program never merges or approves the pull request. You merge it on GitHub after your check.
 9. Writes the result to the log, the pull request URL to stdout, and removes the temporary directory.
 
 When all files are the same as in the target branch, the program stops without a commit.
