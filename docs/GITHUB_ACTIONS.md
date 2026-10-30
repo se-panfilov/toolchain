@@ -61,7 +61,8 @@ A change to a shared dependency changes other lockfile entries and starts all te
 The test matrix always contains all applications, so each `test (<app>, <os>, Node.js <version>)` check reports a result.
 A job for an application that the pull request does not change skips its steps and succeeds.
 Thus required status checks for all `test (…)` jobs do not block a pull request that changes only one application.
-Each skipped job still starts a runner for some seconds.
+Each skipped job still starts a runner for some seconds. It always uses a Linux runner, also when its check name contains `macos-latest` or `windows-latest`.
+Thus skipped jobs do not wait in the queue for macOS and Windows runners.
 
 The `repository`, `pr-rules`, Secrets, and CodeQL checks run on each pull request without changes.
 Pushes to `master`, manual starts, and calls from Release do not use this selection. They test the applications from `app`.
