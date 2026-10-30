@@ -1,8 +1,9 @@
-import { linkSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import fs, { linkSync, mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { checkEntries, maxFileSize, pathSegments, readSource, readSources, secretContent, secretName, targetPath } from '@moveToRepo/files';
+import { checkEntries, checkRoot, maxFileSize, pathSegments, readSource, readSources, secretContent, secretName, targetPath } from '@moveToRepo/files';
 import { describe, expect, test, type TestContext } from 'vitest';
 
 function fixture(context: TestContext): string {
@@ -104,6 +105,47 @@ describe('destinations', () => {
     expect(() => checkEntries([{ source: 'a.txt', target: 'keys.key/a.txt' }])).toThrow(/секретами/);
     expect(() => checkEntries([])).toThrow(/Не указаны файлы/);
   });
+
+  test('all extensions of a name are checked', () => {
+    expect(secretName('terraform.tfstate.backup')).toBe('расширение .tfstate');
+    expect(secretName('server.key.old')).toBe('расширение .key');
+    expect(secretName('notes.txt')).toBeUndefined();
+    expect(secretName('key')).toBeUndefined();
+  });
+
+  test.each([
+    ['an OpenAI project key', `OPENAI_API_KEY=sk-${'proj'}-${'a'.repeat(40)}`],
+    ['a Stripe key', `sk_${'live'}_${'a'.repeat(24)}`],
+    ['a JWT', `eyJ${'a'.repeat(12)}.eyJ${'b'.repeat(12)}.${'c'.repeat(12)}`]
+  ])('contents with %s are rejected', (_, text) => {
+    expect(secretContent(Buffer.from(text))).toBeDefined();
+  });
+
+  test('UTF-16 contents are checked', () => {
+    const key = `-----BEGIN RSA ${'PRIVATE'} KEY-----\n`;
+    expect(secretContent(Buffer.from(`\uFEFF${key}`, 'utf16le'))).toBe('закрытый ключ');
+    expect(secretContent(Buffer.from(key, 'utf16le').swap16())).toBe('закрытый ключ');
+    expect(secretContent(Buffer.from('plain text', 'utf16le'))).toBeUndefined();
+  });
+});
+
+describe.skipIf(process.platform === 'win32')('root directory', () => {
+  test('a root inside a directory that starts with a dot is rejected', (context) => {
+    const root = fixture(context);
+    mkdirSync(join(root, '.docker/sub'), { recursive: true });
+    writeFileSync(join(root, '.docker/config.json'), '{}');
+    expect(() => checkRoot(join(root, '.docker'))).toThrow(/начинается с точки/);
+    expect(() => checkRoot(join(root, '.docker/sub'))).toThrow(/начинается с точки/);
+    expect(() => readSources(join(root, '.docker'), [{ source: 'config.json', target: 'config.json' }])).toThrow(/начинается с точки/);
+    expect(() => checkRoot(root)).not.toThrow();
+  });
+
+  test('a link to a directory that starts with a dot is rejected by its real path', (context) => {
+    const root = fixture(context);
+    mkdirSync(join(root, '.config'));
+    symlinkSync(join(root, '.config'), join(root, 'visible'));
+    expect(() => checkRoot(join(root, 'visible'))).toThrow(/начинается с точки/);
+  });
 });
 
 // moveToRepo supports only macOS and Linux. File modes, links, and O_NOFOLLOW are POSIX behavior.
@@ -145,6 +187,73 @@ describe.skipIf(process.platform === 'win32')('reading sources', () => {
     expect(() => readSource(root, 'file/x.txt')).toThrow(/не найден/);
     writeFileSync(join(root, 'big.bin'), Buffer.alloc(maxFileSize + 1));
     expect(() => readSource(root, 'big.bin')).toThrow(/больше/);
+  });
+
+  test('the current directory is restored after success and after an error', (context) => {
+    const root = fixture(context);
+    mkdirSync(join(root, 'dir'));
+    writeFileSync(join(root, 'dir/a.txt'), 'a');
+    const start = process.cwd();
+    readSource(root, 'dir/a.txt');
+    expect(process.cwd()).toBe(start);
+    expect(() => readSource(root, 'dir/none.txt')).toThrow(/не найден/);
+    expect(process.cwd()).toBe(start);
+  });
+
+  /** Replace `docs` with a link to `outside` right after the program checks `docs`. This makes the race deterministic. */
+  function swapAfterCheck(context: TestContext): { root: string; swap: () => void } {
+    const root = realpathSync(fixture(context));
+    mkdirSync(join(root, 'docs'));
+    mkdirSync(join(root, 'outside'));
+    writeFileSync(join(root, 'docs/notes.txt'), 'selected');
+    writeFileSync(join(root, 'outside/notes.txt'), 'outside');
+    const swap = (): void => {
+      renameSync(join(root, 'docs'), join(root, 'docs-saved'));
+      symlinkSync(join(root, 'outside'), join(root, 'docs'));
+    };
+    return { root, swap };
+  }
+
+  function hookLstat(context: TestContext, onPath: (path: unknown) => void): void {
+    // The default export is the mutable CommonJS module. syncBuiltinESMExports copies the change to the named exports.
+    const mutable = fs as { lstatSync: typeof fs.lstatSync };
+    const original = mutable.lstatSync;
+    context.onTestFinished(() => {
+      mutable.lstatSync = original;
+      syncBuiltinESMExports();
+    });
+    mutable.lstatSync = ((path: fs.PathLike, ...rest: unknown[]) => {
+      const stat = (original as (...args: unknown[]) => fs.Stats)(path, ...rest);
+      onPath(path);
+      return stat;
+    }) as typeof fs.lstatSync;
+    syncBuiltinESMExports();
+  }
+
+  test('a parent directory replaced by a link after its check stops the run', (context) => {
+    const { root, swap } = swapAfterCheck(context);
+    let swapped = false;
+    hookLstat(context, (path) => {
+      if (!swapped && (path === 'docs' || path === join(root, 'docs'))) {
+        swapped = true;
+        swap();
+      }
+    });
+    expect(() => readSources(root, [{ source: 'docs/notes.txt', target: 'docs/notes.txt' }])).toThrow(/изменился во время проверки/);
+    expect(swapped).toBe(true);
+  });
+
+  test('a parent directory replaced after the step into it does not change the file', (context) => {
+    const { root, swap } = swapAfterCheck(context);
+    let swapped = false;
+    hookLstat(context, (path) => {
+      if (!swapped && path === 'notes.txt') {
+        swapped = true;
+        swap();
+      }
+    });
+    expect(readSource(root, 'docs/notes.txt').content.toString()).toBe('selected');
+    expect(swapped).toBe(true);
   });
 
   test('a file with a private key in its contents is rejected', (context) => {

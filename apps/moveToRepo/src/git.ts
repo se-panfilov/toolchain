@@ -70,10 +70,15 @@ export function pullRequestBody(changes: Change[]): string {
   return `${changes.map((change) => `- \`${change.target}\``).join('\n')}\n`;
 }
 
-/** Push the commit to a new branch. No force and no `+` refspec: the server rejects a push that replaces other commits. */
+/**
+ * Push the commit to a new branch. The lease with an empty expected value makes the server create the branch only
+ * when it does not exist, in the same operation. A branch that another process creates after `branchExists`
+ * stops the push and does not change. The lease cannot replace an existing branch, and there is no `--force` or `+` refspec.
+ */
 export function pushArguments(url: string, commit: string, branch: string): string[] {
   if (!/^[0-9a-f]{40,64}$/.test(commit)) throw new Error('Некорректный ID коммита.');
-  return ['push', '--quiet', '--no-verify', '--', url, `${commit}:refs/heads/${branch}`];
+  const ref = `refs/heads/${branch}`;
+  return ['push', '--quiet', '--no-verify', `--force-with-lease=${ref}:`, '--', url, `${commit}:${ref}`];
 }
 
 /** A shallow clone of one branch in a private temporary directory. The work tree is never written. */

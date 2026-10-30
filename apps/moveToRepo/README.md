@@ -15,6 +15,7 @@ Use [SECURITY.md](SECURITY.md) for security controls and limits.
 - Git.
 - GitHub CLI (`gh`), signed in with `gh auth login`. The account must have write access to the repository.
 - A Git user name and email in the Git configuration. The commit uses them.
+  The program ignores `GIT_AUTHOR_*` and `GIT_COMMITTER_*` variables. When `commit.gpgSign` is set, Git signs the commit.
 
 ## Start
 
@@ -25,6 +26,9 @@ npx tx-movetorepo --repo https://github.com/OWNER/REPO --base main \
   --dest to-A ./from-A/some1.txt ./from-A/some2.txt ./from-A/some3.txt \
   --dest to-B ./from-B/some4.txt ./from-B/some5.txt
 ```
+
+The program uses your write access to all your repositories. Give a fixed version, for example `npx tx-movetorepo@0.1.1`,
+so that a different later release does not start without your check.
 
 This example makes one pull request with these files:
 
@@ -68,10 +72,13 @@ The program stops before any network access when one of these rules fails:
 
 - Paths are relative. `..`, `.`, empty segments, and absolute paths are not permitted.
 - A path segment cannot start with a dot. For example, `.env`, `.git`, and `.github` are not permitted.
+- The current directory cannot be inside a directory that starts with a dot, for example `~/.docker` or `~/.config/gh`.
+  The program checks the real path, after links.
 - Paths contain only ASCII letters, digits, `_`, `+`, `@`, `-`, `.`, and single spaces inside a name.
 - A file and each directory in its path cannot be a symbolic link. A file with hard links is not permitted.
 - Typical secret files are not permitted, for example `*.pem`, `*.key`, `*.p12`, `id_rsa`, `credentials.json`, and `*.env`.
-- Contents with a private key or a known token format are not permitted.
+  All extensions of a name are checked, so `terraform.tfstate.backup` is not permitted too.
+- Contents with a private key or a known token format are not permitted. UTF-16 text is checked too.
 - Two files cannot go to the same repository path, also when only the letter case is different.
 - Limits: 100 files, 10 MiB for each file, 50 MiB in total.
 
@@ -83,6 +90,7 @@ The program stops before any network access when one of these rules fails:
 4. Shows the plan. `+` is a new file, `~` replaces an existing file, `=` is the same file.
 5. Makes one commit on top of the target branch. The commit message is the list of changed files.
 6. Pushes the commit to a new branch `movetorepo/<random>`. It never pushes to an existing branch and never forces a push.
+   The push tells the server to create the branch only if it does not exist. A branch that appears during the run stops the push.
 7. Opens a pull request with `gh pr create`. The title and the body list the files.
 8. Writes the pull request URL to stdout and removes the temporary directory.
 
@@ -105,4 +113,4 @@ The program does not change the target branch or the local files.
 | ----- | ---------------------------------------------------- |
 | `0`   | The pull request is open, or no change is necessary. |
 | `1`   | An error. The message shows the reason.              |
-| `130` | Stopped with Ctrl+C.                                 |
+| `130` | Stopped with Ctrl+C, or the terminal closed.         |
