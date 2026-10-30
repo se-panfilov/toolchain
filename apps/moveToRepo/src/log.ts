@@ -6,7 +6,7 @@ import { type DirectoryId, directoryId, inDirectory } from '@moveToRepo/tools';
 /** The operation log in the current directory. The name starts with `__`. */
 export const logName = '__movetorepo-log.md';
 
-const header = '# Журнал moveToRepo\n\nКаждая запись — одна операция копирования. Время указано в локальном часовом поясе и в UTC.\n';
+const header = '# moveToRepo log\n';
 
 function pad(value: number, length = 2): string {
   return String(value).padStart(length, '0');
@@ -31,47 +31,38 @@ export function code(value: string): string {
 }
 
 export type LogFile = { source: string; target: string; state: 'add' | 'replace' };
-/**
- * Hide known token formats and credentials in URLs and headers. Error text from Git and gh goes to the log through this function.
- * Other secret formats are not detected.
- */
-export function redact(value: string): string {
-  return value
-    .replace(/\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})/g, '[скрыто]')
-    .replace(/\b([a-z][a-z0-9+.-]*:\/\/)[^\s/@]+@/gi, '$1[скрыто]@')
-    .replace(/\b(authorization:\s*)(?:(bearer|token|basic)\s+)?\S+/gi, (_, name: string, scheme?: string) => `${name}${scheme ? `${scheme} ` : ''}[скрыто]`);
-}
+
+export type LogStatus = 'success' | 'failed' | 'interrupted';
 
 export type LogStart = { id: string; time: Date; directory: string; repository: string; base: string; branch: string; commit: string; files: LogFile[] };
 
-/** The first part of a log entry. It is written before the push. moveToRepo runs on macOS and Linux, so local paths use `/`. */
+function plain(value: string): string {
+  return value.replace(/[\p{Cc}\p{Cf}]/gu, '?');
+}
+
+/** The first part of a log entry in English. It is written before the push. moveToRepo runs on macOS and Linux, so local paths use `/`. */
 export function startEntry(entry: LogStart): string {
-  const files = entry.files.map((file) => `  - ${code(posix.join(entry.directory, file.source))} → ${code(file.target)} (${file.state === 'add' ? 'новый' : 'замена'})`);
+  const files = entry.files.map((file) => `  - ${code(posix.join(entry.directory, file.source))} → ${code(file.target)} (${file.state === 'add' ? 'new' : 'replaced'})`);
   return [
     '',
-    `## ${formatTime(entry.time)} · операция ${code(entry.id)}`,
+    `## ID: ${code(entry.id)}`,
     '',
-    `- ID операции: ${code(entry.id)}`,
-    `- Дата и время: ${formatTime(entry.time)}`,
-    `- Целевой репозиторий: ${code(entry.repository)} (https://github.com/${entry.repository})`,
-    `- Целевая ветка: ${code(entry.base)}`,
-    `- Новая ветка: ${code(entry.branch)}`,
-    `- Коммит: ${code(entry.commit)}`,
-    `- Локальный каталог: ${code(entry.directory)}`,
-    `- Скопированные файлы (${entry.files.length}):`,
+    `- Date: ${formatTime(entry.time)}`,
+    `- From: ${plain(entry.directory)} (${code(entry.base)})`,
+    `- Target: https://github.com/${plain(entry.repository)} (${code(entry.branch)})`,
+    `- Commit: ${code(entry.commit)}`,
+    `- files (${entry.files.length}):`,
     ...files,
-    '- Статус: отправка начата',
     ''
   ].join('\n');
 }
 
 /**
- * The result of an operation: the pull request or the error. Parallel runs can write between the start and the result,
- * so the result line names the operation ID. The detail is in inline code with known tokens hidden.
+ * The second part of a log entry: the result and the status. Parallel runs can write between the two parts,
+ * so the result line names the operation ID.
  */
-export function resultLine(id: string, time: Date, result: string, detail?: string): string {
-  const text = detail === undefined ? '' : ` ${code(redact(detail).replace(/\s+/g, ' ').trim())}`;
-  return `- Результат операции ${code(id)} (${formatTime(time)}): ${result.replace(/[\p{Cc}\p{Cf}]/gu, ' ')}${text}\n`;
+export function resultLine(id: string, status: LogStatus, result: string): string {
+  return `- Result: ${plain(result)} (${code(status)}, ID ${code(id)})\n`;
 }
 
 /**

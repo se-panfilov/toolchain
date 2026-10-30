@@ -134,10 +134,10 @@ The user is responsible for the contents of the selected files.
 - Before the push, the file opens with `O_WRONLY | O_APPEND | O_CREAT | O_NOFOLLOW`, mode `0600` for a new file.
   The type, link count, and owner checks use the opened descriptor. A link, also a dangling link, stops the run before the push.
   An existing file with access for the group or others is changed to `0600`.
-- Each part of an entry is one append write, followed by `fsync`. The file is never truncated or replaced.
+- Each part of an entry is one append write, followed by `fsync`. The start is written before the push, the result line after. The file is never truncated or replaced.
 - Each entry has a random operation ID. The result line has the same ID, so results of parallel runs match their entries.
-- Paths and error text are in Markdown inline code with a safe fence. Control characters are replaced.
-  Known token formats and credentials in URLs and `Authorization` headers are hidden in error text. Other secret formats are not detected.
+- File paths and branch names are in Markdown inline code with a safe fence. Control characters in all fields are replaced, so a field cannot start a new line.
+- Error text from Git and `gh` is not written to the log. The result is one of a fixed set of English texts, or a pull request or compare URL.
 - The log contains local paths and repository names, which can be private metadata. It contains no file contents.
 
 ## Trust assumptions
