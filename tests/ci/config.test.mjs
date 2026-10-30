@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -16,6 +17,7 @@ import {
   manifestProblems,
   nvmrcProblems,
   requiredCompilerOptions,
+  skillProblems,
   structureProblems,
   workflowRuleProblems
 } from '../../scripts/ci/config.mjs';
@@ -195,6 +197,29 @@ test('workflows reject events that run with secrets for pull request or comment 
   assert.match(workflowRuleProblems('demo.yml', goodWorkflow.replace(/^on:\n/m, 'on: [push, workflow_run]\n')).join('\n'), /событие workflow_run запрещено/);
 });
 
+test('a third-party skill must match the provenance manifest and the tool allowlist', (t) => {
+  const base = temporary(t, 'toolchain-config-provenance-');
+  const write = (path, text) => {
+    mkdirSync(join(base, path, '..'), { recursive: true });
+    writeFileSync(join(base, path), text);
+  };
+  const sha = (text) => createHash('sha256').update(text).digest('hex');
+  const skill = '---\nname: vendor\ndescription: Text.\nallowed-tools: Read Grep Glob\n---\nBody\n';
+  write('.agents/skills/vendor/SKILL.md', skill);
+  write('.agents/skills/local/SKILL.md', '---\nname: local\ndescription: Text.\n---\n');
+  write('docs/skill-provenance.json', JSON.stringify({ skills: { vendor: { files: [{ path: 'SKILL.md', sha256: sha(skill) }] } } }));
+  mkdirSync(join(base, '.claude', 'skills'), { recursive: true });
+  symlinkSync('../../.agents/skills/vendor', join(base, '.claude', 'skills', 'vendor'));
+  assert.deepEqual(skillProblems(base), ['.agents/skills/local: навыка нет в docs/skill-provenance.json.']);
+
+  const changed = skill.replace('Read Grep Glob', 'Read Grep Glob Bash').replace('Body', 'Body !`id`');
+  write('.agents/skills/vendor/SKILL.md', changed.replace('---\nBody', 'hooks:\n---\nBody'));
+  write('.agents/skills/vendor/run.py', 'print(1)\n');
+  symlinkSync('../../../outside', join(base, '.claude', 'skills', 'other'));
+  const problems = skillProblems(base).join('\n');
+  for (const pattern of [/hooks/, /allowed-tools.*Bash/, /!`/, /SHA-256/, /run\.py: файла нет/, /\.claude\/skills\/other/]) assert.match(problems, pattern);
+});
+
 test('.nvmrc must contain an exact Node.js version', () => {
   assert.deepEqual(nvmrcProblems('26.12.1\n'), []);
   for (const text of ['26\n', '26.12\n', 'lts/*\n', 'v26.12.1\n', undefined]) assert.equal(nvmrcProblems(text).length, 1);
@@ -202,7 +227,7 @@ test('.nvmrc must contain an exact Node.js version', () => {
 
 test('the configuration check reads a copied repository', async (t) => {
   const base = temporary(t, 'toolchain-config-repo-');
-  for (const path of ['.nvmrc', 'package.json', 'package-lock.json', 'configs', 'apps', '.github', '.agents', '.claude']) {
+  for (const path of ['.nvmrc', 'package.json', 'package-lock.json', 'configs', 'apps', '.github', '.agents', '.claude', 'docs']) {
     cpSync(join(root, path), join(base, path), { recursive: true, verbatimSymlinks: true, filter: (source) => !/[\\/](node_modules|dist)([\\/]|$)/.test(source) });
   }
   // The copied Vite configurations import the installed development dependencies.
