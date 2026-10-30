@@ -159,8 +159,9 @@ export function preparePush(rewrite: Plan, remote: string, connection: PushTrans
   const branch = `branch.${rewrite.head.slice(11)}`;
   const merges = config.values.get(`${branch}.merge`) ?? [];
   if (config.values.get(`${branch}.remote`)?.at(-1) === remote && merges.length > 1) throw new Error('У ветки несколько upstream-ссылок. Push отменён.');
-  const destination = config.values.get(`${branch}.remote`)?.at(-1) === remote ? (merges[0] ?? rewrite.head) : rewrite.head;
-  if (!destination.startsWith('refs/heads/')) throw new Error('Upstream должен быть веткой.');
+  // As with push.default=simple, the server branch has the current branch name.
+  // An upstream with another name, for example master of a feature branch, is never a destination.
+  const destination = rewrite.head;
   repo.git(['check-ref-format', destination]);
   const advertised = connection.refs(repo, url);
   const server = new Map<string, string>();

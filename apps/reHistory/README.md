@@ -372,8 +372,9 @@ A missing remote stops this optional step.
 The program does not add a remote.
 
 The push contains the current branch and its selected tags, except tags for a separate decision that you did not select.
-For the branch upstream remote, the destination is its configured upstream branch.
-Otherwise, the destination has the current branch name.
+The destination has the current branch name, as with `push.default=simple`.
+The program does not use an upstream branch with a different name as the destination.
+For example, a push of a feature branch with the upstream `master` does not change `master` on the server.
 Backup refs, other branches, and other tags are excluded.
 The program does not delete server refs.
 
