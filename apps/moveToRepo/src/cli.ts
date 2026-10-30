@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -9,7 +9,7 @@ import { type Entry, readSources, targetPath } from '@moveToRepo/files';
 import { type Change, Clone, pullRequestBody, pullRequestTitle } from '@moveToRepo/git';
 import { checkBranch, checkOwner, cloneUrl, compareUrl, GitHub, parseRepository, type Repository } from '@moveToRepo/github';
 import { checkLog, logName, OperationLog, resultLine, startEntry } from '@moveToRepo/log';
-import { findExecutable, Interrupted, safe } from '@moveToRepo/tools';
+import { directoryId, findExecutable, Interrupted, safe } from '@moveToRepo/tools';
 
 function help(): string {
   return `moveToRepo — копирование файлов в репозиторий GitHub через pull request.
@@ -29,7 +29,7 @@ macOS и Linux, Node.js 24.12+, Git, GitHub CLI (gh) с выполненным g
     --dest to-A from-A/some1.txt from-A/some2.txt --dest to-B from-B/some4.txt
 
 Файлы копируются в новую ветку, затем открывается pull request в целевую ветку.
-Только репозитории текущего пользователя GitHub (gh auth). Репозитории организаций и других людей запрещены.
+Только приватные репозитории текущего пользователя GitHub (gh auth). Публичные репозитории, репозитории организаций и других людей запрещены.
 Целевая ветка не изменяется. Force push не выполняется. Существующие файлы заменяются в pull request.
 Каждая отправка записывается в журнал ${logName} в текущем каталоге: дата и время, файлы, репозиторий.
 Запрещены: имена с точкой в начале, запуск из такого каталога, выход из каталога, символические и жёсткие ссылки, файлы секретов.
@@ -117,10 +117,13 @@ async function main(): Promise<void> {
   }
   const options = parseArguments(args);
   checkRuntime();
-  // Read and check all local files before any network access.
+  // The identity of the start directory. `.` is the directory where the process runs, not a path that can change.
+  // Each later step into the directory by its path checks this identity: reading files and opening the log.
+  const rootId = directoryId('.');
   const directory = process.cwd();
-  const files = readSources(directory, options.entries);
-  if (!options.dryRun) checkLog(directory);
+  // Read and check all local files before any network access.
+  const files = readSources(directory, options.entries, rootId);
+  if (!options.dryRun) checkLog(directory, rootId);
   const git = findExecutable('git');
   const gh = findExecutable('gh');
   const work = mkdtempSync(join(tmpdir(), 'tx-movetorepo-'));
@@ -175,10 +178,13 @@ async function main(): Promise<void> {
     say(`Новая ветка: ${branch}`);
     await checkpoint();
     // Write the log entry before the push. A log that cannot be written stops the run before any transfer.
-    const log = OperationLog.open(directory);
+    const log = OperationLog.open(directory, rootId);
+    // Parallel runs in the same directory can write between the start and the result of this operation.
+    const id = randomUUID();
     try {
       log.write(
         startEntry({
+          id,
           time: new Date(),
           directory,
           repository: info.fullName,
@@ -201,13 +207,15 @@ async function main(): Promise<void> {
           say(`Откройте его вручную: ${compareUrl(info, base, branch)}`);
           throw error;
         }
-        log.write(resultLine(new Date(), `pull request ${pr}`));
+        log.write(resultLine(id, new Date(), `pull request ${pr}`));
         say('✓ Pull request создан');
         process.stdout.write(`${safe(pr)}\n`);
       } catch (error) {
-        const reason = error instanceof Interrupted ? 'прервано' : `ошибка: ${error instanceof Error ? error.message : String(error)}`;
+        const prefix = pushed ? 'ветка отправлена, pull request не создан, ' : '';
         try {
-          log.write(resultLine(new Date(), pushed ? `ветка отправлена, pull request не создан, ${reason}` : reason));
+          log.write(
+            error instanceof Interrupted ? resultLine(id, new Date(), `${prefix}прервано`) : resultLine(id, new Date(), `${prefix}ошибка:`, error instanceof Error ? error.message : String(error))
+          );
         } catch {
           say(`Не удалось записать результат в журнал ${logName}.`);
         }

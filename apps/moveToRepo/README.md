@@ -13,8 +13,8 @@ Use [SECURITY.md](SECURITY.md) for security controls and limits.
 - macOS or Linux.
 - Node.js 24.12 or later.
 - Git.
-- GitHub CLI (`gh`), signed in with `gh auth login`. The repository must belong to this GitHub account.
-  Organization repositories and repositories of other users are not permitted, also with write access.
+- GitHub CLI (`gh`), signed in with `gh auth login`. The repository must be a private repository of this GitHub account.
+  Public repositories, organization repositories, and repositories of other users are not permitted, also with write access.
 - A Git user name and email in the Git configuration. The commit uses them.
   The program ignores `GIT_AUTHOR_*` and `GIT_COMMITTER_*` variables. When `commit.gpgSign` is set, Git signs the commit.
 
@@ -28,7 +28,7 @@ npx tx-movetorepo --repo https://github.com/OWNER/REPO --base main \
   --dest to-B ./from-B/some4.txt ./from-B/some5.txt
 ```
 
-The program uses your write access to all your repositories. Give a fixed version, for example `npx tx-movetorepo@0.2.0`,
+The program uses your write access to all your repositories. Give a fixed version, for example `npx tx-movetorepo@0.3.0`,
 so that a different later release does not start without your check.
 
 This example makes one pull request with these files:
@@ -86,13 +86,15 @@ The program stops before any network access when one of these rules fails:
 ## What the program does
 
 1. Checks the arguments and reads the local files.
-2. Asks `gh` for the repository and the signed-in user. The repository owner must be this user.
+2. Asks `gh` for the repository and the signed-in user. The repository owner must be this user, and the repository must be private.
    It also checks write access, the archive state, and the default branch.
 3. Makes a shallow clone of the target branch in a private temporary directory. It does not write a work tree.
 4. Shows the plan. `+` is a new file, `~` replaces an existing file, `=` is the same file.
 5. Makes one commit on top of the target branch. The commit message is the list of changed files.
 6. Writes the start of a log entry to `__movetorepo-log.md` in the current directory. See [Operation log](#operation-log).
-7. Pushes the commit to a new branch `movetorepo/<random>`. It never pushes to an existing branch and never forces a push.
+7. Pushes the commit to a new branch `movetorepo/<random>`. It first checks that the branch does not exist, and it never forces a push.
+   If another user with write access creates the same branch between the check and the push, the push can move that branch forward.
+   The target branch does not change. See SECURITY.md.
 8. Opens a pull request with `gh pr create`. The title and the body list the files.
 9. Writes the result to the log, the pull request URL to stdout, and removes the temporary directory.
 
@@ -102,14 +104,16 @@ Messages go to stderr. Only the pull request URL goes to stdout.
 ## Operation log
 
 Each run that pushes files appends one entry to `__movetorepo-log.md` in the current directory.
-The program creates the file with mode `0600` when it does not exist. It never truncates or replaces the file.
+The program creates the file with mode `0600` when it does not exist, and changes an existing file to `0600`.
+It never truncates or replaces the file.
 
 An entry contains:
 
+- A unique operation ID. The result line has the same ID, so parallel runs in one directory can be told apart.
 - The date and time in the local time zone with the UTC offset, and the same moment in UTC.
 - The target repository, the target branch, the new branch, and the commit ID.
 - The local directory, and each copied file with its full local path and its path in the repository.
-- The result: the pull request URL, an error, or an interruption.
+- The result: the pull request URL, an error, or an interruption. Known token formats in error text are hidden.
 
 The program writes the start of the entry before the push. If the log cannot be written, the program stops before the push.
 A dry-run and a run without changes do not write the log.

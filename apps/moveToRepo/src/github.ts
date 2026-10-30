@@ -1,7 +1,7 @@
 import { runTool } from '@moveToRepo/tools';
 
 export type Repository = { owner: string; name: string };
-export type RepositoryInfo = { fullName: string; defaultBranch: string };
+export type RepositoryInfo = { fullName: string; defaultBranch: string; visibility: string };
 
 const owner = '[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})';
 const name = '[A-Za-z0-9._-]{1,100}';
@@ -57,8 +57,14 @@ export function parseRepositoryInfo(json: string, repo: Repository): RepositoryI
   if (actual.toLowerCase() !== expected.toLowerCase()) throw new Error(`Репозиторий ${expected} переименован или перенесён в ${actual}. Укажите новый адрес.`);
   if (data.isArchived === true) throw new Error(`Репозиторий ${actual} в архиве. Запись невозможна.`);
   if (typeof data.viewerPermission !== 'string' || !writePermissions.has(data.viewerPermission)) throw new Error(`Нет прав на запись в ${actual}.`);
+  const visibility = typeof data.visibility === 'string' ? data.visibility : '';
+  if (!/^(PUBLIC|PRIVATE|INTERNAL)$/.test(visibility) || typeof data.isPrivate !== 'boolean') throw new Error('gh вернул некорректную видимость репозитория.');
   const defaultBranch = record(data.defaultBranchRef).name;
-  return { fullName: actual, defaultBranch: typeof defaultBranch === 'string' ? checkBranch(defaultBranch, 'Ветка по умолчанию') : '' };
+  return {
+    fullName: actual,
+    defaultBranch: typeof defaultBranch === 'string' ? checkBranch(defaultBranch, 'Ветка по умолчанию') : '',
+    visibility: visibility === 'PRIVATE' && !data.isPrivate ? 'UNKNOWN' : visibility
+  };
 }
 
 /** Parse `gh api user` JSON and return the login of the signed-in GitHub user. */
@@ -84,6 +90,8 @@ export function checkOwner(info: RepositoryInfo, login: string): void {
   if (repoOwner.toLowerCase() !== login.toLowerCase()) {
     throw new Error(`Репозиторий ${info.fullName} принадлежит ${repoOwner}, а не текущему пользователю GitHub ${login}. Копировать можно только в свои репозитории.`);
   }
+  // Anyone can read a public repository. A push there is a publication of the files, also before a merge.
+  if (info.visibility !== 'PRIVATE') throw new Error(`Репозиторий ${info.fullName} не приватный (${info.visibility}). Копировать можно только в приватные репозитории.`);
 }
 
 export class GitHub {
@@ -94,7 +102,12 @@ export class GitHub {
 
   /** Read the repository through the authenticated gh. This also checks that gh is signed in. */
   repository(repo: Repository): RepositoryInfo {
-    const json = runTool(this.gh, ['repo', 'view', `${repo.owner}/${repo.name}`, '--json', 'nameWithOwner,viewerPermission,isArchived,defaultBranchRef'], { cwd: this.cwd, timeout: 60000 }, 'gh');
+    const json = runTool(
+      this.gh,
+      ['repo', 'view', `${repo.owner}/${repo.name}`, '--json', 'nameWithOwner,viewerPermission,isArchived,defaultBranchRef,visibility,isPrivate'],
+      { cwd: this.cwd, timeout: 60000 },
+      'gh'
+    );
     return parseRepositoryInfo(json.toString('utf8'), repo);
   }
 

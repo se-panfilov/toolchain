@@ -13,6 +13,45 @@ export function safe(value: unknown): string {
   return String(value).replace(/[\p{Cc}\p{Cf}]/gu, (ch) => (ch === '\n' ? ch : '?'));
 }
 
+/** The identity of a directory: device and inode. A rename or a replacement by a link gives another identity. */
+export type DirectoryId = { dev: number; ino: number };
+
+export function directoryId(path: string): DirectoryId {
+  const stat = statSync(path);
+  if (!stat.isDirectory()) throw new Error(`Не каталог: ${path}`);
+  return { dev: stat.dev, ino: stat.ino };
+}
+
+function sameDirectory(path: string, expected: DirectoryId): boolean {
+  const stat = statSync(path);
+  return stat.dev === expected.dev && stat.ino === expected.ino;
+}
+
+/**
+ * Run `action` in the directory `path`, and require that it is the `expected` directory.
+ * Node.js has no `openat` or `fchdir`, so the current directory is the directory handle: names that `action` uses
+ * are relative to the checked inode, not to a path that another process can change.
+ * The start directory is restored by its path and checked again. A rename or a replacement of the directory
+ * or of one of its parents by a link gives another device or inode, and the run stops.
+ * The CLI is synchronous, so no other code sees the change of the current directory.
+ */
+export function inDirectory<T>(path: string, expected: DirectoryId, action: () => T): T {
+  const start = process.cwd();
+  const startId = directoryId('.');
+  process.chdir(path);
+  let result: T;
+  try {
+    if (!sameDirectory('.', expected)) throw new Error(`Каталог ${path} изменился во время работы. Запуск остановлен.`);
+    result = action();
+  } catch (error) {
+    process.chdir(start);
+    throw error;
+  }
+  process.chdir(start);
+  if (!sameDirectory('.', startId)) throw new Error(`Каталог ${start} изменился во время работы. Запуск остановлен.`);
+  return result;
+}
+
 export class Interrupted extends Error {
   constructor() {
     super('Прервано.');

@@ -53,10 +53,15 @@ describe('branch names', () => {
 
 describe('repository information', () => {
   const repo = { owner: 'me', name: 'notes' };
-  const json = (data: object): string => JSON.stringify({ nameWithOwner: 'me/notes', viewerPermission: 'WRITE', isArchived: false, defaultBranchRef: { name: 'main' }, ...data });
+  const json = (data: object): string =>
+    JSON.stringify({ nameWithOwner: 'me/notes', viewerPermission: 'WRITE', isArchived: false, defaultBranchRef: { name: 'main' }, visibility: 'PRIVATE', isPrivate: true, ...data });
 
   test('write access gives the full name and the default branch', () => {
-    expect(parseRepositoryInfo(json({}), repo)).toEqual({ fullName: 'me/notes', defaultBranch: 'main' });
+    expect(parseRepositoryInfo(json({}), repo)).toEqual({ fullName: 'me/notes', defaultBranch: 'main', visibility: 'PRIVATE' });
+    expect(parseRepositoryInfo(json({ visibility: 'PUBLIC', isPrivate: false }), repo).visibility).toBe('PUBLIC');
+    expect(parseRepositoryInfo(json({ visibility: 'PRIVATE', isPrivate: false }), repo).visibility).toBe('UNKNOWN');
+    expect(() => parseRepositoryInfo(json({ visibility: undefined }), repo)).toThrow(/видимость/);
+    expect(() => parseRepositoryInfo(json({ visibility: 'SECRET' }), repo)).toThrow(/видимость/);
     expect(parseRepositoryInfo(json({ nameWithOwner: 'Me/Notes' }), repo).fullName).toBe('Me/Notes');
   });
 
@@ -71,7 +76,9 @@ describe('repository information', () => {
   });
 
   test('the compare page uses the full name', () => {
-    expect(compareUrl({ fullName: 'me/notes', defaultBranch: 'main' }, 'main', 'movetorepo/ab12cd34')).toBe('https://github.com/me/notes/compare/main...movetorepo/ab12cd34?expand=1');
+    expect(compareUrl({ fullName: 'me/notes', defaultBranch: 'main', visibility: 'PRIVATE' }, 'main', 'movetorepo/ab12cd34')).toBe(
+      'https://github.com/me/notes/compare/main...movetorepo/ab12cd34?expand=1'
+    );
   });
 });
 
@@ -85,9 +92,13 @@ describe('repository owner', () => {
   });
 
   test('only a repository of the signed-in user is permitted', () => {
-    expect(() => checkOwner({ fullName: 'me/notes', defaultBranch: 'main' }, 'me')).not.toThrow();
-    expect(() => checkOwner({ fullName: 'Me/notes', defaultBranch: 'main' }, 'mE')).not.toThrow();
-    expect(() => checkOwner({ fullName: 'my-org/notes', defaultBranch: 'main' }, 'me')).toThrow(/принадлежит my-org/);
-    expect(() => checkOwner({ fullName: 'mee/notes', defaultBranch: 'main' }, 'me')).toThrow(/только в свои репозитории/);
+    expect(() => checkOwner({ fullName: 'me/notes', defaultBranch: 'main', visibility: 'PRIVATE' }, 'me')).not.toThrow();
+    expect(() => checkOwner({ fullName: 'Me/notes', defaultBranch: 'main', visibility: 'PRIVATE' }, 'mE')).not.toThrow();
+    expect(() => checkOwner({ fullName: 'my-org/notes', defaultBranch: 'main', visibility: 'PRIVATE' }, 'me')).toThrow(/принадлежит my-org/);
+    expect(() => checkOwner({ fullName: 'mee/notes', defaultBranch: 'main', visibility: 'PRIVATE' }, 'me')).toThrow(/только в свои репозитории/);
+  });
+
+  test.each(['PUBLIC', 'INTERNAL', 'UNKNOWN'])('an own %s repository is rejected', (visibility) => {
+    expect(() => checkOwner({ fullName: 'me/notes', defaultBranch: 'main', visibility }, 'me')).toThrow(/только в приватные/);
   });
 });
