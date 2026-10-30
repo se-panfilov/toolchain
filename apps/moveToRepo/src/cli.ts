@@ -29,7 +29,7 @@ macOS и Linux, Node.js 24.12+, Git, GitHub CLI (gh) с выполненным g
 
 Файлы копируются в новую ветку, затем открывается pull request в целевую ветку.
 Целевая ветка не изменяется. Force push не выполняется. Существующие файлы заменяются в pull request.
-Запрещены: имена с точкой в начале, выход из каталога, символические и жёсткие ссылки, файлы секретов.
+Запрещены: имена с точкой в начале, запуск из такого каталога, выход из каталога, символические и жёсткие ссылки, файлы секретов.
 Сообщения выводятся в stderr, адрес pull request — в stdout.
 Подробности: README.md пакета.`;
 }
@@ -129,8 +129,9 @@ async function main(): Promise<void> {
     await new Promise((done) => setImmediate(done));
     if (interrupted) throw new Interrupted();
   };
-  process.on('SIGINT', interrupt);
-  process.on('SIGTERM', interrupt);
+  // SIGHUP comes when the terminal closes. Without a handler, Node.js stops at once and leaves the temporary clone.
+  const signals = ['SIGINT', 'SIGTERM', 'SIGHUP'] as const;
+  for (const signal of signals) process.on(signal, interrupt);
   try {
     await checkpoint();
     const github = new GitHub(gh, work);
@@ -178,8 +179,7 @@ async function main(): Promise<void> {
     say('✓ Pull request создан');
     process.stdout.write(`${safe(pr)}\n`);
   } finally {
-    process.off('SIGINT', interrupt);
-    process.off('SIGTERM', interrupt);
+    for (const signal of signals) process.off(signal, interrupt);
     rmSync(work, { recursive: true, force: true });
   }
 }

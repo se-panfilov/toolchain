@@ -102,11 +102,10 @@ export function runTool(tool: string, args: string[], options: RunOptions, label
     timeout: options.timeout ?? 120000,
     windowsHide: true
   });
-  if (result.signal === 'SIGINT' || result.signal === 'SIGTERM') throw new Interrupted();
-  if (result.error) {
-    if ((result.error as NodeJS.ErrnoException).code === 'ETIMEDOUT') throw new Error(`${label}: превышено время ожидания.`);
-    throw new Error(`Не удалось запустить ${label}: ${result.error.message}`);
-  }
+  // On a timeout, Node.js stops the process with SIGTERM. Check the timeout first, so it is not shown as an interruption.
+  if ((result.error as NodeJS.ErrnoException | undefined)?.code === 'ETIMEDOUT') throw new Error(`${label}: превышено время ожидания.`);
+  if (result.signal === 'SIGINT' || result.signal === 'SIGTERM' || result.signal === 'SIGHUP') throw new Interrupted();
+  if (result.error) throw new Error(`Не удалось запустить ${label}: ${result.error.message}`);
   if (result.status !== 0) {
     const message = result.stderr.toString('utf8').trim().split('\n').slice(-3).join('\n');
     throw new Error(`${label}: ${message || `код ${result.status}`}`);
