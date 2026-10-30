@@ -55,7 +55,8 @@ test('a missing, extra, or reordered application choice is reported', (t) => {
   const [first, second, third] = workflows.map((file) => join(base, file));
   writeFileSync(first, readFileSync(first, 'utf8').replace('          - reHistory\n', ''));
   writeFileSync(second, readFileSync(second, 'utf8').replace('          - reHistory\n', '          - reHistory\n          - oldApp\n'));
-  writeFileSync(third, readFileSync(third, 'utf8').replace('          - all\n          - reHistory\n', '          - reHistory\n          - all\n'));
+  // Move `all` below the first application, whichever application is first.
+  writeFileSync(third, readFileSync(third, 'utf8').replace(/( {10}- all\n)( {10}- \S+\n)/, '$2$1'));
   const problems = workflowProblems(apps, base);
   assert.equal(problems.length, 3);
   assert.match(problems[0], /нет reHistory/);

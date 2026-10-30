@@ -84,5 +84,17 @@ export default defineConfig([
       ]
     }
   },
+  {
+    files: ['apps/reCast/src/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [{ name: 'tx-recast', message: 'Use the @reCast/* application alias.' }],
+          patterns: [{ group: ['tx-recast/*', './*', '../*'], message: 'Use the @reCast/* application alias for runtime modules.' }]
+        }
+      ]
+    }
+  },
   prettier
 ]);

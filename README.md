@@ -68,6 +68,7 @@ npm run build --workspace tx-rehistory
 npm test --workspace tx-rehistory
 npm run start --workspace tx-rehistory -- --help
 npm pack --workspace tx-rehistory
+npm run start --workspace tx-recast -- --help
 ```
 
 Run npm ci once at the root, not inside applications.
@@ -79,6 +80,7 @@ Do not add a lockfile for an individual application.
 The documentation and code comments use English.
 The CLI interface uses Russian.
 
+- [reCast](apps/reCast/README.md) converts a video file into an MP4 file for Chromecast and other streaming devices on macOS.
 - [reHistory](apps/reHistory/README.md) changes Git commit dates, authors, or messages, one flow per run, and makes a verifiable export.
 - [Agent instructions](AGENTS.md) define development and authorization rules.
 - [Workspace guide](docs/WORKSPACES.md) describes shared configuration and adding an application.
