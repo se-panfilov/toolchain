@@ -57,11 +57,13 @@ export function branchProblems(name) {
 }
 
 // The first heading must be `## tl;dr`. HTML comments and one italic attribution line may precede it.
+const isOneLineComment = (line) => line.startsWith('<!--') && line.endsWith('-->') && line.length >= 7;
+
 export function pullRequestBodyProblems(body) {
   const problems = [];
   const lines = body.split(/\r?\n/);
   // Skip empty lines and one-line HTML comments, such as an attribution marker.
-  const content = (from) => lines.findIndex((line, index) => index >= from && line.trim() !== '' && !/^<!--.*-->$/.test(line.trim()));
+  const content = (from) => lines.findIndex((line, index) => index >= from && line.trim() !== '' && !isOneLineComment(line.trim()));
   let start = content(0);
   if (start >= 0 && /^_[^_].*_$/.test(lines[start]?.trim() ?? '')) start = content(start + 1);
   if (start < 0 || lines[start]?.trim() !== '## tl;dr') problems.push('Описание PR должно начинаться с заголовка ## tl;dr.');
