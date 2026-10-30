@@ -42,10 +42,11 @@ function fixture(t: { onTestFinished: (fn: () => void) => void }): { input: Inpu
   return { input, output, prompts };
 }
 
-test('чекбокс по умолчанию выбран; цифры не меняют ответ', async (t) => {
+test('default radio button is selected; digits do not change the answer', async (t) => {
   const { input, output, prompts } = fixture(t);
   const answer = prompts.confirm('Применить?', false);
-  assert.match(stripVTControlCharacters(output.text), /☐ Да\n {2}› ☑ Нет/);
+  assert.match(stripVTControlCharacters(output.text), /○ Да\n {2}› ◉ Нет/);
+  assert(!/[☑☐]/.test(output.text));
   assert(!output.text.includes('Выберите номер'));
   assert(!output.text.includes('Enter'));
   assert(!output.text.includes('пробел'));
@@ -55,7 +56,7 @@ test('чекбокс по умолчанию выбран; цифры не ме�
   assert.equal(input.listenerCount('keypress'), 0);
 });
 
-test('стрелка меняет только фокус; пробел выбирает единственный вариант', async (t) => {
+test('arrow moves only the focus; space selects the single answer', async (t) => {
   const { input, prompts } = fixture(t);
   let answer = prompts.confirm('Применить?', false);
   input.write('\x1b[A\r');
@@ -65,7 +66,7 @@ test('стрелка меняет только фокус; пробел выби
   assert.equal(await answer, true);
 });
 
-test('выбранное Да принимается Enter; стрелка и пробел переключают на Нет', async (t) => {
+test('Enter accepts selected Yes; arrow and space switch to No', async (t) => {
   const { input, prompts } = fixture(t);
   let answer = prompts.confirm('Бекап?', true);
   input.write('\r');
@@ -75,7 +76,7 @@ test('выбранное Да принимается Enter; стрелка и п
   assert.equal(await answer, false);
 });
 
-test('вставка bracketed paste не выбирает и не подтверждает применение', async (t) => {
+test('bracketed paste does not select or confirm an answer', async (t) => {
   const { input, prompts } = fixture(t);
   let resolved = false;
   const answer = prompts.confirm('Применить?', false).then((value) => {
@@ -89,7 +90,7 @@ test('вставка bracketed paste не выбирает и не подтве�
   assert.equal(await answer, false);
 });
 
-test('значение по умолчанию находится в редактируемой строке, Enter его принимает', async (t) => {
+test('default value is in the editable line and Enter accepts it', async (t) => {
   const { input, output, prompts } = fixture(t);
   const answer = prompts.text('Интервал', '12');
   assert.match(stripVTControlCharacters(output.text), /Интервал: 12/);
@@ -99,7 +100,7 @@ test('значение по умолчанию находится в редак�
   assert.equal(input.isRaw, false);
 });
 
-test('предзаполненный текст можно редактировать и полностью очистить', async (t) => {
+test('prefilled text can be edited and fully cleared', async (t) => {
   const { input, prompts } = fixture(t);
   let answer = prompts.text('Интервал', '12');
   input.write('\x7f');
@@ -112,7 +113,7 @@ test('предзаполненный текст можно редактиров�
   assert.equal(await answer, '');
 });
 
-test('Ctrl+C отменяет выбор/ввод, восстанавливает raw mode и снимает обработчики', async (t) => {
+test('Ctrl+C cancels choice and input, restores raw mode, and removes handlers', async (t) => {
   const { input, prompts } = fixture(t);
   const sigint = process.listenerCount('SIGINT');
   const sigterm = process.listenerCount('SIGTERM');
@@ -127,7 +128,7 @@ test('Ctrl+C отменяет выбор/ввод, восстанавливае�
   }
 });
 
-test('закрытие диалога отменяет незавершённый ввод и сохраняет исходный raw mode', async (t) => {
+test('closing the prompts cancels pending input and keeps the initial raw mode', async (t) => {
   const { input, prompts } = fixture(t);
   input.isRaw = true;
   input.resume();
@@ -143,7 +144,7 @@ test('закрытие диалога отменяет незавершённы�
   await assert.rejects(prompts.text('Имя'), PromptCancelled);
 });
 
-test('управляющие символы в вопросе/начальном тексте не уходят в терминал', async (t) => {
+test('control characters in question and initial text do not reach the terminal', async (t) => {
   const { input, output, prompts } = fixture(t);
   const pending = prompts.text('Вопрос\x1b[31m', 'текст\x1b[2J');
   input.write('\r');
@@ -152,7 +153,7 @@ test('управляющие символы в вопросе/начальном
   assert(!output.text.includes('\x1b[2J'));
 });
 
-test('неподдерживаемый терминал отклоняется до смены raw mode и вывода', async (t) => {
+test('unsupported terminal is rejected before raw mode change and output', async (t) => {
   const { input, output, prompts } = fixture(t);
   input.isTTY = false;
   await assert.rejects(prompts.text('Имя'), /TTY/);
@@ -163,7 +164,7 @@ test('неподдерживаемый терминал отклоняется �
   assert.equal(output.text, '');
 });
 
-test('цвета доступны только в TTY и отключаются NO_COLOR', (t) => {
+test('colors are only for TTY and NO_COLOR disables them', (t) => {
   const env = { TERM: process.env.TERM, NO_COLOR: process.env.NO_COLOR, FORCE_COLOR: process.env.FORCE_COLOR };
   t.onTestFinished(() => {
     for (const [key, value] of Object.entries(env)) {
@@ -183,7 +184,7 @@ test('цвета доступны только в TTY и отключаются 
   assert.equal(terminalStyle({ isTTY: true }).accent('текст'), 'текст');
 });
 
-test('выбор remote сохраняет предвыбранный вариант и поддерживает более двух пунктов', async (t) => {
+test('remote choice keeps the preselected answer and supports more than two items', async (t) => {
   const { input, output, prompts } = fixture(t);
   let answer = prompts.select('Remote', ['alpha', 'beta', 'gamma'], 2);
   input.write('\x1b[B\r');

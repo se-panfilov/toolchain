@@ -136,7 +136,6 @@ The table does not change the approved general meanings in the STE dictionary.
 | branch                  | A named Git ref that identifies a commit.                                            |
 | branch tip              | The commit that a branch identifies.                                                 |
 | build                   | JavaScript files made from the TypeScript source.                                    |
-| checkbox                | A terminal control that shows a selected or unselected answer.                       |
 | checkout                | A Git operation that writes a working tree or changes its selected branch.           |
 | cherry-pick             | A Git operation that applies a selected commit to the current branch.                |
 | child process           | A process that another process starts.                                               |
@@ -213,6 +212,7 @@ The table does not change the approved general meanings in the STE dictionary.
 | protocol                | The rules used for a data exchange.                                                  |
 | PTY                     | A terminal interface used for automatic interactive tests.                           |
 | query string            | The part of a URL that contains query parameters.                                    |
+| radio button            | A terminal control that shows the one selected answer of a choice question.          |
 | raw mode                | A terminal state that gives individual keys directly to the program.                 |
 | rebase                  | A Git operation that makes new commits on another base.                              |
 | recovery transaction    | A ref transaction that restores initial ref values.                                  |
