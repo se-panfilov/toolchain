@@ -47,7 +47,9 @@ async function build() {
   const staging = mkdtempSync(join(tmpdir(), 'tx-movetorepo-build-'));
   try {
     const require = createRequire(import.meta.url);
-    const compiler = require.resolve('typescript/lib/tsc.js');
+    // Type-check with the TypeScript 7 compiler. The `typescript` name stays on the TypeScript 6 API for typescript-eslint.
+    const manifest = require.resolve('@typescript/native/package.json');
+    const compiler = join(dirname(manifest), JSON.parse(readFileSync(manifest, 'utf8')).bin.tsc);
     const result = spawnSync(process.execPath, [compiler, '--project', join(root, 'tsconfig.json'), '--noEmit', '--pretty', 'false'], {
       cwd: root,
       encoding: 'utf8',
