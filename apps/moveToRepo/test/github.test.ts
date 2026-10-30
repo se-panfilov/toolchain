@@ -1,4 +1,4 @@
-import { checkBranch, checkOwner, cloneUrl, compareUrl, parseRepository, parseRepositoryInfo, parseUser } from '@moveToRepo/github';
+import { checkBranch, checkGhCommand, checkOwner, cloneUrl, compareUrl, parseRepository, parseRepositoryInfo, parseUser } from '@moveToRepo/github';
 import { describe, expect, test } from 'vitest';
 
 describe('repository address', () => {
@@ -89,5 +89,28 @@ describe('repository owner', () => {
     expect(() => checkOwner({ fullName: 'Me/notes', defaultBranch: 'main' }, 'mE')).not.toThrow();
     expect(() => checkOwner({ fullName: 'my-org/notes', defaultBranch: 'main' }, 'me')).toThrow(/принадлежит my-org/);
     expect(() => checkOwner({ fullName: 'mee/notes', defaultBranch: 'main' }, 'me')).toThrow(/только в свои репозитории/);
+  });
+});
+
+describe('gh commands', () => {
+  test('only reading, the user, and pull request creation are permitted', () => {
+    expect(() => checkGhCommand(['repo', 'view', 'me/notes', '--json', 'nameWithOwner'])).not.toThrow();
+    expect(() => checkGhCommand(['api', 'user'])).not.toThrow();
+    expect(() => checkGhCommand(['pr', 'create', '--repo', 'me/notes', '--base', 'main', '--head', 'movetorepo/ab12cd34'])).not.toThrow();
+  });
+
+  test.each([
+    [['pr', 'merge', '1']],
+    [['pr', 'merge', '1', '--auto']],
+    [['pr', 'review', '1', '--approve']],
+    [['pr', 'create', '--repo', 'me/notes', '--auto']],
+    [['pr', 'create', '--web']],
+    [['api', 'user', '-X', 'PATCH']],
+    [['api', 'repos/me/notes/pulls/1/merge', '-X', 'PUT']],
+    [['repo', 'edit', 'me/notes']],
+    [['repo', 'view', 'me/notes', '--web', 'x']],
+    [[]]
+  ])('%j is rejected', (args) => {
+    expect(() => checkGhCommand(args)).toThrow(/Недопустимая команда gh/);
   });
 });
