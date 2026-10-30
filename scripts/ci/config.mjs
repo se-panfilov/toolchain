@@ -3,7 +3,7 @@
 // Usage: node scripts/ci/config.mjs
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, lstatSync, readdirSync, readFileSync, readlinkSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, readlinkSync } from 'node:fs';
 import { join, posix, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -293,11 +293,15 @@ export function skillProblems(base = root) {
         problems.push(`${label}/${safe(path)}: файла нет в docs/skill-provenance.json.`);
         continue;
       }
-      if (lstatSync(full).isSymbolicLink()) {
-        problems.push(`${label}/${safe(path)}: ссылки в навыке запрещены.`);
+      // One descriptor opened without following links prevents a change between the check and the read.
+      let bytes;
+      try {
+        bytes = readRegularFile(full, undefined, null);
+      } catch {
+        problems.push(`${label}/${safe(path)}: ожидался обычный файл без ссылки.`);
         continue;
       }
-      const hash = createHash('sha256').update(readFileSync(full)).digest('hex');
+      const hash = createHash('sha256').update(bytes).digest('hex');
       if (hash !== expected.get(path)) problems.push(`${label}/${safe(path)}: SHA-256 не совпадает с docs/skill-provenance.json.`);
     }
     for (const path of expected.keys()) if (!actual.includes(path)) problems.push(`${label}/${safe(String(path))}: файл из docs/skill-provenance.json не найден.`);
