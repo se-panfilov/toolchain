@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 
+import { readRegularFile } from '../../scripts/ci/files.mjs';
 import { root } from '../../scripts/ci/lib.mjs';
 import { aiLinkProblems, branchProblems, changesApplication, lockfileChanges, pullRequestBodyProblems, versionProblems, versionStep } from '../../scripts/ci/rules.mjs';
 import { commitMessageProblems, pushProblems } from '../../scripts/git-rules.mjs';
@@ -51,6 +52,9 @@ test('agent session links and trailers are rejected, product links are not', () 
     assert.deepEqual(aiLinkProblems(text, 'Text'), [], text);
   }
   assert.ok(!aiLinkProblems('https://chatgpt.com/c/secret-id', 'Text').join('').includes('secret-id'));
+  // Host names must match exactly, with or without a scheme.
+  for (const text of ['claude.ai/chat/1', 'https://www.chatgpt.com/c/abc', '(https://claude.ai/share/x)']) assert.equal(aiLinkProblems(text, 'Text').length, 1, text);
+  for (const text of ['https://notclaude.ai/chat/1', 'https://claude.ai.example.invalid/chat/1', 'https://example.invalid/claude.ai/chat/1']) assert.deepEqual(aiLinkProblems(text, 'Text'), [], text);
 });
 
 test('a pull request description starts with tl;dr and has the template sections', () => {
@@ -128,4 +132,19 @@ test('the hook script checks the current branch, a message file, and pre-push in
   assert.equal(hook(repo, ['push'], `refs/heads/x ${'a'.repeat(40)} refs/heads/feature/add_rules ${'b'.repeat(40)}\n`).status, 0);
   assert.equal(hook(repo, ['unknown']).status, 2);
   assert.equal(hook(repo, ['message']).status, 2);
+});
+
+test('a regular file is read through one descriptor, and links and directories are rejected', (t) => {
+  const directory = temporary(t);
+  const file = join(directory, 'file.txt');
+  writeFileSync(file, 'text');
+  assert.equal(readRegularFile(file), 'text');
+  assert.equal(readRegularFile(join(directory, 'missing.txt')), undefined);
+  assert.throws(() => readRegularFile(file, 2), /слишком большой/);
+  mkdirSync(join(directory, 'folder'));
+  assert.throws(() => readRegularFile(join(directory, 'folder')), /обычный файл/);
+  if (process.platform !== 'win32') {
+    symlinkSync(file, join(directory, 'link.txt'));
+    assert.throws(() => readRegularFile(join(directory, 'link.txt')), /ссылки/);
+  }
 });

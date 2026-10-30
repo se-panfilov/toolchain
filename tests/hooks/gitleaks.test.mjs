@@ -18,7 +18,16 @@ function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), 'toolchain-gitleaks-'));
   t.onTestFinished(() => rmSync(root, { recursive: true, force: true }));
   mkdirSync(join(root, 'scripts', 'ci'), { recursive: true });
-  for (const path of ['scripts/scan-secrets.mjs', 'scripts/format-changed.mjs', 'scripts/install-hooks.mjs', 'scripts/git-rules.mjs', 'scripts/ci/rules.mjs', '.gitleaks.toml', 'lefthook.yml']) {
+  for (const path of [
+    'scripts/scan-secrets.mjs',
+    'scripts/format-changed.mjs',
+    'scripts/install-hooks.mjs',
+    'scripts/git-rules.mjs',
+    'scripts/ci/rules.mjs',
+    'scripts/ci/files.mjs',
+    '.gitleaks.toml',
+    'lefthook.yml'
+  ]) {
     if (existsSync(join(workspace, path))) copyFileSync(join(workspace, path), join(root, path));
   }
   symlinkSync(join(workspace, 'node_modules'), join(root, 'node_modules'), 'junction');

@@ -2,10 +2,11 @@
 // dependencies, the lockfile, repository structure, and GitHub Actions workflows.
 // Usage: node scripts/ci/config.mjs
 import { spawnSync } from 'node:child_process';
-import { existsSync, lstatSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, posix, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+import { readRegularFile } from './files.mjs';
 import { listApps, main, readJson, root, safe } from './lib.mjs';
 
 // Compiler options that each application inherits from configs/tsconfig.base.json.
@@ -207,13 +208,15 @@ export function adapterProblems(base = root) {
       if (!entry.isDirectory() || entry.isSymbolicLink()) continue;
       const adapter = join(directory, entry.name, 'SKILL.md');
       const shared = join(base, '.agents', 'skills', entry.name, 'SKILL.md');
-      if (!existsSync(adapter)) continue;
-      if (!existsSync(shared)) {
+      const adapterText = readRegularFile(adapter);
+      if (adapterText === undefined) continue;
+      const sharedText = readRegularFile(shared);
+      if (sharedText === undefined) {
         problems.push(`${vendor}/skills/${safe(entry.name)}: нет общего навыка .agents/skills/${safe(entry.name)}/SKILL.md.`);
         continue;
       }
-      const left = frontmatter(readFileSync(adapter, 'utf8'));
-      const right = frontmatter(readFileSync(shared, 'utf8'));
+      const left = frontmatter(adapterText);
+      const right = frontmatter(sharedText);
       if (left.name !== right.name || left.description !== right.description) {
         problems.push(`${vendor}/skills/${safe(entry.name)}/SKILL.md: name и description должны совпадать с .agents/skills/${safe(entry.name)}/SKILL.md.`);
       }
@@ -302,8 +305,13 @@ export async function configProblems(base = root, files = trackedFiles(base)) {
     problems.push(...aliasProblems(app.dir, appRoot, await configAlias(join(appRoot, 'vite.config.mjs')), await configAlias(join(appRoot, 'vitest.config.mjs'))));
     const exists = (path, prefix) => {
       const full = join(appRoot, path);
-      if (!existsSync(full) || !lstatSync(full).isFile()) return false;
-      return prefix === undefined || readFileSync(full, 'utf8').startsWith(prefix);
+      let text;
+      try {
+        text = readRegularFile(full);
+      } catch {
+        return false;
+      }
+      return text !== undefined && (prefix === undefined || text.startsWith(prefix));
     };
     problems.push(...manifestProblems(app.dir, readJson(join(appRoot, 'package.json')), rootManifest, exists));
   }

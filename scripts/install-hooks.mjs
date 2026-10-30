@@ -1,7 +1,9 @@
 import { spawnSync } from 'node:child_process';
-import { lstatSync, readFileSync, realpathSync } from 'node:fs';
+import { lstatSync, realpathSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import { readRegularFile } from './ci/files.mjs';
 
 const root = realpathSync.native(fileURLToPath(new URL('../', import.meta.url)));
 // Hooks configured in lefthook.yml. Keep this list synchronized with the hook sections there.
@@ -29,16 +31,15 @@ try {
     if (error.code !== 'ENOENT') throw error;
   }
   for (const hook of hooks) {
-    const path = join(directory, hook);
-    let stat;
+    let text;
     try {
-      stat = lstatSync(path);
-    } catch (error) {
-      if (error.code !== 'ENOENT') throw error;
-      continue;
+      text = readRegularFile(join(directory, hook), 1024 * 1024);
+    } catch {
+      text = '';
     }
-    // A wrapper from an earlier installation of this project can be replaced. Any other hook stays unchanged.
-    if (!stat.isFile() || stat.isSymbolicLink() || !isProjectWrapper(readFileSync(path, 'utf8'))) {
+    if (text === undefined) continue;
+    // A wrapper from an earlier installation of this project can be replaced. Any other hook, link, or directory stays unchanged.
+    if (!isProjectWrapper(text)) {
       throw new Error(`${hook} уже существует. Сохраните и проверьте его перед ручной установкой Lefthook.`);
     }
   }

@@ -1,10 +1,11 @@
 // Git hook checks from AGENTS.md: no commits or pushes to master or main, and no AI agent session links in commit messages.
 // Usage: node scripts/git-rules.mjs branch | push | message <commit-message-file>
 import { spawnSync } from 'node:child_process';
-import { lstatSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { devNull } from 'node:os';
 import { pathToFileURL } from 'node:url';
 
+import { readRegularFile } from './ci/files.mjs';
 import { aiLinkProblems, protectedBranches } from './ci/rules.mjs';
 
 const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.toUpperCase().startsWith('GIT_')));
@@ -43,9 +44,9 @@ export function commitMessageProblems(text) {
 }
 
 function readMessage(path) {
-  const stat = lstatSync(path);
-  if (!stat.isFile() || stat.size > messageLimit) throw new Error('Файл сообщения коммита должен быть обычным файлом не больше 1 МиБ.');
-  return readFileSync(path, 'utf8');
+  const text = readRegularFile(path, messageLimit);
+  if (text === undefined) throw new Error('Файл сообщения коммита не найден.');
+  return text;
 }
 
 function main() {

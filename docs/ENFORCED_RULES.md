@@ -46,7 +46,7 @@ Install the hooks with `npm run hooks:install`. See [Git hooks and secret checks
 | commit-msg | No link to an AI agent thread, chat, session, or task. No session trailer, such as `Claude-Session:`. |
 | pre-push   | No push to `master` or `main`.                                                                        |
 
-[scripts/ci/rules.mjs](../scripts/ci/rules.mjs) contains the shared link patterns. The list covers known services. It cannot find every possible link.
+[scripts/ci/rules.mjs](../scripts/ci/rules.mjs) contains the shared list of host names and path prefixes. The list covers known services. It cannot find every possible link.
 
 ## Pull request rules
 

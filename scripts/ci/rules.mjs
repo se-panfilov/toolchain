@@ -6,26 +6,45 @@ export const branchTypes = ['feature', 'bugfix', 'docs', 'refactor', 'test', 'ch
 export const branchPattern = new RegExp(`^(${branchTypes.join('|')})/[a-z0-9]+(?:_[a-z0-9]+)*$`);
 const version = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 
-// Links to AI agent threads, chats, sessions, and tasks. Product pages without a conversation are not matched.
-export const aiLinkPatterns = [
-  /\bclaude\.ai\/(code\/(session_|project\/)|chat\/|share\/|project\/)/i,
-  /\b(chatgpt\.com|chat\.openai\.com)\/(c\/|share\/|codex\/tasks\/|g\/[^\s/]+\/c\/)/i,
-  /\bgemini\.google\.com\/(app|share)\//i,
-  /\bg\.co\/gemini\/share\//i,
-  /\bjules\.google\.com\/(session|task)\//i,
-  /\bcopilot\.microsoft\.com\/(chats|shares)\//i,
-  /\bgithub\.com\/copilot\/(c|share)\//i,
-  /\bcursor\.com\/agents\b/i,
-  /\bchat\.mistral\.ai\/chat\//i,
-  /\bperplexity\.ai\/search\//i
-];
+// Links to AI agent threads, chats, sessions, and tasks, by host name and path prefix.
+// Product pages without a conversation are not matched.
+export const aiLinkHosts = {
+  'claude.ai': /^\/(code\/(session_|project\/)|chat\/|share\/|project\/)/i,
+  'chatgpt.com': /^\/(c\/|share\/|codex\/tasks\/|g\/[^/]+\/c\/)/i,
+  'chat.openai.com': /^\/(c\/|share\/)/i,
+  'gemini.google.com': /^\/(app|share)\//i,
+  'g.co': /^\/gemini\/share\//i,
+  'jules.google.com': /^\/(session|task)\//i,
+  'copilot.microsoft.com': /^\/(chats|shares)\//i,
+  'github.com': /^\/copilot\/(c|share)\//i,
+  'cursor.com': /^\/agents(\/|$)/i,
+  'chat.mistral.ai': /^\/chat\//i,
+  'perplexity.ai': /^\/search\//i
+};
+// A link with or without a scheme: a host name with at least one dot and a path.
+const linkCandidate = /(?:https?:\/\/)?(?:[a-z0-9-]+\.)+[a-z]{2,}\/[^\s<>"'`)\]]*/gi;
+
+export function hasAiLink(text) {
+  for (const [candidate] of text.matchAll(linkCandidate)) {
+    let url;
+    try {
+      url = new URL(/^https?:\/\//i.test(candidate) ? candidate : `https://${candidate}`);
+    } catch {
+      continue;
+    }
+    const host = url.hostname.replace(/^www\./, '');
+    const path = aiLinkHosts[host];
+    if (path?.test(url.pathname)) return true;
+  }
+  return false;
+}
 // Commit trailers that identify an agent session, for example `Claude-Session:`.
 export const sessionTrailer = /^[A-Za-z0-9-]*Session:\s*\S/im;
 
 // Return the problems for a commit message or pull request text. The text itself is never repeated.
 export function aiLinkProblems(text, label) {
   const problems = [];
-  if (aiLinkPatterns.some((pattern) => pattern.test(text))) problems.push(`${label}: содержит ссылку на обсуждение с ИИ-агентом. Опишите причину в тексте.`);
+  if (hasAiLink(text)) problems.push(`${label}: содержит ссылку на обсуждение с ИИ-агентом. Опишите причину в тексте.`);
   if (sessionTrailer.test(text)) problems.push(`${label}: содержит трейлер с сессией агента (например, Claude-Session:). Удалите его.`);
   return problems;
 }
@@ -40,10 +59,11 @@ export function branchProblems(name) {
 // The first heading must be `## tl;dr`. HTML comments and one italic attribution line may precede it.
 export function pullRequestBodyProblems(body) {
   const problems = [];
-  const lines = body.replace(/<!--[\s\S]*?-->/g, '').split(/\r?\n/);
-  const first = lines.findIndex((line) => line.trim() !== '');
-  let start = first;
-  if (start >= 0 && /^_[^_].*_$/.test(lines[start]?.trim() ?? '')) start = lines.findIndex((line, index) => index > start && line.trim() !== '');
+  const lines = body.split(/\r?\n/);
+  // Skip empty lines and one-line HTML comments, such as an attribution marker.
+  const content = (from) => lines.findIndex((line, index) => index >= from && line.trim() !== '' && !/^<!--.*-->$/.test(line.trim()));
+  let start = content(0);
+  if (start >= 0 && /^_[^_].*_$/.test(lines[start]?.trim() ?? '')) start = content(start + 1);
   if (start < 0 || lines[start]?.trim() !== '## tl;dr') problems.push('Описание PR должно начинаться с заголовка ## tl;dr.');
   for (const heading of ['## Changes', '## Verification']) {
     if (!lines.some((line) => line.trim() === heading)) problems.push(`В описании PR нет раздела ${heading} из шаблона.`);
