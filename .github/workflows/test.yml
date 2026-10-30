@@ -20,6 +20,7 @@ on:
         default: all
         options:
           - all
+          - moveToRepo
           - reCast
           - reHistory
       dry_run:

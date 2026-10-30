@@ -30,6 +30,7 @@ Check that no other directory in `apps/` has the same name without letter case.
 
 Use `apps/reHistory` as the reference. Copy only the structure, not the reHistory Git rules.
 Start with the smallest working CLI: `--help` and one interactive question are sufficient.
+When the task explicitly requests a non-interactive CLI, start with `--help` and one validated argument.
 
 | File                | Content                                                                                                                   |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------- |
