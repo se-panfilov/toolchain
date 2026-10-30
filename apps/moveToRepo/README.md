@@ -94,13 +94,13 @@ The program stops before any network access when one of these rules fails:
 3. Makes a shallow clone of the target branch in a private temporary directory. It does not write a work tree.
 4. Shows the plan. `+` is a new file, `~` replaces an existing file, `=` is the same file.
 5. Makes one commit on top of the target branch. The commit message is the list of changed files.
-6. Writes the start of a log entry to `__movetorepo-log.md` in the current directory. See [Operation log](#operation-log).
+6. Opens and checks the log `__movetorepo-log.md` in the current directory. See [Operation log](#operation-log).
 7. Pushes the commit to a new branch `movetorepo/<random>`. It first checks that the branch does not exist, and it never forces a push.
    If another user with write access creates the same branch between the check and the push, the push can move that branch forward.
    The target branch does not change. See SECURITY.md.
-8. Opens a pull request with `gh pr create`. The title and the body list the files.
+8. Opens a pull request with `gh pr create`. The title is always `Moved files`. The body lists the files.
    The program never merges or approves the pull request. You merge it on GitHub after your check.
-9. Writes the result to the log, the pull request URL to stdout, and removes the temporary directory.
+9. Writes the log entry with the result, the pull request URL to stdout, and removes the temporary directory.
 
 When all files are the same as in the target branch, the program stops without a commit.
 Messages go to stderr. Only the pull request URL goes to stdout.
@@ -111,15 +111,31 @@ Each run that pushes files appends one entry to `__movetorepo-log.md` in the cur
 The program creates the file with mode `0600` when it does not exist, and changes an existing file to `0600`.
 It never truncates or replaces the file.
 
-An entry contains:
+The log is in English. Example entry:
 
-- A unique operation ID. The result line has the same ID, so parallel runs in one directory can be told apart.
-- The date and time in the local time zone with the UTC offset, and the same moment in UTC.
-- The target repository, the target branch, the new branch, and the commit ID.
-- The local directory, and each copied file with its full local path and its path in the repository.
-- The result: the pull request URL, an error, or an interruption. Known token formats in error text are hidden.
+```md
+## ID: `5f0c2a9e-0d1b-4c3e-9f7a-2b8d6e4c1a30`
 
-The program writes the start of the entry before the push. If the log cannot be written, the program stops before the push.
+- Date: 2026-10-30 10:00:10 UTC+01:00 (UTC 2026-10-30T09:00:10Z) (`success`)
+- From: /Users/me/folder (`master`)
+- Target: https://github.com/me/notes (`movetorepo/ed123456`)
+- Commit: `0461234133b5a1c2d3e4f5a6b7c8d9e0f1a2b3c4`
+- files (1):
+  - `/Users/me/folder/123.docx` → `export/123.docx` (new)
+- Result: https://github.com/me/notes/pull/1
+```
+
+- `ID` is a random operation ID.
+- `Date` is the start time in the local time zone with the UTC offset, the same moment in UTC, and the status: `success`, `failed`, or `interrupted`.
+- `From` is the local directory and the target branch of the pull request.
+- `Target` is the repository and the new branch.
+- `files` lists each copied file with its full local path, its path in the repository, and `new` or `replaced`.
+- `Result` is the pull request URL, `push failed`, `push interrupted`, or `branch pushed, pull request not created` with a link to open it manually.
+  Error text is not written to the log. It goes to stderr.
+
+The program opens and checks the log before the push. If the log cannot be opened, the program stops before the push.
+The program writes the full entry in one write after the result is known.
+If the process stops with `SIGKILL` or a power loss after the push, the entry is not written.
 A dry-run and a run without changes do not write the log.
 The log must be a regular file of the current user with one link. A symbolic link or a hard link stops the run.
 The log file itself cannot be a source file.

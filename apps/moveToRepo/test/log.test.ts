@@ -2,7 +2,7 @@ import { chmodSync, linkSync, mkdirSync, mkdtempSync, readFileSync, realpathSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { checkLog, code, formatTime, logName, OperationLog, redact, resultLine, startEntry } from '@moveToRepo/log';
+import { checkLog, code, formatTime, logEntry, logName, OperationLog } from '@moveToRepo/log';
 import { describe, expect, test, type TestContext } from 'vitest';
 
 function fixture(context: TestContext): string {
@@ -25,8 +25,8 @@ describe('log text', () => {
     expect(code('a\nb‮')).toBe('`a?b?`');
   });
 
-  test('the entry lists the date, the repository, and each copied file with its local path', () => {
-    const text = startEntry({
+  test('the entry is minimal English text with the status, the source, the target, and each file', () => {
+    const text = logEntry({
       id: 'op-1',
       time,
       directory: '/home/me/work',
@@ -37,39 +37,45 @@ describe('log text', () => {
       files: [
         { source: './from-A/some1.txt', target: 'to-A/some1.txt', state: 'add' },
         { source: 'b.txt', target: 'b.txt', state: 'replace' }
-      ]
+      ],
+      status: 'success',
+      result: 'https://github.com/me/notes/pull/1'
     });
-    expect(text).toContain(`## ${formatTime(time)} · операция \`op-1\``);
-    expect(text).toContain('- ID операции: `op-1`');
-    expect(text).toContain(`- Дата и время: ${formatTime(time)}`);
-    expect(text).toContain('- Целевой репозиторий: `me/notes` (https://github.com/me/notes)');
-    expect(text).toContain('  - `/home/me/work/from-A/some1.txt` → `to-A/some1.txt` (новый)');
-    expect(text).toContain('  - `/home/me/work/b.txt` → `b.txt` (замена)');
-    expect(text).toContain('- Скопированные файлы (2):');
-    expect(resultLine('op-1', time, 'pull request https://github.com/me/notes/pull/1')).toBe(`- Результат операции \`op-1\` (${formatTime(time)}): pull request https://github.com/me/notes/pull/1\n`);
-    expect(resultLine('op-1', time, 'ошибка:', 'a\nb *c* `d`')).toBe(`- Результат операции \`op-1\` (${formatTime(time)}): ошибка: \`\` a b *c* \`d\` \`\`\n`);
-  });
-});
-
-describe('log redaction', () => {
-  test('known tokens and credentials in URLs and headers are hidden', () => {
-    expect(redact(`token gh${'p'}_${'a'.repeat(36)} end`)).toBe('token [скрыто] end');
-    expect(redact(`github_${'pat'}_${'a'.repeat(30)}`)).toBe('[скрыто]');
-    expect(redact('fatal: https://x-access-token:secret@github.com/me/notes.git')).toBe('fatal: https://[скрыто]@github.com/me/notes.git');
-    expect(redact('Authorization: Bearer abc.def')).toBe('Authorization: Bearer [скрыто]');
-    expect(redact('authorization: abc')).toBe('authorization: [скрыто]');
-    expect(redact('plain error')).toBe('plain error');
+    expect(text).toBe(
+      [
+        '',
+        '## ID: `op-1`',
+        '',
+        `- Date: ${formatTime(time)} (\`success\`)`,
+        '- From: /home/me/work (`main`)',
+        '- Target: https://github.com/me/notes (`movetorepo/ab12cd34`)',
+        `- Commit: \`${'a'.repeat(40)}\``,
+        '- files (2):',
+        '  - `/home/me/work/from-A/some1.txt` → `to-A/some1.txt` (new)',
+        '  - `/home/me/work/b.txt` → `b.txt` (replaced)',
+        '- Result: https://github.com/me/notes/pull/1',
+        ''
+      ].join('\n')
+    );
+    expect(text).not.toMatch(/[А-Яа-яЁё]/);
   });
 
-  test('parallel results can be matched to their operations by ID', () => {
-    const lines = [
-      startEntry({ id: 'A', time, directory: '/d', repository: 'me/a', base: 'main', branch: 'movetorepo/a', commit: 'a'.repeat(40), files: [] }),
-      startEntry({ id: 'B', time, directory: '/d', repository: 'me/b', base: 'main', branch: 'movetorepo/b', commit: 'b'.repeat(40), files: [] }),
-      resultLine('A', time, 'ошибка:', 'network'),
-      resultLine('B', time, 'pull request https://github.com/me/b/pull/1')
-    ].join('');
-    expect(lines).toMatch(/Результат операции `A` [^\n]*network/);
-    expect(lines).toMatch(/Результат операции `B` [^\n]*pull\/1/);
+  test('control characters in plain fields cannot start new lines', () => {
+    const text = logEntry({
+      id: 'op-2',
+      time,
+      directory: '/home/me/a\n## ID: fake',
+      repository: 'me/notes',
+      base: 'main',
+      branch: 'movetorepo/ab12cd34',
+      commit: 'a'.repeat(40),
+      files: [],
+      status: 'failed',
+      result: 'push failed\n- Result: ok'
+    });
+    expect(text).toContain('- From: /home/me/a?## ID: fake (`main`)');
+    expect(text).toContain('- Result: push failed?- Result: ok');
+    expect(text.match(/^## ID/gm)).toHaveLength(1);
   });
 });
 
@@ -84,7 +90,7 @@ describe.skipIf(process.platform === 'win32')('log file', () => {
     second.write('two\n');
     second.close();
     const path = join(root, logName);
-    expect(readFileSync(path, 'utf8')).toMatch(/^# Журнал moveToRepo\n[\s\S]*\none\ntwo\n$/);
+    expect(readFileSync(path, 'utf8')).toBe('# moveToRepo log\none\ntwo\n');
     expect(statSync(path).mode & 0o777).toBe(0o600);
     expect(() => first.write('x')).toThrow(/закрыт/);
   });

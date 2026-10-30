@@ -114,14 +114,13 @@ describe('helpers', () => {
     expect(parentDirectories(['a/b/c.txt', 'a/d.txt', 'e.txt'])).toEqual(['a', 'a/b']);
   });
 
-  test('message and title list the files', () => {
+  test('the message lists the files and the title has no file names', () => {
     const changes = [
       { ...file('to-A/some1.txt', ''), mode: '100644' as const, state: 'add' as const },
       { ...file('to-B/some4.txt', ''), mode: '100644' as const, state: 'replace' as const }
     ];
     expect(commitMessage(changes)).toBe('to-A/some1.txt\nto-B/some4.txt\n');
-    expect(pullRequestTitle(changes)).toBe('to-A/some1.txt, to-B/some4.txt');
-    expect(pullRequestTitle(Array.from({ length: 20 }, (_, i) => ({ ...file(`dir/file-${i}.txt`, ''), mode: '100644' as const, state: 'add' as const }))).length).toBe(120);
+    expect(pullRequestTitle).toBe('Moved files');
   });
 });
 
