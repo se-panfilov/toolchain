@@ -22,6 +22,16 @@ They do not run commands, install packages, change permissions, or modify global
 That guide records Windows link requirements, pinned revisions, local adaptations, and security checks.
 See [WRITING.md](WRITING.md) for English documentation rules based on ASD-STE100 Issue 9.
 
+## Additional workflows
+
+- [new-app](../.agents/skills/new-app/SKILL.md) defines steps to add an application to `apps/`.
+  Its [Claude adapter](../.claude/skills/new-app/SKILL.md) provides discovery. In Claude Code, use `/new-app` to add an application.
+- The Claude [security-reviewer](../.claude/agents/security-reviewer.md) subagent performs the separate security review in its own context.
+  It has no edit tools. Its instructions forbid repository writes, Git history changes, publication, and network use.
+  These instructions are not a sandbox. Bash can still run commands permitted by the session.
+  Ask Claude to use it after an implementation stage, for example: "use the security-reviewer subagent for this diff".
+  It reports findings. A human decides how to handle each finding.
+
 ## Verify the active session
 
 1. Start a new session in this repository.

@@ -6,6 +6,7 @@ Each workflow has a dry-run mode.
 The separate [Secrets workflow](../.github/workflows/secrets.yml) scans all local history and working files without an application selection.
 Release also calls it and publishes only after a successful scan of the same commit.
 See [Git hooks and secret checks](GIT_HOOKS.md) for its configuration, setup, and limits.
+The separate [CodeQL workflow](../.github/workflows/codeql.yml) does static security analysis. See [CodeQL](#codeql).
 
 | Workflow                                    | Start                                                            | Result                                                                      |
 | ------------------------------------------- | ---------------------------------------------------------------- | --------------------------------------------------------------------------- |
@@ -121,6 +122,7 @@ After a network error during publication, examine the registry before a new star
 | Archive checks         | Paths, entry types, package metadata, bin entry points, install scripts, and secret patterns are checked. |
 | Archive identity       | The publish job compares the archive integrity with the value recorded by Build.                          |
 | Concurrency            | Only one Release run is active at a time. A new run waits.                                                |
+| Static analysis        | CodeQL checks source and workflows. Only its `analyze` job can upload results with `security-events`.     |
 
 Limits:
 
@@ -132,6 +134,31 @@ Limits:
 - The locked development dependencies run in the test and build jobs and are trusted. They can change the built archive. The `min-release-age` setting in `.npmrc` delays new dependency versions.
 - The tag check runs after publication. If a tag with the same name points to a different commit, `github-release` stops after npm publication.
 - Users with write access can start Release. Use the environment protection rules to add an approval step.
+
+## CodeQL
+
+The CodeQL workflow analyzes TypeScript, JavaScript, and the GitHub Actions workflows.
+It starts on pull requests, on pushes to `master`, once a week, and manually.
+It uses the `security-extended` query suite and the [configuration file](../.github/codeql/codeql-config.yml).
+Generated output, dependencies, and vendored skills are outside the analysis.
+The workflow does not install dependencies or build the applications. It uses `build-mode: none`.
+Only the `analyze` job has `security-events: write`. It needs this permission to upload results to GitHub.
+
+The repository is public, so code scanning is available without a paid plan.
+Do these steps once in the repository settings:
+
+1. Open **Settings → Advanced Security** (the section can also be named **Code security**).
+2. Find **CodeQL analysis**. Make sure that **default setup** is not enabled.
+3. If default setup is enabled, select **Switch to advanced**, or disable it. GitHub rejects workflow results when default setup is enabled.
+4. Merge the workflow to `master`. The first push run makes the baseline.
+5. Open **Security → Code scanning** and examine the alerts.
+
+Optional: to block pull requests with new alerts, add a branch ruleset for `master`.
+Select **Require code scanning results** and the tool `CodeQL`.
+Do this step only after the first analysis on `master` is complete.
+
+A human decides how to handle each alert. Do not dismiss an alert without a recorded reason.
+CodeQL does not replace the separate security review in AGENTS.md.
 
 ## Add, remove, or rename an application
 

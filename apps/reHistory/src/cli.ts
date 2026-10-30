@@ -6,7 +6,7 @@ import { pathToFileURL } from 'node:url';
 
 import { auditRepository, auditText } from '@reHistory/audit';
 import { runDemo, validateDemoURL } from '@reHistory/demo';
-import { applyPlan, defaultBackupBranch, type Flow, flows, makePlan, normalizeCommitMessage, type Options, type Plan, Repository, terminalJSON, validateIdentity } from '@reHistory/engine';
+import { applyPlan, defaultBackupBranch, type Flow, flows, makePlan, mapped, normalizeCommitMessage, type Options, type Plan, Repository, terminalJSON, validateIdentity } from '@reHistory/engine';
 import { exportDestination, exportPlan, verifyExport } from '@reHistory/export';
 import { PromptCancelled, TerminalPrompts, terminalStyle } from '@reHistory/prompts';
 import { executePush, preparePush, pushRemotes, type RemoteCopy, remoteCopy, sharedTags, updateTrackingRef } from '@reHistory/remote';
@@ -43,18 +43,18 @@ Demo отправляет только тестовые данные на явн
 }
 export function parseDate(value: string): number {
   if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    const [y, m, d] = value.split('-').map(Number);
+    const [y = NaN, m = NaN, d = NaN] = value.split('-').map(Number);
     const date = new Date(y, m - 1, d);
     if (date.getFullYear() !== y || date.getMonth() !== m - 1 || date.getDate() !== d) throw new Error('Такой даты не существует.');
     return date.getTime() / 1000;
   }
   if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(Z|[+-]\d{2}:\d{2})$/.test(value)) throw new Error('Формат: ГГГГ-ММ-ДД либо ГГГГ-ММ-ДДTЧЧ:ММ:СС+ЧЧ:ММ.');
-  const [y, m, d, h, min, sec] = value.slice(0, 19).split(/[-T:]/).map(Number);
+  const [y = NaN, m = NaN, d = NaN, h = NaN, min = NaN, sec = NaN] = value.slice(0, 19).split(/[-T:]/).map(Number);
   const calendar = new Date(Date.UTC(y, m - 1, d));
   if (calendar.getUTCFullYear() !== y || calendar.getUTCMonth() !== m - 1 || calendar.getUTCDate() !== d || h > 23 || min > 59 || sec > 59) throw new Error('Некорректные дата или время.');
-  if (value.endsWith('Z') === false) {
-    const offset = value.slice(-5).split(':').map(Number);
-    if (offset[0] > 23 || offset[1] > 59) throw new Error('Некорректный часовой пояс.');
+  if (!value.endsWith('Z')) {
+    const [offsetHours = NaN, offsetMinutes = NaN] = value.slice(-5).split(':').map(Number);
+    if (offsetHours > 23 || offsetMinutes > 59) throw new Error('Некорректный часовой пояс.');
   }
   const result = Date.parse(value) / 1000;
   if (!Number.isSafeInteger(result) || result < 0) throw new Error('Дата должна быть не раньше 1970 года.');
@@ -68,15 +68,15 @@ export function parseStart(date: string, time: string): number {
   parseDate(`${date}T00:00:00Z`);
   const match = /^(\d{2}):(\d{2})(?::(\d{2}))?(Z|[+-]\d{2}:\d{2})?$/.exec(time);
   if (!match) throw new Error('Время: ЧЧ:ММ[:СС], при необходимости с +ЧЧ:ММ или Z.');
-  const [, hour, minute, seconds = '00', zone] = match;
-  const [h, min, sec] = [hour, minute, seconds].map(Number);
+  const [, hour = '', minute = '', seconds = '00', zone] = match;
+  const [h, min, sec] = [Number(hour), Number(minute), Number(seconds)];
   if (h > 23 || min > 59 || sec > 59) throw new Error('Некорректное время.');
   if (zone) {
     const timestamp = parseDate(`${date}T${hour}:${minute}:${seconds}${zone}`);
     if (timestamp > 253402300799) throw new Error('Дата и время должны находиться в пределах 1970–9999 годов.');
     return timestamp;
   }
-  const [y, m, d] = date.split('-').map(Number);
+  const [y = NaN, m = NaN, d = NaN] = date.split('-').map(Number);
   const local = new Date(0);
   local.setFullYear(y, m - 1, d);
   local.setHours(h, min, sec, 0);
@@ -121,7 +121,7 @@ export function parseArguments(args: string[]): Arguments {
   let explicitRepo = false;
   const seen = new Set<string>();
   for (let i = 0; i < args.length; i++) {
-    const arg = args[i];
+    const arg = args[i] ?? '';
     if (seen.has(arg)) throw new Error(`Параметр указан повторно: ${arg}`);
     seen.add(arg);
     if (['--repo', '--export', '--verify-export', '--demo-remote', '--demo-dir'].includes(arg)) {
@@ -151,7 +151,7 @@ export function parseArguments(args: string[]): Arguments {
 }
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
-  if (args.length === 1 && ['--help', '-h'].includes(args[0])) {
+  if (args.length === 1 && ['--help', '-h'].includes(args[0] ?? '')) {
     help();
     return;
   }
@@ -159,7 +159,7 @@ async function main(): Promise<void> {
   if (Number(process.versions.node.split('.')[0]) < 24 || (Number(process.versions.node.split('.')[0]) === 24 && Number(process.versions.node.split('.')[1]) < 12))
     throw new Error('Требуется Node.js 24.12 или новее.');
   if (mode.demo) {
-    runDemo({ remote: mode.remote!, directory: mode.demoDir, print });
+    runDemo({ remote: mode.remote ?? '', directory: mode.demoDir, print });
     return;
   }
   if (mode.verify) {
@@ -212,7 +212,7 @@ async function main(): Promise<void> {
         return;
       }
       const index = remotes.names.length === 1 ? 0 : await prompts.select('Remote для push', remotes.names, remotes.initial);
-      const push = preparePush(plan, remotes.names[index]);
+      const push = preparePush(plan, remotes.names[index] ?? '');
       print(`Push → ${push.remote} · ${push.url}`, 'accent');
       for (const ref of push.refs) print(`${ref.destination}: ${ref.expected ? ref.expected.slice(0, 12) : 'новая ссылка'} → ${ref.oid.slice(0, 12)}`);
       let includeOptional = false;
@@ -237,14 +237,14 @@ async function main(): Promise<void> {
         if (tracking) print(`Remote-ветка обновлена: ${tracking}`, 'muted');
         else print('Remote-ветка не обновлена локально. Перед следующим флоу выполните git fetch.', 'warning');
       } catch (error) {
-        print(`Remote-ветка не обновлена локально. Перед следующим флоу выполните git fetch.\n${error instanceof Error ? error.message : error}`, 'warning');
+        print(`Remote-ветка не обновлена локально. Перед следующим флоу выполните git fetch.\n${error instanceof Error ? error.message : String(error)}`, 'warning');
       }
     } catch (error) {
       if (error instanceof PromptCancelled) {
         print('Push отменён. Локальная история сохранена.');
         return;
       }
-      throw new Error(`Локальная история сохранена. Push не подтверждён; проверьте remote перед повтором.\n${error instanceof Error ? error.message : error}`, { cause: error });
+      throw new Error(`Локальная история сохранена. Push не подтверждён; проверьте remote перед повтором.\n${error instanceof Error ? error.message : String(error)}`, { cause: error });
     }
   }
   const flowLabels: Record<Flow, string> = { dates: 'Время коммитов', authors: 'Авторы коммитов', messages: 'Сообщения коммитов' };
@@ -361,7 +361,7 @@ async function main(): Promise<void> {
     print('\nПлан', 'accent');
     describe(options, plan);
     print(mode.destination ? 'Исходник сохранится.' : `Бекап: ${backupBranch || 'нет'}`, 'muted');
-    for (const ref of plan.selected) print(`  ${ref.name}  ${ref.oid.slice(0, 12)} → ${plan.mapping.get(ref.oid)!.slice(0, 12)}`, 'muted');
+    for (const ref of plan.selected) print(`  ${ref.name}  ${ref.oid.slice(0, 12)} → ${mapped(plan.mapping, ref.oid).slice(0, 12)}`, 'muted');
     if (plan.stripped) {
       print(`Подписи и mergetag к удалению: ${plan.stripped}`, 'warning');
       print('Новые коммиты и теги нельзя подписать заново. Без удаления подписей переписывание невозможно.', 'warning');
@@ -418,12 +418,12 @@ try {
   /* Import from stdin or eval. */
 }
 if (import.meta.url === entry) {
-  main().catch((error) => {
+  main().catch((error: unknown) => {
     if (error instanceof PromptCancelled) {
       print('Отменено.', 'muted');
       process.exitCode = 130;
     } else {
-      console.error(style.error(safe(`Ошибка: ${error instanceof Error ? error.message : error}`)));
+      console.error(style.error(safe(`Ошибка: ${error instanceof Error ? error.message : String(error)}`)));
       process.exitCode = 1;
     }
   });

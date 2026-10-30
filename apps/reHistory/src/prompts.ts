@@ -25,7 +25,7 @@ export class TerminalPrompts {
   input: ReadStream;
   output: WriteStream;
   private style: ReturnType<typeof terminalStyle>;
-  private active?: () => void;
+  private active?: (() => void) | undefined;
   private closed = false;
   constructor(input: ReadStream = stdin, output: WriteStream = stdout) {
     this.input = input;
@@ -126,7 +126,9 @@ export class TerminalPrompts {
           if (error) reject(error);
           else resolve(selected);
         };
-        cancel = () => finish(new PromptCancelled());
+        cancel = () => {
+          finish(new PromptCancelled());
+        };
         this.active = cancel;
         keypress = (_text, key = {}) => {
           if (settled) return;

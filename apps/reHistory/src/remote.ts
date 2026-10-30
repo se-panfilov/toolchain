@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import { gitConfigKeys, type Plan, type Repository } from '@reHistory/engine';
+import { gitConfigKeys, mapped, type Plan, type Repository } from '@reHistory/engine';
 
 /** Accept only explicit SSH/HTTPS destinations without embedded secrets. */
 export function validateRemoteURL(value: string): string {
@@ -150,7 +150,7 @@ export function preparePush(rewrite: Plan, remote: string, connection: PushTrans
   rejectNetworkConfiguration(config);
   const urls = repo.text(['remote', 'get-url', '--push', '--all', '--', remote]).split('\n').filter(Boolean);
   if (urls.length !== 1) throw new Error('Для push нужен remote с одним URL отправки.');
-  const url = validateRemoteURL(urls[0]);
+  const url = validateRemoteURL(urls[0] ?? '');
   const branch = `branch.${rewrite.head.slice(11)}`;
   const merges = config.values.get(`${branch}.merge`) ?? [];
   if (config.values.get(`${branch}.remote`)?.at(-1) === remote && merges.length > 1) throw new Error('У ветки несколько upstream-ссылок. Push отменён.');
@@ -161,9 +161,9 @@ export function preparePush(rewrite: Plan, remote: string, connection: PushTrans
   const server = new Map<string, string>();
   const width = rewrite.headOid.length;
   for (const line of advertised.split('\n').filter(Boolean)) {
-    const match = /^([a-f0-9]{40}|[a-f0-9]{64})\t(refs\/[^\s]+)$/.exec(line);
-    if (!match || match[1].length !== width || server.has(match[2])) throw new Error('Некорректный ответ сервера. Push отменён.');
-    server.set(match[2], match[1]);
+    const [, oid, name] = /^([a-f0-9]{40}|[a-f0-9]{64})\t(refs\/[^\s]+)$/.exec(line) ?? [];
+    if (oid === undefined || name === undefined || oid.length !== width || server.has(name)) throw new Error('Некорректный ответ сервера. Push отменён.');
+    server.set(name, oid);
   }
   const newCommits = new Set(rewrite.objects.filter((object) => object.type === 'commit').map((object) => object.oid));
   const oldCommits = new Set([...rewrite.mapping].filter(([, oid]) => newCommits.has(oid)).map(([oid]) => oid));
@@ -172,7 +172,7 @@ export function preparePush(rewrite: Plan, remote: string, connection: PushTrans
   const optional: PushPlan['optional'] = [];
   for (const ref of rewrite.selected) {
     const target = ref.name === rewrite.head ? destination : ref.name;
-    const oid = rewrite.mapping.get(ref.oid)!;
+    const oid = mapped(rewrite.mapping, ref.oid);
     const expected = server.get(target) ?? '';
     if (expected && expected !== oid && (ref.name === rewrite.head ? !oldCommits.has(expected) : expected !== ref.oid)) {
       throw new Error(`На сервере есть неизвестные изменения: ${target}. Push отменён.`);

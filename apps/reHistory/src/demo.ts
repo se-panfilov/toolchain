@@ -31,7 +31,7 @@ export type DemoResult = {
   serverNamespace: string;
   remoteUnchangedAfterRewrite: boolean;
 };
-export function runDemo(options: { remote: string; directory?: string; print?: (text: string) => void }, connection: DemoTransport = transport): DemoResult {
+export function runDemo(options: { remote: string; directory?: string | undefined; print?: (text: string) => void }, connection: DemoTransport = transport): DemoResult {
   const url = validateDemoURL(options.remote); // Validate before any file write.
   const log = options.print || (() => {});
   // Make sure that the server is empty before demo creation. Do not push yet.
@@ -111,7 +111,7 @@ export function runDemo(options: { remote: string; directory?: string; print?: (
     log(`DEMO УСПЕШНО: создано ${counter} исходных коммитов; экспорт проверен (${exported.commits} коммитов).\nРезультаты: ${root}\nПереписанная история и экспорт на сервер не отправлялись.`);
     return summary;
   } catch (error) {
-    throw new Error(`${error instanceof Error ? error.message : error}\nDemo остановлено. Созданные файлы сохранены в ${root}; ранее выполненные push не откатываются.`, { cause: error });
+    throw new Error(`${error instanceof Error ? error.message : String(error)}\nDemo остановлено. Созданные файлы сохранены в ${root}; ранее выполненные push не откатываются.`, { cause: error });
   }
 }
 function runRemoteProbe(url: string, connection: DemoTransport): string {
