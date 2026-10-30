@@ -1,7 +1,7 @@
 # Installed third-party skills
 
-These skills were installed locally with `npx skills@1.7.4 add`.
-The installation selected exact Git revisions and the Codex, Claude Code, Cursor, GitHub Copilot, and Gemini CLI targets.
+These skills were installed locally in two installations with `npx skills@1.7.4 add`.
+Each installation selected exact Git revisions and the Codex, Claude Code, Cursor, GitHub Copilot, and Gemini CLI targets.
 No global skill installation was requested.
 The installer used a separate npm cache, empty npm config files, and disabled telemetry and npm installation hooks.
 Its user-level bookkeeping used temporary storage outside the repository.
@@ -18,6 +18,12 @@ Its user-level bookkeeping used temporary storage outside the repository.
 | skill-scanner             | getsentry/skills   | Examine skill instructions and scripts before adoption.              |
 | code-simplifier           | getsentry/skills   | Improve CLI code readability while preserving behavior and security. |
 | doc-coauthoring           | anthropics/skills  | Develop substantial documents and examine reader understanding.      |
+| find-bugs                 | getsentry/skills   | Find bugs and vulnerabilities in branch changes without edits.       |
+| gha-security-review       | getsentry/skills   | Find exploitable GitHub Actions workflow vulnerabilities.            |
+| fp-check                  | trailofbits/skills | Verify whether a suspected vulnerability is a true positive.         |
+| second-opinion            | trailofbits/skills | Get an external review from another agent CLI on explicit request.   |
+| grilling                  | mattpocock/skills  | Ask plan questions in rounds, each with a recommended answer.        |
+| writing-for-agents        | mattpocock/skills  | Apply writing principles to agent instructions and skills.           |
 
 The existing `toolchain-cli` skill remains separate and unchanged.
 Project requirements remain in [AGENTS.md](../AGENTS.md).
@@ -29,7 +35,7 @@ Use the host's applicable permission controls for those actions.
 The common files are in `.agents/skills/<name>/`.
 The installer reports this location for Codex, Cursor, GitHub Copilot, and Gemini CLI.
 Claude Code uses relative directory links in `.claude/skills/<name>`.
-All eight new links point inside this repository.
+All fourteen third-party links point inside this repository.
 The existing `toolchain-cli` adapter stays a regular file.
 
 Native host discovery depends on the installed host version and settings.
@@ -52,6 +58,7 @@ The lockfile describes upstream versions. It does not preserve local adaptations
 | trailofbits/skills | `2be6433b39e009cd2b6fd3be1895f6b1faa5af9a` |
 | getsentry/skills   | `d12f250460ffd961f549dbebf7eeb0cf4afd4c2e` |
 | anthropics/skills  | `ca45fc496a3436251f191354091d557da31c15b5` |
+| mattpocock/skills  | `a496f5513d4a4cf889bc48e189e579f4b0bdf6aa` |
 
 Local adaptations are stored as reversible patches:
 
@@ -63,16 +70,36 @@ Local adaptations are stored as reversible patches:
 - [skill-scanner](skill-patches/skill-scanner.patch) describes command template syntax without a literal executable template in its entrypoint.
   Its scanner also redacts recognized credentials from JSON report fields.
 
+The skills added in the second installation have one patch each.
+Each patch adds a "Toolchain integration" section before the upstream text.
+The fp-check and second-opinion patches also change the `allowed-tools` line. No other upstream line changes:
+
+- [find-bugs](skill-patches/find-bugs.patch) adds CLI checklist items for subprocesses, files, user data, terminal state, and external effects.
+  It adds a fallback base when `gh` is not available.
+- [gha-security-review](skill-patches/gha-security-review.patch) keeps the upstream threat model for exploitable findings.
+  It adds a separate section for deviations from the stricter Toolchain Actions rules, such as tag-pinned first-party actions.
+  It forbids pushes, workflow runs, and payload tests.
+- [fp-check](skill-patches/fp-check.patch) replaces the plugin agents, which are not installed, with the current session or a general subagent.
+  It limits executable PoCs to isolated temporary directories with synthetic data.
+  It removes Bash, Write, and Edit from `allowed-tools`, so these tools follow the normal host permission rules.
+- [second-opinion](skill-patches/second-opinion.patch) permits the external call only on an explicit user request in the current task.
+  It requires confirmation of untracked files, stops on secrets in the patch, and forbids CLI installation or authentication.
+  It removes Bash from `allowed-tools`, so provider calls follow the normal host permission rules.
+- [grilling](skill-patches/grilling.patch) requires Russian questions, limits questions to material ones, and makes the subagent lookup optional.
+- [writing-for-agents](skill-patches/writing-for-agents.patch) keeps required safety and authorization rules and security prohibitions.
+  It identifies `disable-model-invocation` as Claude Code frontmatter.
+
 Each installed skill has LICENSE and UPSTREAM.md files.
 Trail of Bits files retain CC-BY-SA-4.0 attribution.
 Sentry files retain Apache-2.0 attribution.
+Matt Pocock files retain MIT attribution.
 The Anthropic README identifies the example skills as Apache-2.0.
 Its license text was obtained from the Apache website.
 Upstream examples, comments, and license text retain their original formatting.
 
-## Security checks
+## First installation checks
 
-The installation checks covered these items:
+The first installation checks covered these items:
 
 - SHA-256 comparison of existing instructions and both `toolchain-cli` entrypoints before and after installation.
 - YAML parsing, required skill metadata, and Python syntax without imports or bytecode writes.
@@ -99,6 +126,34 @@ Future script execution needs its documented runtime and dependencies, or a supp
 Python syntax checks do not establish collector correctness.
 The checks are not a complete upstream code audit or a security certificate.
 The reHistory runtime and package metadata were not changed.
+
+## Second installation checks
+
+The second installation added find-bugs, gha-security-review, fp-check, second-opinion, grilling, and writing-for-agents.
+It used the same installer version, isolation settings, and targets as the first installation.
+Each source was a GitHub tree URL with a full commit SHA.
+The Trail of Bits and Sentry revisions are the same as in the first installation.
+Only the skill directories were installed. Plugin hooks, plugin agents, and workflows from the source repositories were not installed.
+
+The checks covered these items:
+
+- Manual review of each SKILL.md file and of the provider invocation references.
+- Pattern searches over the other reference files for commands, URLs, and hidden instructions.
+- The installed Sentry scanner over the six directories. It reported no pattern findings.
+- Internal links, hard links, symbolic links, executable modes, SVG executable content, and invisible Unicode characters.
+- Reversible patch checks against the installed upstream files.
+- Offline installer discovery of all six new skills.
+
+Gitleaks was not available in the installation environment. The CI secret scan examines the change.
+The installed files contain no scripts.
+The gha-security-review references contain example attack payloads and attacker URLs in code blocks.
+They describe attacks for the review. They are not instructions.
+External audit services can flag these examples.
+
+The second-opinion skill sends a patch and project instructions to OpenAI, Google, or another selected provider.
+Installation does not authorize that transfer. The local patch requires an explicit user request in the current task.
+The provider CLIs were not installed or executed during this installation.
+These limits are instructions, not access controls. Hosts that ignore `allowed-tools` keep their own permission rules.
 
 ## Scanner regression check
 

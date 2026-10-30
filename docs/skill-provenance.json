@@ -150,6 +150,194 @@
         }
       ]
     },
+    "find-bugs": {
+      "source": "getsentry/skills",
+      "revision": "d12f250460ffd961f549dbebf7eeb0cf4afd4c2e",
+      "sourcePath": "skills/find-bugs/SKILL.md",
+      "upstreamInstallerHash": "7bf00be700d1d205b747126aa96d3587bbc2855cd09897614676e179eebe35ed",
+      "license": "Apache-2.0",
+      "changedUpstreamFiles": [
+        "SKILL.md"
+      ],
+      "addedFiles": [
+        "LICENSE",
+        "UPSTREAM.md"
+      ],
+      "patch": "skill-patches/find-bugs.patch",
+      "files": [
+        {
+          "path": "LICENSE",
+          "sha256": "96e78a9ce85795b117c8929887bdb78f88bf23f7b85a31f0872cde4dff7e92cd"
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "081ea06cfe94e0f4482237b4802a48d83a2f815a13d780c154425670a67acbc4"
+        },
+        {
+          "path": "UPSTREAM.md",
+          "sha256": "acc5aa7c5df50d42b58d718b3e4e91197b445fb45479c82378ff85b92df9cabc"
+        }
+      ]
+    },
+    "fp-check": {
+      "source": "trailofbits/skills",
+      "revision": "2be6433b39e009cd2b6fd3be1895f6b1faa5af9a",
+      "sourcePath": "plugins/fp-check/skills/fp-check/SKILL.md",
+      "upstreamInstallerHash": "b84703ecb023c8bfc77f08d79b932a5f4baf0a3d716550117dcbd7b0e48c81a6",
+      "license": "CC-BY-SA-4.0",
+      "changedUpstreamFiles": [
+        "SKILL.md"
+      ],
+      "addedFiles": [
+        "LICENSE",
+        "UPSTREAM.md"
+      ],
+      "patch": "skill-patches/fp-check.patch",
+      "files": [
+        {
+          "path": "LICENSE",
+          "sha256": "7abe19ec9bb73b36141b999b861d24ad855e808bafe0f81e84cce28556f6c297"
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "6850ca1dd68026ebbb62abe9db315dd3f5a26a2e6f1cf00cddc579237a6fced0"
+        },
+        {
+          "path": "UPSTREAM.md",
+          "sha256": "822cf21f6566effacea87121706914a1dcfbeee32fb5cd0b138dfddac3d17905"
+        },
+        {
+          "path": "agents/openai.yaml",
+          "sha256": "7c0420b00c25c4d1ab70497fbacd47e6687d9310d1ede4d11c285d3a0c7fc309"
+        },
+        {
+          "path": "assets/trail-of-bits-mark.svg",
+          "sha256": "4bf74c789b38dcf6ad762c136b6832363d27ae19fbaa9a18ec18d66ecce6ca05"
+        },
+        {
+          "path": "references/bug-class-verification.md",
+          "sha256": "b687b0fddb945354175b653a86653087110717ffe21f0bb6b8ce95535643fdde"
+        },
+        {
+          "path": "references/deep-verification.md",
+          "sha256": "653ee21c3ab73f8ca6aa0a7c8e51a9195c90bcfa76533cb966c41d16baa52ffa"
+        },
+        {
+          "path": "references/evidence-templates.md",
+          "sha256": "340346b9c6b3b43aa7edc71ff09351c910bc8aefec62647d2284bdf637a59e3d"
+        },
+        {
+          "path": "references/false-positive-patterns.md",
+          "sha256": "868c4e3f794c95a11c177ff4999c30eb71ebafcbc0e30ab826761b0d17b17a7e"
+        },
+        {
+          "path": "references/gate-reviews.md",
+          "sha256": "de4fd3680496b6f622b25dd5d8459eee1fe95e2cf61aa533c5ff86c548d6acc9"
+        },
+        {
+          "path": "references/standard-verification.md",
+          "sha256": "09032334d472b0fd796fc13f6d95cf6f0ae98cce34f1aa8dbd0c3fdce2854710"
+        }
+      ]
+    },
+    "gha-security-review": {
+      "source": "getsentry/skills",
+      "revision": "d12f250460ffd961f549dbebf7eeb0cf4afd4c2e",
+      "sourcePath": "skills/gha-security-review/SKILL.md",
+      "upstreamInstallerHash": "7569699e788bf657f49f8d2fe217ffb6aa7d267d2de60d5c597013a178f57aa2",
+      "license": "Apache-2.0",
+      "changedUpstreamFiles": [
+        "SKILL.md"
+      ],
+      "addedFiles": [
+        "LICENSE",
+        "UPSTREAM.md"
+      ],
+      "patch": "skill-patches/gha-security-review.patch",
+      "files": [
+        {
+          "path": "LICENSE",
+          "sha256": "96e78a9ce85795b117c8929887bdb78f88bf23f7b85a31f0872cde4dff7e92cd"
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "24959a57422dbc2cefb58766da249abfbcf4bf2cf9f248442478a19eac51eb82"
+        },
+        {
+          "path": "UPSTREAM.md",
+          "sha256": "69d27e04235f93368500dc4c5dc76cd186f2017ab992bd8b874fb6162181d153"
+        },
+        {
+          "path": "references/ai-prompt-injection-via-ci.md",
+          "sha256": "9177d24968ac5b8d719b9f6748f91751d5e157ae0afa4d41cd0bb760356f23a2"
+        },
+        {
+          "path": "references/comment-triggered-commands.md",
+          "sha256": "243526302999b7cbcbff4bbdd01c7d16377b1c60a86ee8877326c2b2b040a0b3"
+        },
+        {
+          "path": "references/credential-escalation.md",
+          "sha256": "7febad6c0e4073dabfb338ee4646c2dd484251ad7d18b500ea83ad6fd9ac1a1d"
+        },
+        {
+          "path": "references/expression-injection.md",
+          "sha256": "f701049355e4758207f77efc53c8e4a42f377eaa15240a2c867446154041d4f0"
+        },
+        {
+          "path": "references/permissions-and-secrets.md",
+          "sha256": "6b6837c5f37ff85cf18c1f611f882202ce0ce41cb006b55dd49c4da52f976779"
+        },
+        {
+          "path": "references/pwn-request.md",
+          "sha256": "6dd84c91ce77d57883059edf95c2f1c64ea1ec39551c5c8208e0cadb9c3ca673"
+        },
+        {
+          "path": "references/real-world-attacks.md",
+          "sha256": "761260977a220264a1ee30e0b961618495723c2e6cc4e91893b7d9d4a9408718"
+        },
+        {
+          "path": "references/runner-infrastructure.md",
+          "sha256": "cb427fa29c34c10aef18766441e0be8e0123632bb87c307bdb8d1c40b47fc81e"
+        },
+        {
+          "path": "references/supply-chain.md",
+          "sha256": "1f80df872a1be8f70ccf1be0bb25b2e24ee1ec2ac6a9f3d7a53800cb361bfa86"
+        }
+      ]
+    },
+    "grilling": {
+      "source": "mattpocock/skills",
+      "revision": "a496f5513d4a4cf889bc48e189e579f4b0bdf6aa",
+      "sourcePath": "skills/productivity/grilling/SKILL.md",
+      "upstreamInstallerHash": "e40cc1d348f6d935e28f1e24474302d7368f0a400429271a43b35fe154891dc5",
+      "license": "MIT",
+      "changedUpstreamFiles": [
+        "SKILL.md"
+      ],
+      "addedFiles": [
+        "LICENSE",
+        "UPSTREAM.md"
+      ],
+      "patch": "skill-patches/grilling.patch",
+      "files": [
+        {
+          "path": "LICENSE",
+          "sha256": "0e7ac423bf2c6e223b7c5b156f8cf72da49d748e56a1641402c31f22ad07dbb5"
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "f08d8cf26dc0dbb63799be9bccaba0c31dfbc21d30258f77dacd32dc1421c1eb"
+        },
+        {
+          "path": "UPSTREAM.md",
+          "sha256": "2273618a5f3e0e8b4123bd31331806adf186425da8b4ee9d409470263e00ffbb"
+        },
+        {
+          "path": "agents/openai.yaml",
+          "sha256": "1411d7df7d99b7e621a1ff8283c8133cc2464be63d064e52d8ce169c6800ee9b"
+        }
+      ]
+    },
     "property-based-testing": {
       "source": "trailofbits/skills",
       "revision": "2be6433b39e009cd2b6fd3be1895f6b1faa5af9a",
@@ -206,6 +394,63 @@
         {
           "path": "references/reviewing.md",
           "sha256": "110b08118a1e7b1a2566def6e9d2a0bf43fc2deefce857d2ce3b4382b07bc774"
+        }
+      ]
+    },
+    "second-opinion": {
+      "source": "trailofbits/skills",
+      "revision": "2be6433b39e009cd2b6fd3be1895f6b1faa5af9a",
+      "sourcePath": "plugins/second-opinion/skills/second-opinion/SKILL.md",
+      "upstreamInstallerHash": "b2507ce5463c23fd19bdc031f2ba1dcd6049a2b48ac2d183155f6f28dd3b11c8",
+      "license": "CC-BY-SA-4.0",
+      "changedUpstreamFiles": [
+        "SKILL.md"
+      ],
+      "addedFiles": [
+        "LICENSE",
+        "UPSTREAM.md"
+      ],
+      "patch": "skill-patches/second-opinion.patch",
+      "files": [
+        {
+          "path": "LICENSE",
+          "sha256": "7abe19ec9bb73b36141b999b861d24ad855e808bafe0f81e84cce28556f6c297"
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "c4fc78b7548e9e5508f5cbe8b132f5e5e893cc52d0bbe8ae7e6bdbf15e2aaef2"
+        },
+        {
+          "path": "UPSTREAM.md",
+          "sha256": "15bfab0f99a0ccb7c4c3b1283ac303bfdad40bee8dc7034037ecdaac40ed37b8"
+        },
+        {
+          "path": "agents/openai.yaml",
+          "sha256": "bd8024c2ea5a143339c5c6e4043917fb083094a3eecc55f55d9a71844ed49a45"
+        },
+        {
+          "path": "assets/trail-of-bits-mark.svg",
+          "sha256": "4bf74c789b38dcf6ad762c136b6832363d27ae19fbaa9a18ec18d66ecce6ca05"
+        },
+        {
+          "path": "references/antigravity-invocation.md",
+          "sha256": "9a81a8c97bb780fbc2a098757c55b0b983e8e0e6e5582116157bdf8b0f59c6e2"
+        },
+        {
+          "path": "references/codex-invocation.md",
+          "sha256": "f0d1b537e143c933fdcd6ec0d10811944b28a14747fc59c15080f898b57c42e6"
+        },
+        {
+          "path": "references/codex-review-schema.json",
+          "sha256": "4f5414f169b0027082cff6727ce7fdde47349d21b135904850492e182a67157f"
+        },
+        {
+          "path": "references/gemini-invocation.md",
+          "sha256": "9638458e834b4f32fe863a4a03ee52a878c52731b8f0664c34054ecee31cdc07"
+        },
+        {
+          "path": "references/review-input.md",
+          "sha256": "150bfb6056f14af0b4f71d285347670b7f686397a1409c63a30c946df8b5eb8d"
         }
       ]
     },
@@ -426,6 +671,43 @@
         {
           "path": "scripts/uv.lock",
           "sha256": "99598cc397a42c945abbc9d839d1c61f1852f414660ce41e2e68bd9cdf664100"
+        }
+      ]
+    },
+    "writing-for-agents": {
+      "source": "mattpocock/skills",
+      "revision": "a496f5513d4a4cf889bc48e189e579f4b0bdf6aa",
+      "sourcePath": "skills/productivity/writing-for-agents/SKILL.md",
+      "upstreamInstallerHash": "95da47fc97af998e85b7d7e6d57b3ac76727c1e290cfe9ea09005aacb826959f",
+      "license": "MIT",
+      "changedUpstreamFiles": [
+        "SKILL.md"
+      ],
+      "addedFiles": [
+        "LICENSE",
+        "UPSTREAM.md"
+      ],
+      "patch": "skill-patches/writing-for-agents.patch",
+      "files": [
+        {
+          "path": "LICENSE",
+          "sha256": "0e7ac423bf2c6e223b7c5b156f8cf72da49d748e56a1641402c31f22ad07dbb5"
+        },
+        {
+          "path": "SKILL-MECHANICS.md",
+          "sha256": "c768e6307c7c10728c401c213f2c4ba71c542127eeb7ad2956aabd15a0fa0059"
+        },
+        {
+          "path": "SKILL.md",
+          "sha256": "bf2dd3de4d4cba2f07f87dced028518e748fb0913264975b5f224ab6620643ce"
+        },
+        {
+          "path": "UPSTREAM.md",
+          "sha256": "bde9d02436d85caeaa39649948d548804254b97c5f85a0a53d889b626619f672"
+        },
+        {
+          "path": "agents/openai.yaml",
+          "sha256": "eacb24b2a618cfb81dacb0416f4fdd75ddf3a8060f8ddb99aae1b1e301907e4b"
         }
       ]
     }
