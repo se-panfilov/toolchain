@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, closeSync, fstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -30,8 +30,14 @@ test('help and version work', () => {
 });
 
 test('the built entry point is executable', () => {
-  if (process.platform !== 'win32') expect(statSync(cli).mode & 0o111).not.toBe(0);
-  expect(readFileSync(cli, 'utf8').startsWith('#!/usr/bin/env node\n')).toBe(true);
+  // Read the mode and the contents from one open file descriptor.
+  const fd = openSync(cli, 'r');
+  try {
+    if (process.platform !== 'win32') expect(fstatSync(fd).mode & 0o111).not.toBe(0);
+    expect(readFileSync(fd, 'utf8').startsWith('#!/usr/bin/env node\n')).toBe(true);
+  } finally {
+    closeSync(fd);
+  }
 });
 
 test('an unknown option stops before any work', () => {
