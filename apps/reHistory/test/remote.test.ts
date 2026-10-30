@@ -190,7 +190,7 @@ test('a local race and a config change after the check prevent the push', (t) =>
   assert.equal(stats().pushes, 0);
 });
 
-test('upstream selects the destination branch; a known old ancestor is accepted', (t) => {
+test('an upstream with another name is not the destination, as with push.default=simple', (t) => {
   const { repo, connection, git, server, first } = fixture(t);
   repo.git(['config', 'branch.main.remote', 'origin']);
   repo.git(['config', 'branch.main.merge', 'refs/heads/trunk']);
@@ -199,10 +199,33 @@ test('upstream selects the destination branch; a known old ancestor is accepted'
   applyPlan(plan);
   assert.deepEqual(pushRemotes(repo, plan.head), { names: ['origin'], initial: 0 });
   const push = preparePush(plan, 'origin', connection);
-  assert.equal(push.refs.find((ref) => ref.local === plan.head)?.destination, 'refs/heads/trunk');
+  assert.equal(push.refs.find((ref) => ref.local === plan.head)?.destination, 'refs/heads/main');
   executePush(push, connection);
-  assert.equal(git(['--git-dir', server, 'rev-parse', 'trunk']).toString().trim(), plan.mapping.get(plan.headOid));
-  assert.equal(git(['--git-dir', server, 'rev-parse', 'main']).toString().trim(), plan.headOid);
+  assert.equal(git(['--git-dir', server, 'rev-parse', 'main']).toString().trim(), plan.mapping.get(plan.headOid));
+  assert.equal(git(['--git-dir', server, 'rev-parse', 'trunk']).toString().trim(), first);
+  assert.equal(updateTrackingRef(push), 'refs/remotes/origin/main');
+});
+
+test('a feature branch with the default branch as upstream never overwrites the server default branch', (t) => {
+  const { repo, connection, git, server } = fixture(t);
+  const mainOid = repo.text(['rev-parse', 'main']);
+  // `git checkout -b feature origin/main` sets this upstream by default.
+  repo.git(['checkout', '-q', '-b', 'feature']);
+  repo.git(['config', 'branch.feature.remote', 'origin']);
+  repo.git(['config', 'branch.feature.merge', 'refs/heads/main']);
+  repo.git(['commit', '-q', '--allow-empty', '-m', 'feature work']);
+  const featureOid = repo.text(['rev-parse', 'HEAD']);
+  git(['push', '-q', server, 'refs/heads/feature:refs/heads/feature']);
+  const plan = makePlan(repo, settings);
+  applyPlan(plan);
+  const push = preparePush(plan, 'origin', connection);
+  assert.deepEqual(
+    push.refs.map((ref) => ref.destination),
+    ['refs/heads/feature']
+  );
+  executePush(push, connection);
+  assert.equal(git(['--git-dir', server, 'rev-parse', 'main']).toString().trim(), mainOid);
+  assert.equal(git(['--git-dir', server, 'rev-parse', 'feature']).toString().trim(), plan.mapping.get(featureOid));
 });
 
 test('dangerous, ambiguous, and substituted URLs are rejected before a network request', (t) => {
