@@ -23,15 +23,21 @@ The main risks are a push of incorrect data, a push to an incorrect target, and 
 | `--repo`      | Command line | Two strict patterns for github.com only. No user name, port, query, or other host. The clone URL is built again.   |
 | `--base`      | Command line | ASCII letters, digits, `. _ / -`. No `..`, empty segments, segments that start with `.` or `-`, or `.lock`.        |
 | `--dest`      | Command line | The same rules as file paths.                                                                                      |
-| File paths    | Command line | Relative ASCII paths. No `..`, no segments that start with a dot, no control or similar-looking characters.        |
+| File paths    | Command line | Relative paths with Latin and Russian letters. No `..`, no dot segments, no control or mixed-script words.         |
 | Current dir   | Process      | Its real path cannot have a segment that starts with a dot.                                                        |
 | File contents | Local files  | Size limits. A known private key or token format stops the run.                                                    |
 | Options       | Command line | Known names only. No repeats, no empty values, no values that start with `-`.                                      |
 | `gh` JSON     | `gh` output  | Parsed without trust. The repository name must match. Write permission is required. The default branch is checked. |
 
-The ASCII rule rejects letters from other scripts that look like Latin letters.
-It also rejects bidirectional control characters and Unicode normalization differences.
-A result is that file names in Cyrillic or other scripts are not supported.
+File paths can contain Latin letters `A-Z a-z` and Russian Cyrillic letters `А-Я а-я Ё ё`. Other scripts are not permitted.
+The owner decided to permit Cyrillic names. Before this decision, paths were ASCII only.
+
+- A word is a sequence of letters without other characters. Each word must use one script.
+  This rejects a Cyrillic letter that looks like a Latin letter inside a Latin word, for example `filе.txt` or `сredentials.json`.
+- The rules apply to the NFC form of each segment. A decomposed `й` or `ё`, as some macOS programs write it, is accepted.
+  The program opens the source file with the name as given. The repository path is always in the NFC form.
+  Thus two forms of one name go to the same repository path, and the duplicate check stops the run.
+- Combining marks that have no composed form, bidirectional control characters, and zero-width characters are rejected.
 
 ## Local files
 
@@ -154,6 +160,8 @@ The user is responsible for the contents of the selected files.
   on the base commit or on an ancestor of the new commit, a push without force moves that branch forward. History is not lost,
   and the target branch does not change. The random part of the name has 32 bits, and the time window is short.
   The owner accepted this risk instead of a `--force-with-lease` push that only creates a branch.
+- A word made only of Cyrillic letters can look like a Latin word, for example `рае` and `pae`.
+  The mixed-script rule does not find such words. The pull request shows the real names. The secret name check uses Latin names only.
 - The current directory check helps only when the directory name starts with a dot. Other directories with secrets are not detected.
 - Automatic tests use synthetic local repositories. A manual run used a local repository and a fake `gh`.
   Real pushes to GitHub and real `gh` calls were not tested.

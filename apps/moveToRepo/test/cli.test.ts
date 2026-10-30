@@ -72,6 +72,14 @@ test.skipIf(process.platform === 'win32')('local file checks stop the run before
 });
 
 describe('arguments', () => {
+  test('Cyrillic files map to their destination directories', () => {
+    const args = parseArguments(['--repo', repo, '--dest', 'export', '__build/Младшая Звезда - beta - 0_3_0.docx', '--dest', 'manuscript', 'Манускрипты/Младшая Звезда.md']);
+    expect(args.entries).toEqual([
+      { source: '__build/Младшая Звезда - beta - 0_3_0.docx', target: 'export/Младшая Звезда - beta - 0_3_0.docx' },
+      { source: 'Манускрипты/Младшая Звезда.md', target: 'manuscript/Младшая Звезда.md' }
+    ]);
+  });
+
   test('groups map files to their destination directories', () => {
     const args = parseArguments([
       '--repo',

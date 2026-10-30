@@ -166,6 +166,16 @@ describe.skipIf(!posix)('clone, plan, and commit', () => {
     expect(clone.run(['rev-parse', 'refs/heads/main']).trim()).toBe(clone.run(['rev-parse', 'HEAD']).trim());
   });
 
+  test('Cyrillic paths go into the commit without quotes or escapes', (context) => {
+    const { clone } = fixture(context);
+    const targets = ['export/Младшая Звезда - beta - 0_3_0.html', 'manuscript/Младшая Звезда.md', 'Рукописи/ёж й.txt'];
+    const changes = clone.plan(targets.map((target) => file(target, target)));
+    expect(changes.map((change) => change.state)).toEqual(['add', 'add', 'add']);
+    const commit = clone.commit(changes);
+    for (const target of targets) expect(clone.run(['show', `${commit}:${target}`])).toBe(target);
+    expect(clone.run(['log', '-1', '--format=%B', commit])).toBe(`${targets.join('\n')}\n\n`);
+  });
+
   // The production settings block the file transport, so these tests push with the fixture Git and the production arguments.
   test('the push creates an absent branch', (context) => {
     const { clone, bare } = fixture(context);
