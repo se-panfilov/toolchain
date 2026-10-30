@@ -1,6 +1,6 @@
 # GitHub Actions
 
-Toolchain has three GitHub Actions workflows for tests, builds, and npm releases.
+Toolchain has three GitHub Actions workflows for tests, builds, and npm releases, and a separate workflow for pull request rules.
 Each workflow can use all applications or one application from `apps/`.
 Each workflow has a dry-run mode.
 The separate [Secrets workflow](../.github/workflows/secrets.yml) scans all local history and working files without an application selection.
@@ -8,11 +8,12 @@ Release also calls it and publishes only after a successful scan of the same com
 See [Git hooks and secret checks](GIT_HOOKS.md) for its configuration, setup, and limits.
 The separate [CodeQL workflow](../.github/workflows/codeql.yml) does static security analysis. See [CodeQL](#codeql).
 
-| Workflow                                    | Start                                                            | Result                                                                                                       |
-| ------------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| [Tests](../.github/workflows/test.yml)      | Pull request, push to `master`, manual start, call from Release. | Formatting, lint, configuration and workflow checks, pull request rules, and application tests on three OSs. |
-| [Build](../.github/workflows/build.yml)     | Manual start, call from Release.                                 | Type check, Vite build, `npm pack`, archive checks, and an archive bin run.                                  |
-| [Release](../.github/workflows/release.yml) | Manual start only.                                               | Tests, build, npm publication, Git tag, and GitHub Release.                                                  |
+| Workflow                                      | Start                                                            | Result                                                                                                       |
+| --------------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| [Tests](../.github/workflows/test.yml)        | Pull request, push to `master`, manual start, call from Release. | Formatting, lint, configuration and workflow checks, pull request rules, and application tests on three OSs. |
+| [Build](../.github/workflows/build.yml)       | Manual start, call from Release.                                 | Type check, Vite build, `npm pack`, archive checks, and an archive bin run.                                  |
+| [PR rules](../.github/workflows/pr-rules.yml) | Pull request, also after a change to the title or description.   | Branch name, description, commit messages, versions, and lockfile changes.                                   |
+| [Release](../.github/workflows/release.yml)   | Manual start only.                                               | Tests, build, npm publication, Git tag, and GitHub Release.                                                  |
 
 ## Manual start
 
@@ -35,8 +36,9 @@ Only users with write access to the repository can start a workflow manually.
 
 Pushes to `master` start Tests with `app=all` and `dry_run=false`.
 Pull requests start Tests with `dry_run=false` and test only the changed applications. See [Tests on pull requests](#tests-on-pull-requests).
-On a pull request, the `pr-rules` job also checks the branch name, description, commit messages, versions, and lockfile changes.
-A change to the pull request title or description starts only `pr-rules` again. See [Enforced rules](ENFORCED_RULES.md).
+On a pull request, the separate [PR rules workflow](../.github/workflows/pr-rules.yml) checks the branch name, description, commit messages, versions, and lockfile changes.
+A change to the pull request title or description starts only PR rules again. Tests do not start for that change.
+For this reason, an `edited` event does not make skipped `plan` or `repository` checks. A skipped check counts as successful and can hide a failed result of Tests. See [Enforced rules](ENFORCED_RULES.md).
 
 The `plan` job of each workflow checks the input again with [scripts/ci/apps.mjs](../scripts/ci/apps.mjs).
 It accepts only `all` or the exact directory name.
@@ -135,30 +137,47 @@ After a network error during publication, examine the registry before a new star
 
 ## Security controls
 
-| Control                | Implementation                                                                                            |
-| ---------------------- | --------------------------------------------------------------------------------------------------------- |
-| Token permissions      | The default is `contents: read`. Release sets `{}` and gives each job only the necessary permissions.     |
-| OIDC token             | Only the real `publish` job has `id-token: write`. It does not install dependencies or run builds.        |
-| Write access to GitHub | Only `github-release` has `contents: write`. It does not install dependencies.                            |
-| Checkout credentials   | All jobs use `persist-credentials: false`.                                                                |
-| Actions                | Each action is pinned to a full commit SHA with the version in a comment.                                 |
-| Input handling         | Inputs go to scripts through environment variables, not through `${{ }}` in shell text.                   |
-| Dependency scripts     | `npm ci`, `npm pack`, and `npm publish` use `--ignore-scripts`. No dependency cache is used.              |
-| Archive checks         | Paths, entry types, package metadata, bin entry points, install scripts, and secret patterns are checked. |
-| Archive identity       | The publish job compares the archive integrity with the value recorded by Build.                          |
-| Concurrency            | Only one Release run is active at a time. A new run waits.                                                |
-| Static analysis        | CodeQL checks source and workflows. Only its `analyze` job can upload results with `security-events`.     |
+| Control                | Implementation                                                                                                                 |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Token permissions      | The default is `contents: read`. Release sets `{}` and gives each job only the necessary permissions.                          |
+| OIDC token             | Only the real `publish` job has `id-token: write`. It does not install dependencies or run builds.                             |
+| Write access to GitHub | Only `github-release` has `contents: write`. It does not install dependencies.                                                 |
+| Checkout credentials   | All jobs use `persist-credentials: false`.                                                                                     |
+| Actions                | Each action is pinned to a full commit SHA with the version in a comment.                                                      |
+| Trigger events         | No `pull_request_target`, `workflow_run`, `issue_comment`, or pull request review events. `npm run check:config` rejects them. |
+| Input handling         | Inputs go to scripts through environment variables, not through `${{ }}` in shell text.                                        |
+| Dependency scripts     | `npm ci`, `npm pack`, and `npm publish` use `--ignore-scripts`. No dependency cache is used.                                   |
+| Archive checks         | Paths, entry types, package metadata, bin entry points, install scripts, and secret patterns are checked.                      |
+| Archive identity       | The publish job compares the archive integrity with the value recorded by Build.                                               |
+| Concurrency            | Only one Release run is active at a time. A new run waits.                                                                     |
+| Static analysis        | CodeQL checks source and workflows. Only its `analyze` job can upload results with `security-events`.                          |
 
 Limits:
 
 - The secret pattern check finds only common token and key formats. It does not prove that an archive has no secrets.
 - Pull requests from forks run Tests with a read-only token and no secrets. They run the code from the pull request.
 - The Linux test job downloads Git source from kernel.org and checks its SHA-256 value.
-- Tests use only Node.js 26. CI does not check the minimum engine version, such as Node.js 24.12.0 for reHistory. Check it locally before you change that requirement.
+- Tests use only Node.js 26, the latest patch version. CI does not check the minimum engine version, such as Node.js 24.12.0 for reHistory. Check it locally before you change that requirement.
 - GitHub-hosted runners and the pinned actions are trusted.
 - The locked development dependencies run in the test and build jobs and are trusted. They can change the built archive. The `min-release-age` setting in `.npmrc` delays new dependency versions.
 - The tag check runs after publication. If a tag with the same name points to a different commit, `github-release` stops after npm publication.
 - Users with write access can start Release. Use the environment protection rules to add an approval step.
+
+### Manual version pins
+
+Dependabot updates only the actions in `uses:` and the npm packages. Update these pins manually, for example when a security release comes out:
+
+| Pin                                  | Location                                                          | Check                   |
+| ------------------------------------ | ----------------------------------------------------------------- | ----------------------- |
+| Node.js for plan, build, and release | `.nvmrc`                                                          | Exact version `X.Y.Z`.  |
+| Node.js for the Secrets workflow     | `node-version` in [secrets.yml](../.github/workflows/secrets.yml) | Exact version.          |
+| Gitleaks                             | Download URL in [secrets.yml](../.github/workflows/secrets.yml)   | SHA-256 of the archive. |
+| Git source for the Linux test job    | Download URL in [test.yml](../.github/workflows/test.yml)         | SHA-256 of the archive. |
+
+`.nvmrc` sets the Node.js version and its npm version for the `publish` job, which has the OIDC token.
+An exact version prevents an unreviewed change of the publication tools. `npm run check:config` rejects a version that is not exact.
+Select a version that is at least 7 days old, as `min-release-age` in `.npmrc` requires for npm packages. A security release can be used earlier.
+The npm version that comes with Node.js must be 11.5.1 or newer for trusted publishing.
 
 ## CodeQL
 
