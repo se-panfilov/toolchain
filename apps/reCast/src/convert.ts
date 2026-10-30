@@ -3,10 +3,10 @@ import { linkSync, lstatSync, mkdtempSync, renameSync, rmSync, statfsSync } from
 import { basename, dirname, join } from 'node:path';
 
 import { toolEnvironment, type Tools } from '@reCast/media';
-import { ffmpegArgs, type Plan, uniquePath } from '@reCast/plan';
+import { extractArgs, ffmpegArgs, type Plan, subtitleFile, subtitlePath, uniquePath } from '@reCast/plan';
 
 export type Progress = { seconds: number; total: number; speed: number; done: boolean };
-export type Result = { output: string; renamed: boolean; interrupted: boolean };
+export type Result = { output: string; subtitles: string | undefined; renamed: boolean; interrupted: boolean };
 const errorTail = 8192;
 const progressLimit = 65536;
 
@@ -65,9 +65,62 @@ export function placeResult(temporary: string, wanted: string): { output: string
   throw new Error('Не удалось сохранить результат: имя файла занято.');
 }
 
+type Run = { status: number | null; interrupted: boolean; errors: string };
+
 /**
- * Convert into a private temporary directory next to the result. A failure or an interruption removes the partial file.
- * Ctrl+C reaches FFmpeg from the terminal. The handler keeps this process alive until the cleanup ends.
+ * Run FFmpeg in the private working directory. Ctrl+C reaches FFmpeg from the terminal.
+ * The handler keeps this process alive until FFmpeg stops, so the cleanup can run.
+ */
+async function run(tools: Tools, args: string[], cwd: string, total: number, onProgress?: (progress: Progress) => void): Promise<Run> {
+  const child = spawn(tools.ffmpeg, args, { cwd, env: toolEnvironment(), stdio: ['ignore', 'pipe', 'pipe'] });
+  let interrupted = false;
+  const stop = (): void => {
+    interrupted = true;
+    child.kill('SIGINT');
+  };
+  process.on('SIGINT', stop);
+  process.on('SIGTERM', stop);
+  let buffer = '';
+  let errors = '';
+  child.stdout.setEncoding('utf8');
+  child.stderr.setEncoding('utf8');
+  child.stdout.on('data', (chunk: string) => {
+    buffer += chunk;
+    let end;
+    while ((end = buffer.search(/progress=\w+\n/)) !== -1) {
+      const next = buffer.indexOf('\n', end) + 1;
+      const progress = parseProgress(buffer.slice(0, next), total);
+      buffer = buffer.slice(next);
+      if (progress) onProgress?.(progress);
+    }
+    // Progress blocks are short. Drop unexpected output without a block end.
+    if (buffer.length > progressLimit) buffer = '';
+  });
+  child.stderr.on('data', (chunk: string) => {
+    errors = (errors + chunk).slice(-errorTail);
+  });
+  try {
+    const status = await new Promise<number | null>((resolve, reject) => {
+      child.once('error', reject);
+      child.once('close', (code) => {
+        resolve(code);
+      });
+    });
+    return { status, interrupted, errors };
+  } finally {
+    process.removeListener('SIGINT', stop);
+    process.removeListener('SIGTERM', stop);
+  }
+}
+
+function failure(result: Run): Error {
+  const detail = result.errors.trim().split('\n').slice(-5).join('\n');
+  return new Error(`FFmpeg завершился с ошибкой (код ${result.status ?? 'сигнал'}).${detail ? `\n${detail}` : ''}`);
+}
+
+/**
+ * Convert into a private temporary directory next to the result. A failure or an interruption removes the partial files.
+ * A text subtitle for burn-in is extracted first. FFmpeg reads it by a relative name, so no path goes into the filter graph.
  */
 export async function convert(tools: Tools, plan: Plan, onProgress: (progress: Progress) => void): Promise<Result> {
   let workspace: string;
@@ -77,54 +130,23 @@ export async function convert(tools: Tools, plan: Plan, onProgress: (progress: P
     throw new Error(`Нет доступа на запись в каталог результата: ${(error as NodeJS.ErrnoException).code ?? 'ошибка'}.`, { cause: error });
   }
   const temporary = join(workspace, basename(plan.output));
-  let interrupted = false;
+  const temporarySubtitles = subtitlePath(temporary);
   const total = plan.mode.sample ? Math.min(plan.length, Math.max(0, plan.media.duration - plan.start)) : plan.media.duration;
+  const stopped = { output: plan.output, subtitles: undefined, renamed: false, interrupted: true };
   try {
-    const child = spawn(tools.ffmpeg, ffmpegArgs(plan, temporary), { env: toolEnvironment(), stdio: ['ignore', 'pipe', 'pipe'] });
-    const stop = (): void => {
-      interrupted = true;
-      child.kill('SIGINT');
-    };
-    process.on('SIGINT', stop);
-    process.on('SIGTERM', stop);
-    let buffer = '';
-    let errors = '';
-    child.stdout.setEncoding('utf8');
-    child.stderr.setEncoding('utf8');
-    child.stdout.on('data', (chunk: string) => {
-      buffer += chunk;
-      let end;
-      while ((end = buffer.search(/progress=\w+\n/)) !== -1) {
-        const next = buffer.indexOf('\n', end) + 1;
-        const progress = parseProgress(buffer.slice(0, next), total);
-        buffer = buffer.slice(next);
-        if (progress) onProgress(progress);
-      }
-      // Progress blocks are short. Drop unexpected output without a block end.
-      if (buffer.length > progressLimit) buffer = '';
-    });
-    child.stderr.on('data', (chunk: string) => {
-      errors = (errors + chunk).slice(-errorTail);
-    });
-    let status: number | null;
-    try {
-      status = await new Promise<number | null>((resolve, reject) => {
-        child.once('error', reject);
-        child.once('close', (code) => {
-          resolve(code);
-        });
-      });
-    } finally {
-      process.removeListener('SIGINT', stop);
-      process.removeListener('SIGTERM', stop);
+    const extract = extractArgs(plan, join(workspace, subtitleFile));
+    if (extract) {
+      const extracted = await run(tools, extract, workspace, 0);
+      if (extracted.interrupted) return stopped;
+      if (extracted.status !== 0) throw failure(extracted);
     }
-    if (interrupted) return { output: plan.output, renamed: false, interrupted: true };
-    if (status !== 0) {
-      const detail = errors.trim().split('\n').slice(-5).join('\n');
-      throw new Error(`FFmpeg завершился с ошибкой (код ${status ?? 'сигнал'}).${detail ? `\n${detail}` : ''}`);
-    }
+    const converted = await run(tools, ffmpegArgs(plan, temporary, temporarySubtitles), workspace, total, onProgress);
+    if (converted.interrupted) return stopped;
+    if (converted.status !== 0) throw failure(converted);
     const placed = placeResult(temporary, plan.output);
-    return { ...placed, interrupted: false };
+    let subtitles: string | undefined;
+    if (plan.subtitle?.format === 'vtt') subtitles = placeResult(temporarySubtitles, subtitlePath(placed.output)).output;
+    return { ...placed, subtitles, interrupted: false };
   } finally {
     rmSync(workspace, { recursive: true, force: true });
   }

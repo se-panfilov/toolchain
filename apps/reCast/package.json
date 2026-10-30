@@ -1,6 +1,6 @@
 {
   "name": "tx-recast",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Interactive conversion of video files to MP4 for Chromecast and other streaming devices on macOS",
   "private": false,
   "type": "module",
