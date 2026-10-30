@@ -1,4 +1,4 @@
-import { checkBranch, cloneUrl, compareUrl, parseRepository, parseRepositoryInfo } from '@moveToRepo/github';
+import { checkBranch, checkOwner, cloneUrl, compareUrl, parseRepository, parseRepositoryInfo, parseUser } from '@moveToRepo/github';
 import { describe, expect, test } from 'vitest';
 
 describe('repository address', () => {
@@ -72,5 +72,22 @@ describe('repository information', () => {
 
   test('the compare page uses the full name', () => {
     expect(compareUrl({ fullName: 'me/notes', defaultBranch: 'main' }, 'main', 'movetorepo/ab12cd34')).toBe('https://github.com/me/notes/compare/main...movetorepo/ab12cd34?expand=1');
+  });
+});
+
+describe('repository owner', () => {
+  test('gh user JSON gives the login', () => {
+    expect(parseUser('{"login":"Me-1","id":1}')).toBe('Me-1');
+    expect(() => parseUser('not json')).toThrow(/некорректный ответ/);
+    expect(() => parseUser('{"login":"-x"}')).toThrow(/имя пользователя/);
+    expect(() => parseUser('{"login":"a/b"}')).toThrow(/имя пользователя/);
+    expect(() => parseUser('[]')).toThrow(/имя пользователя/);
+  });
+
+  test('only a repository of the signed-in user is permitted', () => {
+    expect(() => checkOwner({ fullName: 'me/notes', defaultBranch: 'main' }, 'me')).not.toThrow();
+    expect(() => checkOwner({ fullName: 'Me/notes', defaultBranch: 'main' }, 'mE')).not.toThrow();
+    expect(() => checkOwner({ fullName: 'my-org/notes', defaultBranch: 'main' }, 'me')).toThrow(/принадлежит my-org/);
+    expect(() => checkOwner({ fullName: 'mee/notes', defaultBranch: 'main' }, 'me')).toThrow(/только в свои репозитории/);
   });
 });

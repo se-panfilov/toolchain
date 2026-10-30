@@ -1,0 +1,97 @@
+import { linkSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import { checkLog, code, formatTime, logName, OperationLog, resultLine, startEntry } from '@moveToRepo/log';
+import { describe, expect, test, type TestContext } from 'vitest';
+
+function fixture(context: TestContext): string {
+  const root = mkdtempSync(join(tmpdir(), 'movetorepo-log-'));
+  context.onTestFinished(() => rmSync(root, { recursive: true, force: true }));
+  return root;
+}
+
+const time = new Date('2026-01-02T14:04:05.678Z');
+
+describe('log text', () => {
+  test('the time has the local date, the UTC offset, and the UTC moment', () => {
+    expect(formatTime(time)).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} UTC[+-]\d{2}:\d{2} \(UTC 2026-01-02T14:04:05Z\)$/);
+  });
+
+  test('inline code escapes backticks and control characters', () => {
+    expect(code('a/b.txt')).toBe('`a/b.txt`');
+    expect(code('a`b')).toBe('``a`b``');
+    expect(code('`a')).toBe('`` `a ``');
+    expect(code('a\nb‮')).toBe('`a?b?`');
+  });
+
+  test('the entry lists the date, the repository, and each copied file with its local path', () => {
+    const text = startEntry({
+      time,
+      directory: '/home/me/work',
+      repository: 'me/notes',
+      base: 'main',
+      branch: 'movetorepo/ab12cd34',
+      commit: 'a'.repeat(40),
+      files: [
+        { source: './from-A/some1.txt', target: 'to-A/some1.txt', state: 'add' },
+        { source: 'b.txt', target: 'b.txt', state: 'replace' }
+      ]
+    });
+    expect(text).toContain(`## ${formatTime(time)}`);
+    expect(text).toContain(`- Дата и время: ${formatTime(time)}`);
+    expect(text).toContain('- Целевой репозиторий: `me/notes` (https://github.com/me/notes)');
+    expect(text).toContain('  - `/home/me/work/from-A/some1.txt` → `to-A/some1.txt` (новый)');
+    expect(text).toContain('  - `/home/me/work/b.txt` → `b.txt` (замена)');
+    expect(text).toContain('- Скопированные файлы (2):');
+    expect(resultLine(time, 'ошибка: a\nb')).toBe(`- Результат (${formatTime(time)}): ошибка: a b\n`);
+  });
+});
+
+describe.skipIf(process.platform === 'win32')('log file', () => {
+  test('a new log gets a header and mode 0600, and later entries are appended', (context) => {
+    const root = fixture(context);
+    checkLog(root);
+    const first = OperationLog.open(root);
+    first.write('one\n');
+    first.close();
+    const second = OperationLog.open(root);
+    second.write('two\n');
+    second.close();
+    const path = join(root, logName);
+    expect(readFileSync(path, 'utf8')).toMatch(/^# Журнал moveToRepo\n[\s\S]*\none\ntwo\n$/);
+    expect(statSync(path).mode & 0o777).toBe(0o600);
+    expect(() => first.write('x')).toThrow(/закрыт/);
+  });
+
+  test('an existing log is not truncated', (context) => {
+    const root = fixture(context);
+    writeFileSync(join(root, logName), 'old\n');
+    const log = OperationLog.open(root);
+    log.write('new\n');
+    log.close();
+    expect(readFileSync(join(root, logName), 'utf8')).toBe('old\nnew\n');
+  });
+
+  test('a symbolic link as the log is rejected and its target does not change', (context) => {
+    const root = fixture(context);
+    const outside = fixture(context);
+    writeFileSync(join(outside, 'target'), 'keep');
+    symlinkSync(join(outside, 'target'), join(root, logName));
+    expect(() => checkLog(root)).toThrow(/символическая ссылка/);
+    expect(() => OperationLog.open(root)).toThrow(/символическая ссылка/);
+    // A dangling link must not create its target either.
+    rmSync(join(outside, 'target'));
+    expect(() => OperationLog.open(root)).toThrow(/символическая ссылка/);
+    expect(() => statSync(join(outside, 'target'))).toThrow();
+  });
+
+  test('a log with a hard link or a directory as the log is rejected', (context) => {
+    const root = fixture(context);
+    writeFileSync(join(root, 'other'), 'x');
+    linkSync(join(root, 'other'), join(root, logName));
+    expect(() => checkLog(root)).toThrow(/жёсткие ссылки/);
+    expect(() => OperationLog.open(root)).toThrow(/жёсткие ссылки/);
+    expect(readFileSync(join(root, 'other'), 'utf8')).toBe('x');
+  });
+});

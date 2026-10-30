@@ -1,5 +1,7 @@
 import { closeSync, constants, fstatSync, lstatSync, openSync, readSync, realpathSync, statSync } from 'node:fs';
 
+import { logName } from '@moveToRepo/log';
+
 export const maxFiles = 100;
 export const maxFileSize = 10 * 1024 * 1024;
 export const maxTotalSize = 50 * 1024 * 1024;
@@ -119,6 +121,7 @@ export function checkEntries(entries: Entry[]): void {
       const reason = secretName(segment);
       if (reason) throw new Error(`Похоже на файл с секретами (${reason}): ${entry.source}. Такие файлы запрещены.`);
     }
+    if (entry.source.split('/').at(-1)?.toLowerCase() === logName) throw new Error(`Журнал ${logName} нельзя копировать.`);
     pathSegments(entry.target, 'Путь в репозитории');
     const key = entry.target.toLowerCase();
     const previous = seen.get(key);
