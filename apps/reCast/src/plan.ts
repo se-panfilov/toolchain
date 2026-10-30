@@ -2,7 +2,7 @@ import { existsSync, lstatSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, extname, isAbsolute, join, resolve } from 'node:path';
 
-import { type AudioStream, inputFormats, type MediaInfo } from '@reCast/media';
+import { type AudioStream, inputFormats, type MediaInfo, type SubtitleStream } from '@reCast/media';
 
 export type Method = 'remux' | 'h264';
 export type Mode = { id: string; method: Method; sample: boolean; label: string; suffix: string };
@@ -24,15 +24,21 @@ export const audioBitrate = 192_000;
 const maxWidth = 1920;
 const maxHeight = 1080;
 
+/** WebVTT is a separate file next to the MP4 file. A burned-in subtitle becomes a part of the picture. */
+export type SubtitleFormat = 'vtt' | 'burn';
+export type SubtitleChoice = { stream: SubtitleStream; format: SubtitleFormat };
 export type Plan = {
   input: string;
   output: string;
   mode: Mode;
   media: MediaInfo;
   audio: AudioStream | undefined;
+  subtitle: SubtitleChoice | undefined;
   start: number;
   length: number;
 };
+/** The name of the extracted subtitle file in the private working directory. FFmpeg starts in that directory. */
+export const subtitleFile = 'subtitles.ass';
 
 /**
  * Read a path from a drop into Terminal or from a paste.
@@ -85,17 +91,43 @@ export function defaultAudio(media: MediaInfo): number {
   );
 }
 
+export function findMode(id: string): Mode {
+  const mode = modes.find((item) => item.id === id);
+  if (!mode) throw new Error(`Неизвестный режим: ${id}. Допустимо: ${modes.map((item) => item.id).join(', ')}.`);
+  return mode;
+}
+
+/** Subtitle formats that the mode supports for this stream. REMUX keeps the picture, so it cannot burn in. */
+export function subtitleFormats(mode: Mode, stream: SubtitleStream): SubtitleFormat[] {
+  const formats: SubtitleFormat[] = [];
+  if (stream.kind === 'text') formats.push('vtt');
+  if (mode.method === 'h264') formats.push('burn');
+  return formats;
+}
+export function usableSubtitles(media: MediaInfo, mode: Mode): SubtitleStream[] {
+  return media.subtitles.filter((stream) => subtitleFormats(mode, stream).length > 0);
+}
+
+/** The WebVTT file has the name of the MP4 file, so sender apps find it. */
+export function subtitlePath(output: string): string {
+  return `${output.slice(0, output.length - extname(output).length)}.vtt`;
+}
+
 function stamp(date: Date): string {
   const pad = (value: number): string => String(value).padStart(2, '0');
   return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
 }
-function taken(path: string): boolean {
+function exists(path: string): boolean {
   try {
     lstatSync(path);
     return true;
   } catch {
     return false;
   }
+}
+/** A name is in use when the MP4 file or its WebVTT file exists. */
+export function taken(path: string): boolean {
+  return exists(path) || (extname(path).toLowerCase() === '.mp4' && exists(subtitlePath(path)));
 }
 
 /** Add a time stamp when the name is in use. Never offer an existing path. */
@@ -122,8 +154,9 @@ export function validateOutput(output: string, input: string): string {
   if (!isAbsolute(output)) throw new Error('Нужен абсолютный путь.');
   if (extname(output).toLowerCase() !== '.mp4') throw new Error('Результат должен иметь расширение .mp4.');
   if (/[\p{Cc}]/u.test(output)) throw new Error('Путь содержит управляющие символы.');
-  if (resolve(output) === resolve(input)) throw new Error('Результат не может заменить исходный файл.');
-  if (taken(output)) throw new Error('Файл уже существует. Выберите другое имя.');
+  if (resolve(output) === resolve(input) || resolve(subtitlePath(output)) === resolve(input)) throw new Error('Результат не может заменить исходный файл.');
+  if (exists(output)) throw new Error('Файл уже существует. Выберите другое имя.');
+  if (exists(subtitlePath(output))) throw new Error(`Файл субтитров уже существует: ${subtitlePath(output)}. Выберите другое имя.`);
   let parent;
   try {
     parent = statSync(dirname(output));
@@ -134,29 +167,60 @@ export function validateOutput(output: string, input: string): string {
   return output;
 }
 
-/** The tone map converts HDR10 or HLG into SDR BT.709. SDR sources get only a pixel format change. */
-export function videoFilter(media: MediaInfo): string {
+/** Level 4.1 allows at most 1080p. Keep the aspect ratio and even dimensions. */
+export function targetSize(media: MediaInfo): { width: number; height: number } | undefined {
+  const { width, height } = media.video;
+  if (width <= maxWidth && height <= maxHeight) return undefined;
+  const ratio = Math.min(maxWidth / width, maxHeight / height);
+  return { width: Math.max(2, Math.floor((width * ratio) / 2) * 2), height: Math.max(2, Math.floor((height * ratio) / 2) * 2) };
+}
+
+/**
+ * The tone map converts HDR10 or HLG into SDR BT.709. SDR sources get only a pixel format change.
+ * Text subtitles render after the tone map, so their colors stay correct.
+ */
+export function videoFilter(media: MediaInfo, subtitle?: SubtitleChoice, start = 0): string {
   const filters: string[] = [];
-  if (media.video.width > maxWidth || media.video.height > maxHeight) {
-    // Level 4.1 allows at most 1080p. Keep the aspect ratio and even dimensions.
-    filters.push(`scale=w=${maxWidth}:h=${maxHeight}:force_original_aspect_ratio=decrease:force_divisible_by=2`);
-  }
+  const size = targetSize(media);
+  if (size) filters.push(`scale=${size.width}:${size.height}`);
   if (media.video.hdr) filters.push('zscale=t=linear:npl=100', 'format=gbrpf32le', 'zscale=p=bt709', 'tonemap=tonemap=hable:desat=0', 'zscale=t=bt709:m=bt709:r=tv');
   filters.push('format=yuv420p');
+  if (subtitle?.format === 'burn' && subtitle.stream.kind === 'text') {
+    // A sample starts its timestamps at zero. Move them to the source time for libass and back after it.
+    if (start > 0) filters.push(`setpts=PTS+${start}/TB`, `subtitles=${subtitleFile}`, 'setpts=PTS-STARTPTS');
+    else filters.push(`subtitles=${subtitleFile}`);
+  }
   return filters.join(',');
+}
+
+/** Image subtitles go over the converted picture. The subtitle canvas is scaled to the picture size. */
+export function overlayGraph(media: MediaInfo, stream: SubtitleStream): string {
+  const size = targetSize(media) ?? { width: media.video.width, height: media.video.height };
+  return `[0:${media.video.index}]${videoFilter(media)}[v];[0:${stream.index}]scale=${size.width}:${size.height}[s];[v][s]overlay=format=auto,format=yuv420p[out]`;
 }
 
 export function audioCopied(plan: Pick<Plan, 'mode' | 'audio'>): boolean {
   return plan.mode.method === 'remux' && plan.audio !== undefined && copyAudio.has(plan.audio.codec);
 }
 
-/** Make the FFmpeg arguments. Paths are absolute and use the file: prefix, so FFmpeg cannot read them as options. */
-export function ffmpegArgs(plan: Plan, target: string): string[] {
-  const args = ['-hide_banner', '-nostdin', '-loglevel', 'error', '-nostats', '-progress', 'pipe:1', '-n'];
+function inputArgs(plan: Plan): string[] {
+  const args: string[] = [];
   if (plan.mode.sample) args.push('-ss', String(plan.start));
   args.push('-protocol_whitelist', 'file', '-format_whitelist', inputFormats, '-i', `file:${plan.input}`);
-  if (plan.mode.sample) args.push('-t', String(plan.length));
-  args.push('-map', `0:${plan.media.video.index}`);
+  return args;
+}
+
+/**
+ * Make the FFmpeg arguments. Paths are absolute and use the file: prefix, so FFmpeg cannot read them as options.
+ * A WebVTT subtitle is a second output of the same process. Each output gets its own length limit.
+ */
+export function ffmpegArgs(plan: Plan, target: string, subtitleTarget = subtitlePath(target)): string[] {
+  const args = ['-hide_banner', '-nostdin', '-loglevel', 'error', '-nostats', '-progress', 'pipe:1', '-n', ...inputArgs(plan)];
+  const limit = plan.mode.sample ? ['-t', String(plan.length)] : [];
+  const overlay = plan.mode.method === 'h264' && plan.subtitle?.format === 'burn' && plan.subtitle.stream.kind === 'image';
+  args.push(...limit);
+  if (overlay && plan.subtitle) args.push('-filter_complex', overlayGraph(plan.media, plan.subtitle.stream), '-map', '[out]');
+  else args.push('-map', `0:${plan.media.video.index}`);
   if (plan.audio) args.push('-map', `0:${plan.audio.index}`);
   args.push('-sn', '-dn', '-map_chapters', '-1');
   if (plan.mode.method === 'remux') {
@@ -165,7 +229,7 @@ export function ffmpegArgs(plan: Plan, target: string): string[] {
     if (plan.media.video.codec === 'hevc') args.push('-tag:v', 'hvc1');
     args.push('-avoid_negative_ts', 'make_zero');
   } else {
-    args.push('-vf', videoFilter(plan.media));
+    if (!overlay) args.push('-vf', videoFilter(plan.media, plan.subtitle, plan.mode.sample ? plan.start : 0));
     args.push('-c:v', 'h264_videotoolbox', '-profile:v', 'high', '-level:v', '4.1', '-b:v', String(videoBitrate), '-pix_fmt', 'yuv420p');
     args.push('-color_primaries', 'bt709', '-color_trc', 'bt709', '-colorspace', 'bt709', '-color_range', 'tv');
   }
@@ -173,7 +237,35 @@ export function ffmpegArgs(plan: Plan, target: string): string[] {
   else if (audioCopied(plan)) args.push('-c:a', 'copy');
   else args.push('-c:a', 'aac', '-b:a', String(audioBitrate), '-ac', '2');
   args.push('-movflags', '+faststart', '-f', 'mp4', `file:${target}`);
+  if (plan.subtitle?.format === 'vtt') {
+    args.push(...limit, '-map', `0:${plan.subtitle.stream.index}`, '-vn', '-an', '-dn', '-c:s', 'webvtt', '-f', 'webvtt', `file:${subtitleTarget}`);
+  }
   return args;
+}
+
+/** Extract a text subtitle for libass. The whole stream is extracted, so a sample keeps the source times. */
+export function extractArgs(plan: Plan, target: string): string[] | undefined {
+  if (plan.mode.method !== 'h264' || plan.subtitle?.format !== 'burn' || plan.subtitle.stream.kind !== 'text') return undefined;
+  return [
+    '-hide_banner',
+    '-nostdin',
+    '-loglevel',
+    'error',
+    '-n',
+    '-protocol_whitelist',
+    'file',
+    '-format_whitelist',
+    inputFormats,
+    '-i',
+    `file:${plan.input}`,
+    '-map',
+    `0:${plan.subtitle.stream.index}`,
+    '-c:s',
+    'ass',
+    '-f',
+    'ass',
+    `file:${target}`
+  ];
 }
 
 /** Rough result size for the free space check. */
