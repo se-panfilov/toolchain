@@ -33,13 +33,36 @@ Only users with write access to the repository can start a workflow manually.
 | `app`     | `all` or a directory name from `apps/`. | `all`                                            |
 | `dry_run` | `true` or `false`.                      | `false` for Tests and Build. `true` for Release. |
 
-Pull requests and pushes to `master` start Tests with `app=all` and `dry_run=false`.
+Pushes to `master` start Tests with `app=all` and `dry_run=false`.
+Pull requests start Tests with `dry_run=false` and test only the changed applications. See [Tests on pull requests](#tests-on-pull-requests).
 On a pull request, the `pr-rules` job also checks the branch name, description, commit messages, versions, and lockfile changes.
 A change to the pull request title or description starts only `pr-rules` again. See [Enforced rules](ENFORCED_RULES.md).
 
 The `plan` job of each workflow checks the input again with [scripts/ci/apps.mjs](../scripts/ci/apps.mjs).
 It accepts only `all` or the exact directory name.
 It does not accept a package name, a path, or a different letter case.
+
+### Tests on pull requests
+
+The `plan` job compares the pull request head with the merge base and selects the applications to test:
+
+| Changed files                                                                                 | Tested applications      |
+| --------------------------------------------------------------------------------------------- | ------------------------ |
+| Only files in `apps/<directory>/`.                                                            | Only these applications. |
+| `package-lock.json`, if only `apps/<directory>` or `apps/<directory>/node_modules/…` changed. | Only these applications. |
+| Any other file, for example in `configs/`, `scripts/`, `.github/`, `docs/`, or root files.    | All applications.        |
+| A directory in `apps/` that is not an application, for example a removed application.         | All applications.        |
+
+A version step changes only the `apps/<directory>` entry of `package-lock.json`. Thus it does not start the tests of other applications.
+A change to a shared dependency changes other lockfile entries and starts all tests.
+
+The test matrix always contains all applications, so each `test (<app>, <os>, Node.js <version>)` check reports a result.
+A job for an application that the pull request does not change skips its steps and succeeds.
+Thus required status checks for all `test (…)` jobs do not block a pull request that changes only one application.
+Each skipped job still starts a runner for some seconds.
+
+The `repository`, `pr-rules`, Secrets, and CodeQL checks run on each pull request without changes.
+Pushes to `master`, manual starts, and calls from Release do not use this selection. They test the applications from `app`.
 
 ## Dry-run mode
 

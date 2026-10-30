@@ -5,7 +5,21 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 
-import { assertReleaseRef, inspectArchive, integrity, isDryRun, listApps, parseRegistryView, root, selectApps, workflowChoices, workflowProblems, workflows } from '../../scripts/ci/lib.mjs';
+import {
+  assertReleaseRef,
+  changedApps,
+  inspectArchive,
+  integrity,
+  isDryRun,
+  listApps,
+  lockfileApps,
+  parseRegistryView,
+  root,
+  selectApps,
+  workflowChoices,
+  workflowProblems,
+  workflows
+} from '../../scripts/ci/lib.mjs';
 
 const app = { dir: 'demoApp', name: 'tx-demoapp', version: '1.2.3', bin: { 'tx-demoapp': 'dist/cli.js' } };
 
@@ -83,6 +97,58 @@ test('application selection accepts only all or an exact directory name', () => 
   assert.deepEqual(selectApps('demoApp', apps), apps);
   for (const value of ['demoapp', 'tx-demoapp', '../demoApp', 'demoApp; rm -rf /', '$(id)', 'demoApp\n', '', ' all', 'other']) {
     assert.throws(() => selectApps(value, apps), undefined, JSON.stringify(value));
+  }
+});
+
+test('pull request selection tests only changed applications unless a shared file changes', () => {
+  const apps = [app, { ...app, dir: 'otherApp', name: 'tx-otherapp' }, { ...app, dir: 'thirdApp', name: 'tx-thirdapp' }];
+  const dirs = (files) => changedApps(files, apps).apps.map((item) => item.dir);
+  assert.deepEqual(dirs(['apps/demoApp/src/cli.ts']), ['demoApp']);
+  assert.deepEqual(dirs(['apps/otherApp/README.md', 'apps/demoApp/package.json', 'apps/otherApp/test/a.test.ts']), ['demoApp', 'otherApp']);
+  for (const shared of [
+    'package-lock.json',
+    'configs/vite.config.mjs',
+    '.github/workflows/test.yml',
+    'scripts/ci/lib.mjs',
+    'docs/WRITING.md',
+    'apps/removedApp/src/cli.ts',
+    'apps/demoapp/src/cli.ts',
+    'apps/README.md',
+    'apps/demoApp'
+  ]) {
+    assert.deepEqual(changedApps(['apps/demoApp/src/cli.ts', shared], apps), { apps, shared }, shared);
+  }
+  assert.deepEqual(changedApps([], apps), { apps, shared: undefined });
+});
+
+test('a lockfile change selects only applications whose own entries change', () => {
+  const apps = [app, { ...app, dir: 'otherApp', name: 'tx-otherapp' }];
+  const lock = (packages, extra = {}) => ({ name: 'toolchain', lockfileVersion: 3, packages: { '': { name: 'toolchain' }, 'node_modules/vite': { version: '1.0.0' }, ...packages }, ...extra });
+  const base = lock({ 'apps/demoApp': { version: '1.0.0' }, 'apps/otherApp': { version: '2.0.0' } });
+  assert.deepEqual(lockfileApps(base, lock({ 'apps/demoApp': { version: '1.0.1' }, 'apps/otherApp': { version: '2.0.0' } }), apps), ['demoApp']);
+  assert.deepEqual(lockfileApps(base, lock({ 'apps/demoApp': { version: '1.0.0' }, 'apps/otherApp': { version: '2.0.0' }, 'apps/otherApp/node_modules/x': { version: '1.0.0' } }), apps), ['otherApp']);
+  for (const head of [
+    lock({ 'apps/demoApp': { version: '1.0.1' }, 'apps/otherApp': { version: '2.0.0' }, 'node_modules/new': { version: '1.0.0' } }),
+    lock({ 'apps/demoApp': { version: '1.0.0' }, 'apps/otherApp': { version: '2.0.0' }, 'apps/removedApp': { version: '1.0.0' } }),
+    lock({ 'apps/demoApp': { version: '1.0.0' }, 'apps/otherApp': { version: '2.0.0' } }, { lockfileVersion: 4 }),
+    undefined,
+    []
+  ]) {
+    assert.equal(lockfileApps(base, head, apps), undefined, JSON.stringify(head));
+  }
+  assert.deepEqual(changedApps(['package-lock.json', 'apps/demoApp/package.json'], apps, ['demoApp']).apps, [app]);
+  assert.deepEqual(changedApps(['package-lock.json', 'apps/demoApp/package.json'], apps, undefined), { apps, shared: 'package-lock.json' });
+});
+
+test('pull request selection rejects commit names that are not full object names', () => {
+  for (const sha of ['', 'HEAD', 'master', '--output=x', 'abc123']) {
+    const result = spawnSync(process.execPath, [join(root, 'scripts/ci/apps.mjs'), 'select'], {
+      cwd: root,
+      encoding: 'utf8',
+      env: { PATH: process.env.PATH, EVENT: 'pull_request', BASE_SHA: sha, HEAD_SHA: sha, DRY_RUN: 'false' }
+    });
+    assert.equal(result.status, 1, sha);
+    assert.match(result.stderr, /BASE_SHA/);
   }
 });
 

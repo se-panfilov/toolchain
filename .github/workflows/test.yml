@@ -48,18 +48,25 @@ jobs:
     timeout-minutes: 5
     outputs:
       apps: ${{ steps.select.outputs.apps }}
+      selected: ${{ steps.select.outputs.selected }}
       dry_run: ${{ steps.select.outputs.dry_run }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # A pull request needs the history to find the changed applications.
+          fetch-depth: ${{ github.event_name == 'pull_request' && '0' || '1' }}
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
           package-manager-cache: false
+      # On a pull request, only the applications with changed files are tested. A change outside apps/<directory>/ selects all applications.
       - id: select
         name: Select applications
         env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           APP: ${{ inputs.app || 'all' }}
           DRY_RUN: ${{ inputs.dry_run == true }}
         run: node scripts/ci/apps.mjs select
@@ -123,17 +130,25 @@ jobs:
         shell: bash
     env:
       WORKSPACE: ${{ matrix.app.name }}
+      SELECTED: ${{ contains(fromJSON(needs.plan.outputs.selected), matrix.app.dir) }}
+    # Every matrix job runs, so that each `test (…)` check reports a result for required status checks.
+    # A job for an application that the pull request does not change skips all steps after this note and succeeds.
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Report a skipped application
+        if: env.SELECTED != 'true'
+        run: echo "Приложение не изменено в этом pull request. Тесты пропущены."
+      - if: env.SELECTED == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      - if: env.SELECTED == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ matrix.node }}
           package-manager-cache: false
       # reHistory tests need a newer Git than the Linux runner image provides.
       - name: Build pinned modern Git on Linux
-        if: runner.os == 'Linux'
+        if: env.SELECTED == 'true' && runner.os == 'Linux'
         run: |
           set -euo pipefail
           build_dir="$(mktemp -d)"
@@ -143,9 +158,13 @@ jobs:
           tar -xf git.tar.xz
           make -C git-2.56.0 -j2 prefix="$build_dir/install" NO_RUST=YesPlease NO_CURL=YesPlease NO_OPENSSL=YesPlease NO_TCLTK=YesPlease NO_GETTEXT=YesPlease NO_PERL=YesPlease NO_PYTHON=YesPlease install
           echo "$build_dir/install/bin" >> "$GITHUB_PATH"
-      - run: node --version && npm --version && git --version
-      - run: npm ci --ignore-scripts
+      - if: env.SELECTED == 'true'
+        run: node --version && npm --version && git --version
+      - if: env.SELECTED == 'true'
+        run: npm ci --ignore-scripts
       - name: Test the application
+        if: env.SELECTED == 'true'
         run: npm test --workspace "$WORKSPACE"
       - name: Start the built CLI
+        if: env.SELECTED == 'true'
         run: npm run start --workspace "$WORKSPACE" -- --help
