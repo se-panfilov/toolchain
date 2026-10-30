@@ -2,7 +2,7 @@ import { chmodSync, linkSync, mkdirSync, mkdtempSync, readFileSync, realpathSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { checkLog, code, formatTime, logEntry, logName, OperationLog } from '@moveToRepo/log';
+import { checkLog, code, formatTime, logName, OperationLog, resultLine, startEntry } from '@moveToRepo/log';
 import { describe, expect, test, type TestContext } from 'vitest';
 
 function fixture(context: TestContext): string {
@@ -25,35 +25,34 @@ describe('log text', () => {
     expect(code('a\nb‮')).toBe('`a?b?`');
   });
 
-  test('the entry is minimal English text with the status, the source, the target, and each file', () => {
-    const text = logEntry({
-      id: 'op-1',
-      time,
-      directory: '/home/me/work',
-      repository: 'me/notes',
-      base: 'main',
-      branch: 'movetorepo/ab12cd34',
-      commit: 'a'.repeat(40),
-      files: [
-        { source: './from-A/some1.txt', target: 'to-A/some1.txt', state: 'add' },
-        { source: 'b.txt', target: 'b.txt', state: 'replace' }
-      ],
-      status: 'success',
-      result: 'https://github.com/me/notes/pull/1'
-    });
+  test('the entry is minimal English text with the source, the target, each file, and the result', () => {
+    const text =
+      startEntry({
+        id: 'op-1',
+        time,
+        directory: '/home/me/work',
+        repository: 'me/notes',
+        base: 'main',
+        branch: 'movetorepo/ab12cd34',
+        commit: 'a'.repeat(40),
+        files: [
+          { source: './from-A/some1.txt', target: 'to-A/some1.txt', state: 'add' },
+          { source: 'b.txt', target: 'b.txt', state: 'replace' }
+        ]
+      }) + resultLine('op-1', 'success', 'https://github.com/me/notes/pull/1');
     expect(text).toBe(
       [
         '',
         '## ID: `op-1`',
         '',
-        `- Date: ${formatTime(time)} (\`success\`)`,
+        `- Date: ${formatTime(time)}`,
         '- From: /home/me/work (`main`)',
         '- Target: https://github.com/me/notes (`movetorepo/ab12cd34`)',
         `- Commit: \`${'a'.repeat(40)}\``,
         '- files (2):',
         '  - `/home/me/work/from-A/some1.txt` → `to-A/some1.txt` (new)',
         '  - `/home/me/work/b.txt` → `b.txt` (replaced)',
-        '- Result: https://github.com/me/notes/pull/1',
+        '- Result: https://github.com/me/notes/pull/1 (`success`, ID `op-1`)',
         ''
       ].join('\n')
     );
@@ -61,7 +60,7 @@ describe('log text', () => {
   });
 
   test('control characters in plain fields cannot start new lines', () => {
-    const text = logEntry({
+    const text = startEntry({
       id: 'op-2',
       time,
       directory: '/home/me/a\n## ID: fake',
@@ -69,13 +68,22 @@ describe('log text', () => {
       base: 'main',
       branch: 'movetorepo/ab12cd34',
       commit: 'a'.repeat(40),
-      files: [],
-      status: 'failed',
-      result: 'push failed\n- Result: ok'
+      files: []
     });
     expect(text).toContain('- From: /home/me/a?## ID: fake (`main`)');
-    expect(text).toContain('- Result: push failed?- Result: ok');
     expect(text.match(/^## ID/gm)).toHaveLength(1);
+    expect(resultLine('op-2', 'failed', 'push failed\n- Result: ok')).toBe('- Result: push failed?- Result: ok (`failed`, ID `op-2`)\n');
+  });
+
+  test('parallel results can be matched to their operations by ID', () => {
+    const lines = [
+      startEntry({ id: 'A', time, directory: '/d', repository: 'me/a', base: 'main', branch: 'movetorepo/a', commit: 'a'.repeat(40), files: [] }),
+      startEntry({ id: 'B', time, directory: '/d', repository: 'me/b', base: 'main', branch: 'movetorepo/b', commit: 'b'.repeat(40), files: [] }),
+      resultLine('A', 'failed', 'push failed'),
+      resultLine('B', 'success', 'https://github.com/me/b/pull/1')
+    ].join('');
+    expect(lines).toContain('- Result: push failed (`failed`, ID `A`)');
+    expect(lines).toContain('- Result: https://github.com/me/b/pull/1 (`success`, ID `B`)');
   });
 });
 

@@ -8,7 +8,7 @@ import { pathToFileURL } from 'node:url';
 import { type Entry, readSources, targetPath } from '@moveToRepo/files';
 import { type Change, Clone, pullRequestBody, pullRequestTitle } from '@moveToRepo/git';
 import { checkBranch, checkOwner, cloneUrl, compareUrl, GitHub, parseRepository, type Repository } from '@moveToRepo/github';
-import { checkLog, logEntry, logName, type LogStatus, OperationLog } from '@moveToRepo/log';
+import { checkLog, logName, type LogStatus, OperationLog, resultLine, startEntry } from '@moveToRepo/log';
 import { directoryId, findExecutable, Interrupted, safe } from '@moveToRepo/tools';
 
 function help(): string {
@@ -177,26 +177,26 @@ async function main(): Promise<void> {
     if (!branch) throw new Error('Не удалось выбрать свободное имя ветки.');
     say(`Новая ветка: ${branch}`);
     await checkpoint();
-    // Open and check the log before the push. A log that cannot be opened stops the run before any transfer.
+    // Write the start of the log entry before the push. A log that cannot be written stops the run before any transfer.
     const log = OperationLog.open(directory, rootId);
-    const time = new Date();
+    // Parallel runs in the same directory can write between the start and the result of this operation.
+    const id = randomUUID();
     const record = (status: LogStatus, result: string): void => {
+      log.write(resultLine(id, status, result));
+    };
+    try {
       log.write(
-        logEntry({
-          id: randomUUID(),
-          time,
+        startEntry({
+          id,
+          time: new Date(),
           directory,
           repository: info.fullName,
           base,
           branch,
           commit,
-          files: changed.map(({ source, target, state }) => ({ source, target, state: state === 'add' ? 'add' : 'replace' })),
-          status,
-          result
+          files: changed.map(({ source, target, state }) => ({ source, target, state: state === 'add' ? 'add' : 'replace' }))
         })
       );
-    };
-    try {
       say(`Журнал: ${logName}`);
       let pushed = false;
       let pr: string;

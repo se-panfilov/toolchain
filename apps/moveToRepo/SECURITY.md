@@ -134,8 +134,8 @@ The user is responsible for the contents of the selected files.
 - Before the push, the file opens with `O_WRONLY | O_APPEND | O_CREAT | O_NOFOLLOW`, mode `0600` for a new file.
   The type, link count, and owner checks use the opened descriptor. A link, also a dangling link, stops the run before the push.
   An existing file with access for the group or others is changed to `0600`.
-- Each entry is one append write after the result is known, followed by `fsync`, so entries of parallel runs do not mix. The file is never truncated or replaced.
-- Each entry has a random operation ID.
+- Each part of an entry is one append write, followed by `fsync`. The start is written before the push, the result line after. The file is never truncated or replaced.
+- Each entry has a random operation ID. The result line has the same ID, so results of parallel runs match their entries.
 - File paths and branch names are in Markdown inline code with a safe fence. Control characters in all fields are replaced, so a field cannot start a new line.
 - Error text from Git and `gh` is not written to the log. The result is one of a fixed set of English texts, or a pull request or compare URL.
 - The log contains local paths and repository names, which can be private metadata. It contains no file contents.
@@ -152,7 +152,6 @@ The user is responsible for the contents of the selected files.
 - Secrets in an unknown format are not found.
 - The owner check trusts the user's Git configuration. A URL rewrite rule in it can send the push to another address.
 - A process of the same user can change or delete the log. The log is a record for the user, not a tamper-proof audit trail.
-- The entry is written after the push and the pull request step. `SIGKILL` or a power loss after the push leaves no entry for that push.
 - `--no-filters` stores files as they are. In a repository that keeps some files in Git LFS, a file for an LFS path goes in as a regular file.
 - Two directories with names that are different only in letter case can occur in the repository, for example `Docs` and `docs`.
 - A Ctrl+C during the push or the pull request step can leave a branch without a pull request. See the recovery section in the README.

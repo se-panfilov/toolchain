@@ -34,42 +34,35 @@ export type LogFile = { source: string; target: string; state: 'add' | 'replace'
 
 export type LogStatus = 'success' | 'failed' | 'interrupted';
 
-export type LogEntry = {
-  id: string;
-  time: Date;
-  directory: string;
-  repository: string;
-  base: string;
-  branch: string;
-  commit: string;
-  files: LogFile[];
-  status: LogStatus;
-  result: string;
-};
+export type LogStart = { id: string; time: Date; directory: string; repository: string; base: string; branch: string; commit: string; files: LogFile[] };
 
 function plain(value: string): string {
   return value.replace(/[\p{Cc}\p{Cf}]/gu, '?');
 }
 
-/**
- * One complete log entry in English. It is written in one write after the result is known, so entries of parallel runs do not mix.
- * moveToRepo runs on macOS and Linux, so local paths use `/`.
- */
-export function logEntry(entry: LogEntry): string {
+/** The first part of a log entry in English. It is written before the push. moveToRepo runs on macOS and Linux, so local paths use `/`. */
+export function startEntry(entry: LogStart): string {
   const files = entry.files.map((file) => `  - ${code(posix.join(entry.directory, file.source))} → ${code(file.target)} (${file.state === 'add' ? 'new' : 'replaced'})`);
   return [
     '',
     `## ID: ${code(entry.id)}`,
     '',
-    `- Date: ${formatTime(entry.time)} (${code(entry.status)})`,
+    `- Date: ${formatTime(entry.time)}`,
     `- From: ${plain(entry.directory)} (${code(entry.base)})`,
     `- Target: https://github.com/${plain(entry.repository)} (${code(entry.branch)})`,
     `- Commit: ${code(entry.commit)}`,
     `- files (${entry.files.length}):`,
     ...files,
-    `- Result: ${plain(entry.result)}`,
     ''
   ].join('\n');
+}
+
+/**
+ * The second part of a log entry: the result and the status. Parallel runs can write between the two parts,
+ * so the result line names the operation ID.
+ */
+export function resultLine(id: string, status: LogStatus, result: string): string {
+  return `- Result: ${plain(result)} (${code(status)}, ID ${code(id)})\n`;
 }
 
 /**
