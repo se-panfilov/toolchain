@@ -218,10 +218,10 @@ async function main(): Promise<void> {
       let includeOptional = false;
       if (push.optional.length) {
         print(`Теги, которые требуют отдельного решения: ${push.optional.length}`, 'warning');
-        const reasons = { shared: 'есть в других ветках', new: 'нет на сервере' };
+        const reasons = { shared: 'есть в других ветках', unverified: 'другие ветки сервера не проверены', new: 'нет на сервере' };
         for (const ref of push.optional)
           print(`  ${ref.destination}: ${ref.expected ? ref.expected.slice(0, 12) : 'новая ссылка'} → ${ref.oid.slice(0, 12)} · ${ref.reasons.map((reason) => reasons[reason]).join(', ')}`, 'warning');
-        print('Перенос общих тегов уводит их из истории других веток, например релизные теги master. Новые теги станут публичными.', 'warning');
+        print('Перенос общих тегов уводит их из истории других веток, например релизные теги master. Без git fetch общие теги нельзя исключить. Новые теги станут публичными.', 'warning');
         includeOptional = await choose('Отправить и эти теги?', false);
       }
       print('Другие ссылки и старые копии остаются без изменений.', 'muted');

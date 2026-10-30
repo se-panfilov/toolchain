@@ -356,12 +356,14 @@ All questions initially select No.
 
 These tags need a separate decision:
 
-| Reason in the list     | Condition                                                                    | Risk if you send the tag                                                  |
-| ---------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| `есть в других ветках` | Another local branch or remote-tracking ref contains the initial tag target. | The server tag moves out of the history of that branch, such as `master`. |
-| `нет на сервере`       | The server does not have the tag.                                            | The tag becomes public.                                                   |
+| Reason in the list                  | Condition                                                                                    | Risk if you send the tag                                                  |
+| ----------------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `есть в других ветках`              | Another local branch, remote-tracking ref, or server branch contains the initial tag target. | The server tag moves out of the history of that branch, such as `master`. |
+| `другие ветки сервера не проверены` | The local repository does not have the commit of another server branch.                      | The tag can move out of the history of that branch.                       |
+| `нет на сервере`                    | The server does not have the tag.                                                            | The tag becomes public.                                                   |
 
 The current branch, its remote-tracking refs, and the push destination do not count as other branches.
+The program does not fetch missing server commits. Run `git fetch` before the run to let the program examine all server branches.
 If you keep No, the program does not send these tags.
 They stay rewritten in the local repository.
 The plan also shows the number of tags that other branches contain before you apply the change.
