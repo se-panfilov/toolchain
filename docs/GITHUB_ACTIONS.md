@@ -162,6 +162,28 @@ Do this step only after the first analysis on `master` is complete.
 A human decides how to handle each alert. Do not dismiss an alert without a recorded reason.
 CodeQL does not replace the separate security review in AGENTS.md.
 
+## Dependabot
+
+The [Dependabot configuration](../.github/dependabot.yml) makes version update pull requests once a week, on Monday.
+
+| Ecosystem        | Directory | Settings                                                                                                       |
+| ---------------- | --------- | -------------------------------------------------------------------------------------------------------------- |
+| `npm`            | `/`       | The root `package.json` and `package-lock.json` for all workspaces. Exact versions. Minor and patch in one PR. |
+| `github-actions` | `/`       | The workflows in `.github/workflows/`. Full commit SHAs with a version comment. All updates in one PR.         |
+
+- A new version must be 7 days old before Dependabot proposes it. A major npm version must be 14 days old. This agrees with `min-release-age` in `.npmrc`.
+- Security updates do not wait. Enable them in **Settings → Advanced Security → Dependabot security updates**.
+- Each ecosystem has a maximum of 5 open pull requests.
+- Commit messages start with `chore(deps)` or `chore(deps-dev)`.
+
+Dependabot pull requests go through the same Tests workflow as other pull requests.
+The `pr-rules` job checks the lockfile, the npm registry source, the integrity values, install scripts, and `npm audit` for them.
+Dependabot cannot change its `dependabot/` branch prefix or use the pull request template.
+For this reason, `pr-rules` rejects the branch name and the description of Dependabot pull requests.
+A change to `pr-rules` for Dependabot requires a human decision. See [Enforced rules](ENFORCED_RULES.md).
+
+A human examines each Dependabot pull request and merges it. Examine the release notes and the lockfile changes in the job summary.
+
 ## Add, remove, or rename an application
 
 **CAUTION: Update all three workflows when you change the application list in `apps/`.**
