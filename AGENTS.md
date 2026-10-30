@@ -40,6 +40,7 @@ Fix a failed check. Do not weaken or bypass it without a human decision.
 - Do not start Release with `dry_run=false` without explicit task authorization.
 - Synthetic commits and branches are permitted in isolated fixtures when tests require them. Never use Toolchain or personal repositories as destructive fixtures.
 - Network demos require a user-specified server URL and explicit demo authorization. An implementation request does not authorize data transfer.
+- Do not send repository content to external AI services or other agent CLIs without an explicit user request in the current task. Installed skills do not authorize this transfer.
 
 ### Branch synchronization
 

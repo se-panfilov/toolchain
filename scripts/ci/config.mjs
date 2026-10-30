@@ -2,7 +2,8 @@
 // dependencies, the lockfile, repository structure, and GitHub Actions workflows.
 // Usage: node scripts/ci/config.mjs
 import { spawnSync } from 'node:child_process';
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, readdirSync, readFileSync, readlinkSync } from 'node:fs';
 import { join, posix, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -42,6 +43,10 @@ const fullSha = /^[^\s@]+@[0-9a-f]{40}$/;
 export const forbiddenWorkflowEvents = ['pull_request_target', 'workflow_run', 'issue_comment', 'pull_request_review', 'pull_request_review_comment'];
 // Shell scripts that are permitted. Use TypeScript or Node.js unless a documented reason requires Bash.
 export const shellScriptAllowlist = [];
+// Tools that a skill can use without a permission prompt in Claude Code. Bash, Write, Edit, and network tools follow the host permission rules.
+export const skillToolAllowlist = ['Read', 'Grep', 'Glob', 'LSP', 'Task', 'AskUserQuestion', 'TaskCreate', 'TaskUpdate', 'TaskList', 'TaskGet'];
+// Skills that this repository maintains. All other skills in .agents/skills must be in docs/skill-provenance.json.
+export const localSkills = ['new-app', 'toolchain-cli'];
 // Runtime dependencies that a human approved for each application package. Add an entry only after a dependency review.
 export const runtimeDependencyAllowlist = {};
 
@@ -233,6 +238,87 @@ export function adapterProblems(base = root) {
   return problems;
 }
 
+function listFiles(directory, prefix = '') {
+  const result = [];
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const path = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) result.push(...listFiles(join(directory, entry.name), path));
+    else result.push(path);
+  }
+  return result;
+}
+
+// Skill files must agree with the reviewed state in docs/skill-provenance.json. Skill frontmatter must not grant
+// tools outside skillToolAllowlist or add hooks, and SKILL.md must not contain a pre-prompt command.
+export function skillProblems(base = root) {
+  const problems = [];
+  const directory = join(base, '.agents', 'skills');
+  if (!existsSync(directory)) return problems;
+  const manifestText = readRegularFile(join(base, 'docs', 'skill-provenance.json'));
+  const manifest = manifestText === undefined ? undefined : JSON.parse(manifestText);
+  const reviewed = isObject(manifest?.skills) ? manifest.skills : {};
+  if (manifestText === undefined) problems.push('docs/skill-provenance.json: файл не найден.');
+  const names = readdirSync(directory, { withFileTypes: true }).filter((entry) => !entry.name.startsWith('.'));
+  for (const entry of names) {
+    const name = entry.name;
+    const label = `.agents/skills/${safe(name)}`;
+    if (!entry.isDirectory()) {
+      problems.push(`${label}: ожидался каталог навыка.`);
+      continue;
+    }
+    const skillText = readRegularFile(join(directory, name, 'SKILL.md'));
+    if (skillText === undefined) {
+      problems.push(`${label}: нет SKILL.md.`);
+      continue;
+    }
+    const fields = frontmatter(skillText);
+    if ('hooks' in fields) problems.push(`${label}/SKILL.md: hooks в навыке запрещены.`);
+    if ('allowed-tools' in fields) {
+      const tools = fields['allowed-tools'].split(/[\s,]+/).filter(Boolean);
+      const extra = tools.filter((tool) => !skillToolAllowlist.includes(tool));
+      if (tools.length === 0 || extra.length > 0) problems.push(`${label}/SKILL.md: allowed-tools содержит неразрешённые инструменты: ${safe(extra.join(' ') || '(пусто)')}.`);
+    }
+    if (skillText.includes('!`')) problems.push(`${label}/SKILL.md: команда !\`...\` выполняется при загрузке навыка и запрещена.`);
+    if (localSkills.includes(name)) continue;
+    const record = reviewed[name];
+    if (!isObject(record) || !Array.isArray(record.files)) {
+      problems.push(`${label}: навыка нет в docs/skill-provenance.json.`);
+      continue;
+    }
+    const expected = new Map(record.files.map((file) => [file?.path, file?.sha256]));
+    const actual = listFiles(join(directory, name));
+    for (const path of actual) {
+      const full = join(directory, name, path);
+      if (!expected.has(path)) {
+        problems.push(`${label}/${safe(path)}: файла нет в docs/skill-provenance.json.`);
+        continue;
+      }
+      // One descriptor opened without following links prevents a change between the check and the read.
+      let bytes;
+      try {
+        bytes = readRegularFile(full, undefined, null);
+      } catch {
+        problems.push(`${label}/${safe(path)}: ожидался обычный файл без ссылки.`);
+        continue;
+      }
+      const hash = createHash('sha256').update(bytes).digest('hex');
+      if (hash !== expected.get(path)) problems.push(`${label}/${safe(path)}: SHA-256 не совпадает с docs/skill-provenance.json.`);
+    }
+    for (const path of expected.keys()) if (!actual.includes(path)) problems.push(`${label}/${safe(String(path))}: файл из docs/skill-provenance.json не найден.`);
+  }
+  for (const name of Object.keys(reviewed)) if (!names.some((entry) => entry.name === name)) problems.push(`docs/skill-provenance.json: навык ${safe(name)} не найден.`);
+  // Claude Code reads third-party skills through relative links. A link must stay inside .agents/skills.
+  const claude = join(base, '.claude', 'skills');
+  if (existsSync(claude)) {
+    for (const entry of readdirSync(claude, { withFileTypes: true })) {
+      if (!entry.isSymbolicLink()) continue;
+      const target = readlinkSync(join(claude, entry.name));
+      if (target !== `../../.agents/skills/${entry.name}`) problems.push(`.claude/skills/${safe(entry.name)}: ссылка должна указывать на ../../.agents/skills/${safe(entry.name)}.`);
+    }
+  }
+  return problems;
+}
+
 const indentOf = (line) => line.length - line.trimStart().length;
 
 // GitHub Actions rules from AGENTS.md. The parser reads the line structure of the workflow files in this repository.
@@ -331,6 +417,7 @@ export async function configProblems(base = root, files = trackedFiles(base)) {
   problems.push(...lockfileProblems(apps, readJson(join(base, 'package-lock.json'))));
   problems.push(...structureProblems(files));
   problems.push(...adapterProblems(base));
+  problems.push(...skillProblems(base));
   const workflowDirectory = join(base, '.github', 'workflows');
   for (const name of readdirSync(workflowDirectory)
     .filter((item) => /\.ya?ml$/.test(item))
@@ -344,6 +431,6 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   await main(async () => {
     const problems = await configProblems();
     if (problems.length) throw new Error(`Настройки репозитория не соответствуют документации:\n${problems.join('\n')}`);
-    console.log('Настройки TypeScript, пакетов, структуры и GitHub Actions соответствуют документации.');
+    console.log('Настройки TypeScript, пакетов, структуры, навыков и GitHub Actions соответствуют документации.');
   });
 }
