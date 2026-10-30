@@ -1,0 +1,48 @@
+{
+  "name": "tx-movetorepo",
+  "version": "0.1.0",
+  "description": "Copy local files into a GitHub repository through a new branch and a pull request",
+  "private": false,
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=24.12.0"
+  },
+  "bin": {
+    "tx-movetorepo": "dist/src/cli.js"
+  },
+  "files": [
+    "dist/src/cli.js",
+    "dist/src/files.js",
+    "dist/src/git.js",
+    "dist/src/github.js",
+    "dist/src/tools.js",
+    "README.md",
+    "SECURITY.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "npm run build && vitest run",
+    "start": "npm run build && node dist/src/cli.js",
+    "typecheck": "tsc --project tsconfig.json --noEmit",
+    "build": "node scripts/build.mjs",
+    "prepack": "npm run build",
+    "lint": "eslint . --max-warnings=0",
+    "lint:fix": "eslint . --fix --max-warnings=0",
+    "format": "prettier --ignore-path ../../.prettierignore --write .",
+    "format:check": "prettier --ignore-path ../../.prettierignore --check .",
+    "check": "npm run format:check && npm run lint && npm test"
+  },
+  "exports": {},
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/se-panfilov/toolchain.git",
+    "directory": "apps/moveToRepo"
+  },
+  "keywords": [
+    "git",
+    "github",
+    "cli",
+    "pull-request"
+  ]
+}
