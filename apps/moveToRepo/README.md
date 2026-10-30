@@ -13,8 +13,9 @@ Use [SECURITY.md](SECURITY.md) for security controls and limits.
 - macOS or Linux.
 - Node.js 24.12 or later.
 - Git.
-- GitHub CLI (`gh`), signed in with `gh auth login`. The repository must be a private repository of this GitHub account.
-  Public repositories, organization repositories, and repositories of other users are not permitted, also with write access.
+- GitHub CLI (`gh`), signed in with `gh auth login`. The repository must belong to this GitHub account.
+  Organization repositories and repositories of other users are not permitted, also with write access.
+  Public repositories of this account are permitted. A push to a public repository makes the files public at once, before any merge.
 - A Git user name and email in the Git configuration. The commit uses them.
   The program ignores `GIT_AUTHOR_*` and `GIT_COMMITTER_*` variables. When `commit.gpgSign` is set, Git signs the commit.
 
@@ -86,7 +87,7 @@ The program stops before any network access when one of these rules fails:
 ## What the program does
 
 1. Checks the arguments and reads the local files.
-2. Asks `gh` for the repository and the signed-in user. The repository owner must be this user, and the repository must be private.
+2. Asks `gh` for the repository and the signed-in user. The repository owner must be this user.
    It also checks write access, the archive state, and the default branch.
 3. Makes a shallow clone of the target branch in a private temporary directory. It does not write a work tree.
 4. Shows the plan. `+` is a new file, `~` replaces an existing file, `=` is the same file.

@@ -95,16 +95,16 @@ The user is responsible for the contents of the selected files.
 
 ## Repository owner
 
-- The program reads the signed-in user with `gh api user` and the repository with `gh repo view`, with its visibility.
+- The program reads the signed-in user with `gh api user` and the repository with `gh repo view`.
 - The repository owner must be the same login, without letter case. Organization repositories and repositories of other users stop the run,
   also when the user has write access. This prevents a transfer of local files to a repository that another person controls.
-- The repository must be private: `visibility` is `PRIVATE` and `isPrivate` is true. Anyone can read a public repository,
-  so a push there publishes the files before any merge. Internal and unknown visibility also stop the run.
 - The check runs before the clone and also in a dry-run. The push uses the same `gh` account through `gh auth git-credential`.
+- The check does not read visibility. The owner decided to permit public repositories of the account.
+  Anyone can read a public repository, so a push there publishes the files at once, before any merge.
 - The check does not read collaborators. People that the owner invited to a private repository can read the pushed branch.
 - A user can still transfer the repository to another owner, make it public, or add collaborators later. The check applies only at the time of the run.
 - The account is the active `gh` account. `GH_TOKEN`, `GITHUB_TOKEN`, and `GH_CONFIG_DIR` in the environment can select another account.
-  A person who controls both the arguments and the environment of a run can select their own account and its private repository.
+  A person who controls both the arguments and the environment of a run can select their own account and its repository.
   The program does not pin one approved account. A person with this control can also read the files and send them with other tools.
 
 ## Operation log
