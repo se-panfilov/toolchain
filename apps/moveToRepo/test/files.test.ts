@@ -214,26 +214,28 @@ describe.skipIf(process.platform === 'win32')('reading sources', () => {
     return { root, swap };
   }
 
-  function hookLstat(context: TestContext, onPath: (path: unknown) => void): void {
+  /** Call `onPath` after each call of a file system function. The program code sees the change through its named import. */
+  function hook(context: TestContext, name: 'lstatSync' | 'statSync', onPath: (path: unknown) => void): void {
     // The default export is the mutable CommonJS module. syncBuiltinESMExports copies the change to the named exports.
-    const mutable = fs as { lstatSync: typeof fs.lstatSync };
-    const original = mutable.lstatSync;
+    const mutable = fs as unknown as Record<string, (...args: unknown[]) => unknown>;
+    const original = mutable[name];
+    if (!original) throw new Error(`No fs.${name}`);
     context.onTestFinished(() => {
-      mutable.lstatSync = original;
+      mutable[name] = original;
       syncBuiltinESMExports();
     });
-    mutable.lstatSync = ((path: fs.PathLike, ...rest: unknown[]) => {
-      const stat = (original as (...args: unknown[]) => fs.Stats)(path, ...rest);
+    mutable[name] = (path: unknown, ...rest: unknown[]) => {
+      const result = original(path, ...rest);
       onPath(path);
-      return stat;
-    }) as typeof fs.lstatSync;
+      return result;
+    };
     syncBuiltinESMExports();
   }
 
   test('a parent directory replaced by a link after its check stops the run', (context) => {
     const { root, swap } = swapAfterCheck(context);
     let swapped = false;
-    hookLstat(context, (path) => {
+    hook(context, 'lstatSync', (path) => {
       if (!swapped && (path === 'docs' || path === join(root, 'docs'))) {
         swapped = true;
         swap();
@@ -246,8 +248,9 @@ describe.skipIf(process.platform === 'win32')('reading sources', () => {
   test('a parent directory replaced after the step into it does not change the file', (context) => {
     const { root, swap } = swapAfterCheck(context);
     let swapped = false;
-    hookLstat(context, (path) => {
-      if (!swapped && path === 'notes.txt') {
+    // The swap comes after the step into `docs`, before the file opens. The next name is relative to the entered directory.
+    hook(context, 'statSync', (path) => {
+      if (!swapped && path === '.') {
         swapped = true;
         swap();
       }

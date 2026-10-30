@@ -90,7 +90,6 @@ The program stops before any network access when one of these rules fails:
 4. Shows the plan. `+` is a new file, `~` replaces an existing file, `=` is the same file.
 5. Makes one commit on top of the target branch. The commit message is the list of changed files.
 6. Pushes the commit to a new branch `movetorepo/<random>`. It never pushes to an existing branch and never forces a push.
-   The push tells the server to create the branch only if it does not exist. A branch that appears during the run stops the push.
 7. Opens a pull request with `gh pr create`. The title and the body list the files.
 8. Writes the pull request URL to stdout and removes the temporary directory.
 

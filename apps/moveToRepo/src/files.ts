@@ -135,6 +135,7 @@ export function checkEntries(entries: Entry[]): void {
  * with a relative name and compares the device and inode of `.` with the checked directory. A directory that is replaced
  * by a link after the check gives another inode, and the run stops. The file name is opened relative to the current
  * directory with `O_NOFOLLOW`, so a change of a parent name after the step cannot select another file.
+ * All file checks use the opened descriptor.
  * The current directory is restored at the end. The CLI is synchronous, so no other code sees the change.
  */
 export function readSource(root: string, source: string): { content: Buffer; executable: boolean } {
@@ -156,27 +157,21 @@ export function readSource(root: string, source: string): { content: Buffer; exe
       const entered = statSync('.');
       if (entered.dev !== stat.dev || entered.ino !== stat.ino) throw new Error(`Каталог изменился во время проверки: ${source}`);
     }
-    let stat;
-    try {
-      stat = lstatSync(name);
-    } catch {
-      throw new Error(`Файл не найден: ${source}`);
-    }
-    if (stat.isSymbolicLink()) throw new Error(`Символические ссылки запрещены: ${source}`);
-    if (!stat.isFile()) throw new Error(`Нужен обычный файл: ${source}`);
-    if (stat.nlink !== 1) throw new Error(`Файлы с жёсткими ссылками запрещены: ${source}`);
-    if (stat.size > maxFileSize) throw new Error(`Файл больше ${maxFileSize / 1024 / 1024} МиБ: ${source}`);
+    // Open first, then check the opened file. The checks and the read use the same descriptor, so no path check can go stale.
     let fd;
     try {
       fd = openSync(name, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
-    } catch {
-      throw new Error(`Файл изменился во время проверки: ${source}`);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === 'ELOOP' || code === 'EMLINK') throw new Error(`Символические ссылки запрещены: ${source}`, { cause: error });
+      if (code === 'ENOENT' || code === 'ENOTDIR') throw new Error(`Файл не найден: ${source}`, { cause: error });
+      throw new Error(`Нужен обычный файл: ${source}`, { cause: error });
     }
     try {
       const opened = fstatSync(fd);
-      if (!opened.isFile() || opened.ino !== stat.ino || opened.dev !== stat.dev || opened.nlink !== 1 || opened.size !== stat.size) {
-        throw new Error(`Файл изменился во время проверки: ${source}`);
-      }
+      if (!opened.isFile()) throw new Error(`Нужен обычный файл: ${source}`);
+      if (opened.nlink !== 1) throw new Error(`Файлы с жёсткими ссылками запрещены: ${source}`);
+      if (opened.size > maxFileSize) throw new Error(`Файл больше ${maxFileSize / 1024 / 1024} МиБ: ${source}`);
       const content = Buffer.alloc(opened.size);
       let offset = 0;
       while (offset < content.length) {

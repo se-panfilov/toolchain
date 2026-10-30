@@ -43,7 +43,8 @@ A result is that file names in Cyrillic or other scripts are not supported.
   A rename of a parent after the step has no effect, because the next names are relative to the entered directory.
   The program restores the current directory at the end. The CLI is synchronous, so no other code sees the change.
 - A file must be a regular file with one link. Hard links, directories, devices, and FIFOs stop the run.
-- The file opens relative to the entered directory with `O_NOFOLLOW`. The device and inode of the opened file must be the same as the checked file.
+- The file opens relative to the entered directory with `O_NOFOLLOW`. A link as the file name stops the run.
+  The type, link count, and size checks use the opened descriptor, so they cannot go stale.
 - The program reads the contents once. The same bytes go to the secret check and to Git.
 - The program does not write local files. It writes only to a private temporary directory, mode `0700`, which it removes at the end.
 
@@ -82,11 +83,8 @@ The user is responsible for the contents of the selected files.
 - Files go into the Git index with `hash-object --no-filters` and `update-index`. The commit is made with `commit-tree`, which starts no hooks.
 - A destination that is a directory, a symbolic link, or a submodule in the repository stops the run. A parent that is not a directory stops the run.
 - After the commit, the program compares the changed paths with the list. Another change stops the run before the push.
-- The push sends `<commit>:refs/heads/movetorepo/<random>` with `--force-with-lease=refs/heads/movetorepo/<random>:`.
-  The empty expected value means that the branch must not exist. The server creates the branch in the same operation,
-  or rejects the push. A branch that another process creates after the check stops the push and does not change.
-  The lease cannot replace or move an existing branch. There is no `--force` and no `+` refspec.
-  The program first checks that the branch does not exist on the server, to select a free name.
+- The push sends `<commit>:refs/heads/movetorepo/<random>`. There is no `--force`, no `--force-with-lease`, and no `+` refspec.
+  The program first checks that the branch does not exist on the server.
 - The target branch is changed only when a person merges the pull request.
 
 ## Trust assumptions
@@ -103,6 +101,10 @@ The user is responsible for the contents of the selected files.
 - Two directories with names that are different only in letter case can occur in the repository, for example `Docs` and `docs`.
 - A Ctrl+C during the push or the pull request step can leave a branch without a pull request. See the recovery section in the README.
 - Ctrl+C, `SIGTERM`, and `SIGHUP` remove the temporary directory. `SIGKILL` or a power loss can leave the clone in the temporary directory, mode `0700`.
+- The branch check and the push are two operations. If a user with write access creates the same branch between them,
+  on the base commit or on an ancestor of the new commit, a push without force moves that branch forward. History is not lost,
+  and the target branch does not change. The random part of the name has 32 bits, and the time window is short.
+  The owner accepted this risk instead of a `--force-with-lease` push that only creates a branch.
 - The current directory check helps only when the directory name starts with a dot. Other directories with secrets are not detected.
 - Automatic tests use synthetic local repositories. A manual run used a local repository and a fake `gh`.
   Real pushes to GitHub and real `gh` calls were not tested.
