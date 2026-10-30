@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { checkEntries, checkRoot, maxFileSize, pathSegments, readSource, readSources, secretContent, secretName, targetPath } from '@moveToRepo/files';
+import { directoryId } from '@moveToRepo/tools';
 import { describe, expect, test, type TestContext } from 'vitest';
 
 function fixture(context: TestContext): string {
@@ -220,7 +221,7 @@ describe.skipIf(process.platform === 'win32')('reading sources', () => {
   }
 
   /** Call `onPath` after each call of a file system function. The program code sees the change through its named import. */
-  function hook(context: TestContext, name: 'lstatSync' | 'statSync', onPath: (path: unknown) => void): void {
+  function hook(context: TestContext, name: 'lstatSync' | 'statSync' | 'realpathSync' | 'fstatSync', onPath: (path: unknown) => void): void {
     // The default export is the mutable CommonJS module. syncBuiltinESMExports copies the change to the named exports.
     const mutable = fs as unknown as Record<string, (...args: unknown[]) => unknown>;
     const original = mutable[name];
@@ -255,13 +256,79 @@ describe.skipIf(process.platform === 'win32')('reading sources', () => {
     let swapped = false;
     // The swap comes after the step into `docs`, before the file opens. The next name is relative to the entered directory.
     hook(context, 'statSync', (path) => {
-      if (!swapped && path === '.') {
+      if (!swapped && path === '.' && process.cwd().endsWith('/docs')) {
         swapped = true;
         swap();
       }
     });
     expect(readSource(root, 'docs/notes.txt').content.toString()).toBe('selected');
     expect(swapped).toBe(true);
+  });
+
+  /** A selected root with `config.json`, and a hidden directory with another `config.json`. */
+  function rootSwap(context: TestContext): { root: string; swap: () => void } {
+    const base = realpathSync(fixture(context));
+    const root = join(base, 'selected');
+    const hidden = join(base, '.private');
+    mkdirSync(root);
+    mkdirSync(hidden);
+    writeFileSync(join(root, 'config.json'), 'selected');
+    writeFileSync(join(root, 'second.json'), 'selected');
+    writeFileSync(join(hidden, 'config.json'), 'hidden');
+    writeFileSync(join(hidden, 'second.json'), 'hidden');
+    const swap = (): void => {
+      renameSync(root, `${root}-saved`);
+      symlinkSync(hidden, root);
+    };
+    return { root, swap };
+  }
+
+  test('a root replaced by a link after the root check stops the run', (context) => {
+    const { root, swap } = rootSwap(context);
+    const rootId = directoryId(root);
+    let swapped = false;
+    hook(context, 'realpathSync', (path) => {
+      if (!swapped && path === root) {
+        swapped = true;
+        swap();
+      }
+    });
+    expect(() => readSources(root, [{ source: 'config.json', target: 'config.json' }], rootId)).toThrow(/изменился во время работы/);
+    expect(swapped).toBe(true);
+  });
+
+  test('a root replaced by a link between two files stops the run', (context) => {
+    const { root, swap } = rootSwap(context);
+    const rootId = directoryId(root);
+    let reads = 0;
+    hook(context, 'fstatSync', () => {
+      reads++;
+      if (reads === 1) swap();
+    });
+    expect(() =>
+      readSources(
+        root,
+        [
+          { source: 'config.json', target: 'config.json' },
+          { source: 'second.json', target: 'second.json' }
+        ],
+        rootId
+      )
+    ).toThrow(/изменился во время работы/);
+    expect(reads).toBeGreaterThan(0);
+  });
+
+  test('a parent of the root replaced by a link stops the run', (context) => {
+    const base = realpathSync(fixture(context));
+    mkdirSync(join(base, 'parent/selected'), { recursive: true });
+    mkdirSync(join(base, 'other/selected'), { recursive: true });
+    writeFileSync(join(base, 'parent/selected/a.txt'), 'selected');
+    writeFileSync(join(base, 'other/selected/a.txt'), 'other');
+    const root = join(base, 'parent/selected');
+    const rootId = directoryId(root);
+    renameSync(join(base, 'parent'), join(base, 'parent-saved'));
+    symlinkSync(join(base, 'other'), join(base, 'parent'));
+    expect(() => readSource(root, 'a.txt', rootId)).toThrow(/изменился во время работы/);
   });
 
   test('a file with a private key in its contents is rejected', (context) => {

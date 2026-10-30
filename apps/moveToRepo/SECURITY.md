@@ -38,8 +38,12 @@ A result is that file names in Cyrillic or other scripts are not supported.
 - The current directory cannot be inside a directory that starts with a dot, such as `~/.docker`, `~/.kube`, or `~/.config/gh`.
   The check uses the real path. Such directories often keep secrets in formats that the content check does not find.
 - Each path segment is checked with `lstat`. A symbolic link in any segment stops the run.
-- Node.js has no `openat`. The program uses the current directory as the directory handle.
-  It goes into each directory with a relative name and compares the device and inode of `.` with the checked directory.
+- Node.js has no `openat` or `fchdir`. The program uses the current directory as the directory handle.
+  At the start, it records the device and inode of the directory where the process runs.
+  Each step into this directory by its path, for each file and for the log, checks that identity again.
+  The step back to the start directory is checked too. A rename of the root or of one of its parents,
+  and a replacement by a link, give another identity, and the run stops.
+- Below the root, the program goes into each directory with a relative name and compares the device and inode of `.` with the checked directory.
   A directory that another process replaces with a link after the check gives another inode, and the run stops.
   A rename of a parent after the step has no effect, because the next names are relative to the entered directory.
   The program restores the current directory at the end. The CLI is synchronous, so no other code sees the change.
@@ -95,23 +99,33 @@ The user is responsible for the contents of the selected files.
 - The repository owner must be the same login, without letter case. Organization repositories and repositories of other users stop the run,
   also when the user has write access. This prevents a transfer of local files to a repository that another person controls.
 - The check runs before the clone and also in a dry-run. The push uses the same `gh` account through `gh auth git-credential`.
-- A user can still transfer the repository to another owner later, or add collaborators. The check applies only at the time of the run.
+- The check does not read visibility. The owner decided to permit public repositories of the account.
+  Anyone can read a public repository, so a push there publishes the files at once, before any merge.
+- The check does not read collaborators. People that the owner invited to a private repository can read the pushed branch.
+- A user can still transfer the repository to another owner, make it public, or add collaborators later. The check applies only at the time of the run.
+- The account is the active `gh` account. `GH_TOKEN`, `GITHUB_TOKEN`, and `GH_CONFIG_DIR` in the environment can select another account.
+  A person who controls both the arguments and the environment of a run can select their own account and its repository.
+  The program does not pin one approved account. A person with this control can also read the files and send them with other tools.
 
 ## Operation log
 
 - Path: `__movetorepo-log.md` in the current directory. A source file with this name is rejected.
+- The log is checked and opened relative to the start directory, after its identity check. A replaced root or parent stops the run.
 - Before network access, the program checks the path with `lstat`: a missing file, or a regular file of the current user with one link.
 - Before the push, the file opens with `O_WRONLY | O_APPEND | O_CREAT | O_NOFOLLOW`, mode `0600` for a new file.
   The type, link count, and owner checks use the opened descriptor. A link, also a dangling link, stops the run before the push.
-- Each part of an entry is one append write. The file is never truncated or replaced.
-- Paths and errors in the log have control characters replaced. Paths are in Markdown inline code with a safe fence.
-- The log contains local paths and repository names. It contains no file contents and no tokens.
+  An existing file with access for the group or others is changed to `0600`.
+- Each part of an entry is one append write, followed by `fsync`. The file is never truncated or replaced.
+- Each entry has a random operation ID. The result line has the same ID, so results of parallel runs match their entries.
+- Paths and error text are in Markdown inline code with a safe fence. Control characters are replaced.
+  Known token formats and credentials in URLs and `Authorization` headers are hidden in error text. Other secret formats are not detected.
+- The log contains local paths and repository names, which can be private metadata. It contains no file contents.
 
 ## Trust assumptions
 
 - The user trusts their own Git and `gh` configuration. URL rewrite rules, the SSH command, commit signing, and the user identity come from it.
 - The user trusts the installed Git and `gh` programs and the npm package.
-  A changed package can use the user's write access to all repositories. Run a fixed version, for example `npx tx-movetorepo@0.2.0`.
+  A changed package can use the user's write access to all repositories. Run a fixed version, for example `npx tx-movetorepo@0.3.0`.
 - GitHub and `gh` give correct repository data.
 
 ## Residual risks

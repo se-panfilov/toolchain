@@ -1,8 +1,8 @@
-import { linkSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, linkSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { checkLog, code, formatTime, logName, OperationLog, resultLine, startEntry } from '@moveToRepo/log';
+import { checkLog, code, formatTime, logName, OperationLog, redact, resultLine, startEntry } from '@moveToRepo/log';
 import { describe, expect, test, type TestContext } from 'vitest';
 
 function fixture(context: TestContext): string {
@@ -27,6 +27,7 @@ describe('log text', () => {
 
   test('the entry lists the date, the repository, and each copied file with its local path', () => {
     const text = startEntry({
+      id: 'op-1',
       time,
       directory: '/home/me/work',
       repository: 'me/notes',
@@ -38,13 +39,37 @@ describe('log text', () => {
         { source: 'b.txt', target: 'b.txt', state: 'replace' }
       ]
     });
-    expect(text).toContain(`## ${formatTime(time)}`);
+    expect(text).toContain(`## ${formatTime(time)} · операция \`op-1\``);
+    expect(text).toContain('- ID операции: `op-1`');
     expect(text).toContain(`- Дата и время: ${formatTime(time)}`);
     expect(text).toContain('- Целевой репозиторий: `me/notes` (https://github.com/me/notes)');
     expect(text).toContain('  - `/home/me/work/from-A/some1.txt` → `to-A/some1.txt` (новый)');
     expect(text).toContain('  - `/home/me/work/b.txt` → `b.txt` (замена)');
     expect(text).toContain('- Скопированные файлы (2):');
-    expect(resultLine(time, 'ошибка: a\nb')).toBe(`- Результат (${formatTime(time)}): ошибка: a b\n`);
+    expect(resultLine('op-1', time, 'pull request https://github.com/me/notes/pull/1')).toBe(`- Результат операции \`op-1\` (${formatTime(time)}): pull request https://github.com/me/notes/pull/1\n`);
+    expect(resultLine('op-1', time, 'ошибка:', 'a\nb *c* `d`')).toBe(`- Результат операции \`op-1\` (${formatTime(time)}): ошибка: \`\` a b *c* \`d\` \`\`\n`);
+  });
+});
+
+describe('log redaction', () => {
+  test('known tokens and credentials in URLs and headers are hidden', () => {
+    expect(redact(`token gh${'p'}_${'a'.repeat(36)} end`)).toBe('token [скрыто] end');
+    expect(redact(`github_${'pat'}_${'a'.repeat(30)}`)).toBe('[скрыто]');
+    expect(redact('fatal: https://x-access-token:secret@github.com/me/notes.git')).toBe('fatal: https://[скрыто]@github.com/me/notes.git');
+    expect(redact('Authorization: Bearer abc.def')).toBe('Authorization: Bearer [скрыто]');
+    expect(redact('authorization: abc')).toBe('authorization: [скрыто]');
+    expect(redact('plain error')).toBe('plain error');
+  });
+
+  test('parallel results can be matched to their operations by ID', () => {
+    const lines = [
+      startEntry({ id: 'A', time, directory: '/d', repository: 'me/a', base: 'main', branch: 'movetorepo/a', commit: 'a'.repeat(40), files: [] }),
+      startEntry({ id: 'B', time, directory: '/d', repository: 'me/b', base: 'main', branch: 'movetorepo/b', commit: 'b'.repeat(40), files: [] }),
+      resultLine('A', time, 'ошибка:', 'network'),
+      resultLine('B', time, 'pull request https://github.com/me/b/pull/1')
+    ].join('');
+    expect(lines).toMatch(/Результат операции `A` [^\n]*network/);
+    expect(lines).toMatch(/Результат операции `B` [^\n]*pull\/1/);
   });
 });
 
@@ -62,6 +87,29 @@ describe.skipIf(process.platform === 'win32')('log file', () => {
     expect(readFileSync(path, 'utf8')).toMatch(/^# Журнал moveToRepo\n[\s\S]*\none\ntwo\n$/);
     expect(statSync(path).mode & 0o777).toBe(0o600);
     expect(() => first.write('x')).toThrow(/закрыт/);
+  });
+
+  test('an existing log readable by others is changed to mode 0600', (context) => {
+    const root = fixture(context);
+    writeFileSync(join(root, logName), 'old\n', { mode: 0o644 });
+    chmodSync(join(root, logName), 0o644);
+    OperationLog.open(root).close();
+    expect(statSync(join(root, logName)).mode & 0o777).toBe(0o600);
+  });
+
+  test('a root replaced by a link after the start stops the log before it opens', (context) => {
+    const root = realpathSync(fixture(context));
+    const selected = join(root, 'selected');
+    const other = join(root, 'other');
+    mkdirSync(selected);
+    mkdirSync(other);
+    const before = statSync(selected);
+    renameSync(selected, join(root, 'saved'));
+    symlinkSync(other, selected);
+    const id = { dev: before.dev, ino: before.ino };
+    expect(() => OperationLog.open(selected, id)).toThrow(/изменился во время работы/);
+    expect(() => checkLog(selected, id)).toThrow(/изменился во время работы/);
+    expect(() => statSync(join(other, logName))).toThrow();
   });
 
   test('an existing log is not truncated', (context) => {
