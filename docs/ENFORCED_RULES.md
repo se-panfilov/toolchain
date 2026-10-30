@@ -59,6 +59,8 @@ It runs again when the title or description changes.
 4. A change to files in `apps/<directory>/` outside `test/` requires one version step: patch, minor, or major. A skipped or reduced version is an error.
 5. New or changed packages in `package-lock.json` come from `https://registry.npmjs.org/` with a `sha512` integrity value. A new install script requires a human review. The job lists the changed packages and runs `npm audit --package-lock-only --audit-level=high`.
 
+Dependabot pull requests skip rules 1 and 2 only. The author must be `dependabot[bot]` and the branch must start with `dependabot/`. See [Dependabot](GITHUB_ACTIONS.md#dependabot).
+
 The job does not check the language of the pull request. Russian interface text can appear in it.
 
 ## Limits

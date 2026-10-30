@@ -1,0 +1,47 @@
+# Dependabot version updates for the root npm workspace and the GitHub Actions workflows.
+# See the Dependabot section in docs/GITHUB_ACTIONS.md.
+#
+# Dependabot cannot change the `dependabot/` branch prefix or use the pull request template.
+# The pr-rules job identifies Dependabot by the pull request author and the branch prefix, and skips only
+# the branch name and description checks. The commit, version, lockfile, and npm audit checks stay.
+
+version: 2
+
+updates:
+  # One root lockfile covers all workspaces in apps/*. Applications have no runtime dependencies now.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    # Wait before a new version is proposed. A compromised release is often found and removed in this time.
+    # Security updates do not wait.
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+    # Keep exact versions in root devDependencies. npm run check:config requires them.
+    versioning-strategy: increase
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      # Minor and patch updates come in one pull request. Each major update comes in its own pull request.
+      npm-minor-and-patch:
+        update-types: [minor, patch]
+
+  # Actions stay pinned to full commit SHAs. Dependabot changes the SHA and the version comment together.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      github-actions:
+        patterns: ['*']
