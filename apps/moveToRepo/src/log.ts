@@ -1,5 +1,5 @@
 import { closeSync, constants, fstatSync, lstatSync, openSync, type Stats, writeSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, posix } from 'node:path';
 
 /** The operation log in the current directory. The name starts with `__`. */
 export const logName = '__movetorepo-log.md';
@@ -31,9 +31,9 @@ export function code(value: string): string {
 export type LogFile = { source: string; target: string; state: 'add' | 'replace' };
 export type LogStart = { time: Date; directory: string; repository: string; base: string; branch: string; commit: string; files: LogFile[] };
 
-/** The first part of a log entry. It is written before the push. */
+/** The first part of a log entry. It is written before the push. moveToRepo runs on macOS and Linux, so local paths use `/`. */
 export function startEntry(entry: LogStart): string {
-  const files = entry.files.map((file) => `  - ${code(join(entry.directory, file.source))} → ${code(file.target)} (${file.state === 'add' ? 'новый' : 'замена'})`);
+  const files = entry.files.map((file) => `  - ${code(posix.join(entry.directory, file.source))} → ${code(file.target)} (${file.state === 'add' ? 'новый' : 'замена'})`);
   return [
     '',
     `## ${formatTime(entry.time)}`,
