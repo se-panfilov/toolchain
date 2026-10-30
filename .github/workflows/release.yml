@@ -16,6 +16,7 @@ on:
         default: all
         options:
           - all
+          - reCast
           - reHistory
       dry_run:
         description: Run all checks and npm publish --dry-run. Do not publish or create GitHub releases.

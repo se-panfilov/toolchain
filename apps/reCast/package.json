@@ -1,0 +1,49 @@
+{
+  "name": "tx-recast",
+  "version": "0.1.0",
+  "description": "Interactive conversion of video files to MP4 for Chromecast and other streaming devices on macOS",
+  "private": false,
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=24.12.0"
+  },
+  "bin": {
+    "tx-recast": "dist/src/cli.js"
+  },
+  "files": [
+    "dist/src/cli.js",
+    "dist/src/convert.js",
+    "dist/src/media.js",
+    "dist/src/plan.js",
+    "dist/src/prompts.js",
+    "README.md",
+    "SECURITY.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "npm run build && vitest run",
+    "start": "npm run build && node dist/src/cli.js",
+    "typecheck": "tsc --project tsconfig.json --noEmit",
+    "build": "node scripts/build.mjs",
+    "prepack": "npm run build",
+    "lint": "eslint . --max-warnings=0",
+    "lint:fix": "eslint . --fix --max-warnings=0",
+    "format": "prettier --ignore-path ../../.prettierignore --write .",
+    "format:check": "prettier --ignore-path ../../.prettierignore --check .",
+    "check": "npm run format:check && npm run lint && npm test"
+  },
+  "exports": {},
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/se-panfilov/toolchain.git",
+    "directory": "apps/reCast"
+  },
+  "keywords": [
+    "ffmpeg",
+    "cli",
+    "chromecast",
+    "video",
+    "mp4"
+  ]
+}
