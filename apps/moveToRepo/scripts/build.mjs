@@ -11,7 +11,7 @@ import viteConfig from '../vite.config.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const out = join(root, 'dist');
-const runtime = ['cli', 'files', 'git', 'github', 'tools'];
+const runtime = ['cli', 'files', 'git', 'github', 'log', 'tools'];
 const expected = runtime.map((name) => `src/${name}.js`).sort();
 const directories = new Set(['src']);
 
