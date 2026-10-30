@@ -3,7 +3,12 @@ import { lstatSync, realpathSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { readRegularFile } from './ci/files.mjs';
+
 const root = realpathSync.native(fileURLToPath(new URL('../', import.meta.url)));
+// Hooks configured in lefthook.yml. Keep this list synchronized with the hook sections there.
+const hooks = ['pre-commit', 'commit-msg', 'pre-push'];
+const isProjectWrapper = (text) => text.includes('call_lefthook') && text.includes('node node_modules/lefthook/bin/index.js');
 const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.toUpperCase().startsWith('GIT_')));
 
 function git(args) {
@@ -25,15 +30,22 @@ try {
   } catch (error) {
     if (error.code !== 'ENOENT') throw error;
   }
-  try {
-    lstatSync(join(directory, 'pre-commit'));
-    throw new Error('pre-commit уже существует. Сохраните и проверьте его перед ручной установкой Lefthook.');
-  } catch (error) {
-    if (error.code !== 'ENOENT') throw error;
+  for (const hook of hooks) {
+    let text;
+    try {
+      text = readRegularFile(join(directory, hook), 1024 * 1024);
+    } catch {
+      text = '';
+    }
+    if (text === undefined) continue;
+    // A wrapper from an earlier installation of this project can be replaced. Any other hook, link, or directory stays unchanged.
+    if (!isProjectWrapper(text)) {
+      throw new Error(`${hook} уже существует. Сохраните и проверьте его перед ручной установкой Lefthook.`);
+    }
   }
-  const result = spawnSync(process.execPath, [join(root, 'node_modules/lefthook/bin/index.js'), 'install', 'pre-commit'], { cwd: root, env, encoding: 'utf8', timeout: 30000 });
+  const result = spawnSync(process.execPath, [join(root, 'node_modules/lefthook/bin/index.js'), 'install', ...hooks], { cwd: root, env, encoding: 'utf8', timeout: 30000 });
   if (result.error || result.status !== 0) throw new Error('Lefthook не установил хук. Проверьте зависимости и права доступа.');
-  console.log('Pre-commit хук установлен. Индекс и настройки Git не изменены.');
+  console.log(`Хуки ${hooks.join(', ')} установлены. Индекс и настройки Git не изменены.`);
 } catch (error) {
   console.error(String(error.message).replace(/[\p{Cc}\p{Cf}]/gu, '?'));
   process.exitCode = 1;

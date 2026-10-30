@@ -3,6 +3,11 @@
 These rules apply repository-wide. Toolchain contains local CLI utilities.
 Keep utility-specific requirements in utility documentation and common rules here. Vendor adapters must refer here, not copy rules.
 
+## Enforced rules
+
+ESLint, `npm run check:config`, Git hooks, and the `pr-rules` CI job enforce part of these rules. See [Enforced rules](docs/ENFORCED_RULES.md).
+Fix a failed check. Do not weaken or bypass it without a human decision.
+
 ## Before work
 
 - Read relevant source, package metadata, utility documentation, and scripts before changes or execution.
@@ -132,7 +137,7 @@ If unclear, keep the safer state and ask.
 - Read [the Actions guide](docs/GITHUB_ACTIONS.md) before changing workflows or the application list.
 - Keep `app` choices in `test.yml`, `build.yml`, and `release.yml` synchronized with every directory in `apps/`.
 - Add, remove, or replace choices when applications change. Put `all` first, then directory names in code point order.
-- Run `npm run check:workflows` after every change to `apps/` or `.github/workflows/`.
+- Run `npm run check:workflows` and `npm run check:config` after every change to `apps/`, `configs/`, or `.github/workflows/`.
 - Pin actions to full commit SHAs with version comments, never tags or branches.
 - Give jobs only necessary token permissions. Use `persist-credentials: false` for checkout.
 - Pass inputs through environment variables. Never interpolate input `${{ }}` expressions into `run` text.
@@ -167,7 +172,9 @@ npm run typecheck
 npm run build
 npm test
 npm run check
+npm run check:config
 npm run check:workflows
+npm run hooks:install
 npm test --workspace tx-rehistory
 npm run build --workspace tx-rehistory
 node apps/reHistory/dist/src/cli.js --help

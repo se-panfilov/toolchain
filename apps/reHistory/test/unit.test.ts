@@ -10,7 +10,7 @@ test.each(['2026-02-29T12:00:00Z', '2026-01-01T24:00:00Z', '2026-01-01T12:60:00Z
   expect(() => parseDate(value)).toThrow();
 });
 
-test('раздельные дата и время совпадают с полным ISO-временем', () => {
+test('separate date and time agree with the full ISO time', () => {
   expect(parseStart('2000-02-29', '01:02:03+03:30')).toBe(parseDate('2000-02-29T01:02:03+03:30'));
   expect(parseDate('2000-02-29T00:00:00Z')).toBe(951782400);
 });

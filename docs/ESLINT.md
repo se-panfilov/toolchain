@@ -31,6 +31,12 @@ The table explains which settings are enabled, adapted, or excluded.
 | eslint-plugin-n                                                   | Excluded                                        | The pinned Node.js types already limit APIs. The plugin adds many transitive packages. |
 | `simple-import-sort/imports`, `simple-import-sort/exports`        | Enabled                                         | Keep import and export order consistent.                                               |
 | Internal alias restrictions                                       | Require `@reHistory/*` for runtime modules      | Reject self-package and relative runtime imports. Permit relative test fixtures.       |
+| Other application imports                                         | Rejected in each application                    | Reject `@/*`, another application alias, and paths into another application.           |
+| `@shared/*` imports                                               | Permitted                                       | Reserved for a future common code directory.                                           |
+| Node.js built-in modules                                          | Require the `node:` prefix                      | The list comes from `module.builtinModules` of the running Node.js version.            |
+| `exec`, `execSync`, `shell` option                                | Rejected                                        | Subprocesses use an argument array. Shell parsing must not interpret user data.        |
+| Test names                                                        | English only                                    | Cyrillic in the first argument of `test`, `it`, `describe`, `suite`, or `t.test`.      |
+| Code comments                                                     | English only                                    | The local `toolchain/english-comments` rule reports Cyrillic in comments.              |
 | `functional/functional-parameters`                                | Reject `arguments` through a core selector      | Permit rest parameters and any parameter count without another plugin.                 |
 | `functional/immutable-data`                                       | Excluded                                        | CLI code changes buffers, TTY state, arrays, environment variables, and fixture state. |
 | `functional/readonly-type` generic style                          | Excluded                                        | Preserve the existing TypeScript array notation.                                       |
@@ -45,9 +51,11 @@ Type-aware rules use `projectService` and the application's maintained tsconfig.
 The configuration anchors project discovery to the repository root.
 JavaScript configuration files and repository skill fixtures use syntax checks without a TypeScript project.
 Generated output, dependencies, coverage, reports, and vendored agent files remain excluded.
-When an application adds another internal alias, update its import restrictions and their tests.
+The configuration reads `apps/` and makes the alias restrictions for each application directory.
+A new application gets these rules without a configuration change.
+Russian text in strings and assertions stays valid. It matches the Russian interface.
 
-The Object.assign selectors check direct static calls. They do not follow aliases or dynamic property names.
+The Object.assign and subprocess selectors check direct static code. They do not follow aliases, dynamic property names, or `require` calls.
 These style checks do not establish an execution or data access boundary.
 The configuration does not disable inline comments. Review rule suppression as part of code review.
 

@@ -46,7 +46,7 @@ function snapshot(path: string): Map<string, Buffer> {
 const settings = { flow: 'dates' as const, start: 1700000000, interval: 2 };
 
 for (const format of ['sha1', 'sha256'])
-  test(`проверка экспорта ${format} не подменяет каталог родительским Git-репозиторием`, (t) => {
+  test(`export verification of ${format} does not replace the directory with a parent Git repository`, (t) => {
     const repo = fixture(t, format);
     const target = join(repo.path, '..', 'discovery.git');
     exportPlan(makePlan(repo, settings), target);
@@ -60,7 +60,7 @@ for (const format of ['sha1', 'sha256'])
     assert.deepEqual(snapshot(target), before);
   });
 
-test('проверка экспорта требует собственные HEAD, config, objects и refs', (t) => {
+test('export verification requires its own HEAD, config, objects, and refs', (t) => {
   const repo = fixture(t);
   const target = join(repo.path, '..', 'required-layout.git');
   exportPlan(makePlan(repo, settings), target);
@@ -78,7 +78,7 @@ test('проверка экспорта требует собственные HE
   }
 });
 
-test('dangling symbolic refs видны в аудите и блокируют переписывание локальных веток и тегов', (t) => {
+test('dangling symbolic refs are visible in the audit and block the rewrite of local branches and tags', (t) => {
   const repo = fixture(t);
   for (const name of ['refs/heads/dangling', 'refs/tags/dangling']) {
     const file = join(repo.common, name);
@@ -93,7 +93,7 @@ test('dangling symbolic refs видны в аудите и блокируют п
   }
 });
 
-test('экспорт отвергает посторонние файлы и каталоги внутри objects и refs', (t) => {
+test('export rejects unrelated files and directories in objects and refs', (t) => {
   const repo = fixture(t);
   const target = join(repo.path, '..', 'nested-check.git');
   exportPlan(makePlan(repo, settings), target);
@@ -110,7 +110,7 @@ test('экспорт отвергает посторонние файлы и к�
   assert.equal(verifyExport(target).ok, false);
 });
 
-test('экспорт отвергает посторонние данные в config, HEAD и манифесте', (t) => {
+test('export rejects unrelated data in config, HEAD, and the manifest', (t) => {
   const repo = fixture(t);
   const target = join(repo.path, '..', 'metadata-check.git');
   exportPlan(makePlan(repo, settings), target);
@@ -128,7 +128,7 @@ test('экспорт отвергает посторонние данные в c
   assert.throws(() => verifyExport(target), /манифест/);
 });
 
-test('схема манифеста отвергает неверные типы, дубликаты и дополнительные поля', (t) => {
+test('the manifest schema rejects incorrect types, duplicates, and additional fields', (t) => {
   const repo = fixture(t);
   const target = join(repo.path, '..', 'schema-check.git');
   exportPlan(makePlan(repo, settings), target);
@@ -163,7 +163,7 @@ test('схема манифеста отвергает неверные типы
 });
 
 for (const format of ['sha1', 'sha256'])
-  test(`проверяются pack/idx и packed-refs ${format}, посторонние данные отвергаются`, (t) => {
+  test(`pack/idx and packed-refs of ${format} are verified, and unrelated data is rejected`, (t) => {
     const repo = fixture(t, format);
     const target = join(repo.path, '..', 'packed-check.git');
     exportPlan(makePlan(repo, settings), target);
@@ -203,7 +203,7 @@ for (const format of ['sha1', 'sha256'])
     assert.equal(verifyExport(target).ok, true);
   });
 
-test('аудит читает stash, скрытые ссылки и исходную историю; побайтово ничего не меняет', (t) => {
+test('the audit reads stash, hidden refs, and the source history, and changes no byte', (t) => {
   const repo = fixture(t);
   repo.git(['checkout', '-q', '-b', 'side']);
   repo.git(['commit', '-q', '--allow-empty', '-m', 'Side']);
@@ -225,7 +225,7 @@ test('аудит читает stash, скрытые ссылки и исходн
   assert.deepEqual(snapshot(repo.path), before);
 });
 
-test('нормализуются даты и tagger вложенных тегов, есть режим сохранения', (t) => {
+test('dates and tagger of nested tags are normalized, and a keep mode is available', (t) => {
   const repo = fixture(t);
   const original = repo.git(['cat-file', 'tag', 'annotated']);
   const preserved = makePlan(repo, { ...settings, tagPolicy: 'preserve' });
@@ -239,7 +239,7 @@ test('нормализуются даты и tagger вложенных тего�
 });
 
 for (const format of ['sha1', 'sha256'])
-  test(`экспорт ${format}: исходник неизменен, нет старых коммитов/тегов, файловые данные сохранены`, (t) => {
+  test(`export of ${format}: the source is unchanged, old commits and tags are absent, and file data is kept`, (t) => {
     const repo = fixture(t, format);
     repo.git(['checkout', '-q', '-b', 'side']);
     repo.git(['commit', '-q', '--allow-empty', '-m', 'Исключённый']);
@@ -271,7 +271,7 @@ for (const format of ['sha1', 'sha256'])
     assert.deepEqual(snapshot(target), verificationBefore);
   });
 
-test('проверка экспорта обнаруживает лишний объект и постороннюю ссылку', (t) => {
+test('export verification finds an extra object and an unrelated ref', (t) => {
   const repo = fixture(t);
   const target = join(repo.path, '..', 'export.git');
   exportPlan(makePlan(repo, settings), target);
@@ -286,7 +286,7 @@ test('проверка экспорта обнаруживает лишний о
   assert(report.errors.some((e) => e.includes('refs/tags/unexpected')));
 });
 
-test('проверка экспорта выявляет неверную дату tagger и отсутствие манифеста', (t) => {
+test('export verification finds an incorrect tagger date and a missing manifest', (t) => {
   const repo = fixture(t);
   const target = join(repo.path, '..', 'export.git');
   exportPlan(makePlan(repo, settings), target);
@@ -308,7 +308,7 @@ test('проверка экспорта выявляет неверную дат
   assert.throws(() => verifyExport(target));
 });
 
-test('экспорт не перезаписывает каталоги/символические ссылки и не пишет внутрь source', (t) => {
+test('export does not overwrite directories or symbolic links and does not write into the source', (t) => {
   const repo = fixture(t);
   const plan = makePlan(repo, settings);
   const before = snapshot(repo.path);
@@ -323,7 +323,7 @@ test('экспорт не перезаписывает каталоги/симв
   assert.deepEqual(snapshot(repo.path), before);
 });
 
-test('конкурирующее изменение source останавливает экспорт до создания каталога', (t) => {
+test('a concurrent source change stops export before directory creation', (t) => {
   const repo = fixture(t);
   const plan = makePlan(repo, settings);
   repo.git(['commit', '-q', '--allow-empty', '-m', 'new']);
@@ -332,7 +332,7 @@ test('конкурирующее изменение source останавлив�
   assert.equal(existsSync(target), false);
 });
 
-test('demo: URL обязателен; опасные URL и несовместимые параметры отвергаются', (t) => {
+test('demo: the URL is required, and dangerous URLs and incompatible options are rejected', (t) => {
   const root = temp(t);
   const directory = join(root, 'must-not-exist');
   const cli = spawnSync(process.execPath, [fileURLToPath(new URL('../dist/src/cli.js', import.meta.url)), '--demo', '--demo-dir', directory]);
@@ -356,7 +356,7 @@ test('demo: URL обязателен; опасные URL и несовмести
     assert.throws(() => parseArguments(args));
 });
 
-test('demo отказывает для непустого сервера до создания файлов и push', (t) => {
+test('demo refuses a non-empty server before file creation and push', (t) => {
   const root = temp(t);
   const directory = join(root, 'demo');
   let pushes = 0;
@@ -377,7 +377,7 @@ test('demo отказывает для непустого сервера до с
   assert.equal(existsSync(directory), false);
 });
 
-test('полный demo с адаптером транспорта: реальные push, аудит, экспорт и проверка', (t) => {
+test('full demo with a transport adapter: real push, audit, export, and verification', (t) => {
   const root = temp(t);
   const server = join(root, 'test-server.git');
   // The server belongs to this test only. The product does not create it.
@@ -406,7 +406,7 @@ test('полный demo с адаптером транспорта: реальн
   assert.equal(verifyExport(result.exported.repository).ok, true);
 });
 
-test('проверка экспорта отвергает посторонние служебные файлы', (t) => {
+test('export verification rejects unrelated service files', (t) => {
   const repo = fixture(t);
   const target = join(repo.path, '..', 'export.git');
   exportPlan(makePlan(repo, settings), target);
@@ -414,13 +414,13 @@ test('проверка экспорта отвергает посторонни�
   assert(verifyExport(target).errors.some((e) => e.includes('Неожиданный служебный')));
 });
 
-test('вне явного сетевого адаптера сетевые и файловые Git-транспорты запрещены', (t) => {
+test('network and file Git transports are prohibited outside the explicit network adapter', (t) => {
   const repo = fixture(t);
   assert.throws(() => repo.git(['ls-remote', 'https://example.invalid/repo.git']), /not allowed/);
   assert.throws(() => repo.git(['ls-remote', repo.path]), /not allowed/);
 });
 
-test('CLI запускается через символическую ссылку, как npm bin', (t) => {
+test('the CLI starts through a symbolic link, as npm bin does', (t) => {
   const root = temp(t);
   const link = join(root, 'tx-rehistory.js');
   symlinkSync(fileURLToPath(new URL('../dist/src/cli.js', import.meta.url)), link);
@@ -429,7 +429,7 @@ test('CLI запускается через символическую ссыл�
   assert.match(result.stdout.toString(), /--demo-remote/);
 });
 
-test('проверка экспорта отвергает дополнительные персональные настройки config', (t) => {
+test('export verification rejects additional personal config settings', (t) => {
   const repo = fixture(t);
   const target = join(repo.path, '..', 'export.git');
   exportPlan(makePlan(repo, settings), target);
@@ -437,7 +437,7 @@ test('проверка экспорта отвергает дополнител�
   assert(verifyExport(target).errors.some((e) => e.includes('посторонние настройки')));
 });
 
-test('refs/codex/* сохраняются при переписывании и не попадают в экспорт', (t) => {
+test('refs/codex/* are kept during the rewrite and do not go into the export', (t) => {
   const repo = fixture(t);
   const checkpoint = 'refs/codex/turn-diffs/checkpoints/session/turn/1793225263690/checkpoint';
   const original = repo.text(['rev-parse', 'HEAD']);
@@ -454,14 +454,14 @@ test('refs/codex/* сохраняются при переписывании и �
   assert(!new Repository(target).refs().some((r) => r.name.startsWith('refs/codex/')));
 });
 
-test('refs/codex без разделителя пространства имён не разрешает посторонние refs', (t) => {
+test('refs/codex without a namespace separator does not permit unrelated refs', (t) => {
   const repo = fixture(t);
   repo.git(['update-ref', 'refs/codex-untrusted/test', repo.text(['rev-parse', 'HEAD'])]);
   assert.throws(() => makePlan(repo, settings), /Неподдерживаемые/);
 });
 
 for (const format of ['sha1', 'sha256']) {
-  test(`экспорт ${format} сохраняет старый zero-padded filemode, но отклоняет другие ошибки tree`, (t) => {
+  test(`export of ${format} keeps an old zero-padded filemode but rejects other tree errors`, (t) => {
     const repo = fixture(t, format);
     const blob = repo.text(['hash-object', '-w', '--stdin'], 'legacy content');
     const childData = Buffer.concat([Buffer.from('100644 file\0'), Buffer.from(blob, 'hex')]);
