@@ -115,7 +115,7 @@ Other tests preserve existing hooks and configuration, reject a linked hooks dir
 
 The security review reproduced a textconv bypass in Gitleaks staged mode.
 A configured driver could replace a staged secret with clean output and execute an external command.
-The wrapper now rejects diff._.textconv, diff._.command, and diff.external before scanning.
+The wrapper now rejects `diff.<driver>.textconv`, `diff.<driver>.command`, and `diff.external` before scanning.
 The regression first reproduced a false success, then verified refusal without command execution.
 
 Another regression reproduced secret exposure in Prettier's syntax-error excerpt.

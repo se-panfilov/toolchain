@@ -39,8 +39,25 @@ const ruleFileNames = new Set(['agents.md', 'skill.md', 'claude.md', 'gemini.md'
 const lockfiles = new Set(['package-lock.json', 'npm-shrinkwrap.json', 'yarn.lock', 'pnpm-lock.yaml', 'bun.lockb', 'bun.lock']);
 const vendoredSkills = /^\.(agents|claude|codex|gemini)\/skills\//;
 const fullSha = /^[^\s@]+@[0-9a-f]{40}$/;
-// Events that run with write access or secrets for code or text from pull requests and comments.
-export const forbiddenWorkflowEvents = ['pull_request_target', 'workflow_run', 'issue_comment', 'pull_request_review', 'pull_request_review_comment'];
+// Events that run with write access or secrets for code or text from pull requests, comments, and discussions.
+// Do not add `issues`: `issues:` is also a permission name, so the key form would reject valid workflows.
+export const forbiddenWorkflowEvents = ['pull_request_target', 'workflow_run', 'issue_comment', 'pull_request_review', 'pull_request_review_comment', 'discussion', 'discussion_comment'];
+// Agent host settings files. Agents load them automatically, and they can run commands, start MCP servers, grant tool
+// permissions, or replace AGENTS.md. Paths are case-insensitive, because the macOS file system is case-insensitive.
+export const hostConfigPatterns = [
+  /^\.claude\/settings(\.local)?\.json$/i,
+  /^\.mcp\.json$/i,
+  /^\.gemini\/settings\.json$/i,
+  /^\.codex\/config\.toml$/i,
+  /^\.cursor\//i,
+  /^\.vscode\/(tasks|settings|mcp)\.json$/i,
+  /(^|\/)AGENTS\.override\.md$/i,
+  /(^|\/)(CLAUDE|GEMINI)\.local\.md$/i,
+  /^\.(cursorrules|windsurfrules)$/i,
+  /^\.clinerules(\/|$)/i
+];
+// Agent host settings files that a human approved. Adding an entry is a human decision.
+export const hostConfigAllowlist = [];
 // Shell scripts that are permitted. Use TypeScript or Node.js unless a documented reason requires Bash.
 export const shellScriptAllowlist = [];
 // Tools that a skill can use without a permission prompt in Claude Code. Bash, Write, Edit, and network tools follow the host permission rules.
@@ -193,6 +210,9 @@ export function structureProblems(files) {
       problems.push(`${safe(path)}: файл правил агентов допустим только в корне репозитория.`);
     if (parts.includes('dist')) problems.push(`${safe(path)}: сгенерированный dist/ не хранится в Git.`);
     if (lockfiles.has(name) && path !== 'package-lock.json') problems.push(`${safe(path)}: используйте только корневой package-lock.json.`);
+    if (hostConfigPatterns.some((pattern) => pattern.test(path)) && !hostConfigAllowlist.includes(path)) {
+      problems.push(`${safe(path)}: файл настроек агента не входит в hostConfigAllowlist. Такие файлы может добавить только человек.`);
+    }
     if (/\.(sh|bash|zsh)$/.test(name) && !vendoredSkills.test(path) && !shellScriptAllowlist.includes(path)) {
       problems.push(`${safe(path)}: скрипт Bash не входит в разрешённый список. Используйте Node.js или обоснуйте исключение.`);
     }
@@ -320,16 +340,55 @@ export function skillProblems(base = root) {
 }
 
 const indentOf = (line) => line.length - line.trimStart().length;
+const isComment = (line) => /^\s*#/.test(line);
+// Remove a trailing comment. A `#` after a space starts a YAML comment outside quotes. Values in this check do not quote `#`.
+const withoutComment = (line) => line.replace(/(^|\s)#.*$/, '');
+const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const permissionsKey = /^(\s*)['"]?permissions['"]?\s*:(.*)$/;
+
+// Line forms of a forbidden event, each with optional quotes: a key, a block list item, a flow list on the `on` line,
+// and a flow list item on a continuation line.
+export function eventPatterns(event) {
+  const name = escapeRegExp(event);
+  return [
+    new RegExp(`^\\s*['"]?${name}['"]?\\s*:`),
+    new RegExp(`^\\s*-\\s*['"]?${name}['"]?\\s*(#.*)?$`),
+    new RegExp(`^\\s*['"]?on['"]?\\s*:.*[\\s\\[{,'"]${name}\\b`),
+    new RegExp(`^\\s*['"]?${name}['"]?\\s*[,\\]}]`)
+  ];
+}
+
+// Top-level permissions must be read-only: `read-all`, `{}`, or scopes without `write`. `write-all` is rejected at each level.
+// A job can still give `write` to one scope, for example `security-events: write` for CodeQL.
+function permissionProblems(file, lines) {
+  const problems = [];
+  const top = lines.findIndex((line) => permissionsKey.exec(line)?.[1] === '');
+  if (top < 0) {
+    problems.push(`${file}: нет permissions на верхнем уровне.`);
+  } else {
+    const inline = withoutComment(permissionsKey.exec(lines[top] ?? '')?.[2] ?? '').trim();
+    const end = lines.findIndex((line, position) => position > top && line.trim() !== '' && !isComment(line) && indentOf(line) === 0);
+    const block = inline === '' ? lines.slice(top + 1, end < 0 ? lines.length : end).filter((line) => !isComment(line)) : [];
+    if ([inline, ...block].some((part) => /\bwrite\b/.test(withoutComment(part)))) {
+      problems.push(`${file}:${top + 1}: permissions на верхнем уровне должны быть только для чтения. Дайте write отдельному job.`);
+    }
+  }
+  lines.forEach((line, index) => {
+    const match = permissionsKey.exec(line);
+    if (match && /^['"]?write-all\b/.test(withoutComment(match[2] ?? '').trim())) problems.push(`${file}:${index + 1}: permissions: write-all запрещено.`);
+  });
+  return problems;
+}
 
 // GitHub Actions rules from AGENTS.md. The parser reads the line structure of the workflow files in this repository.
+// It is not a full YAML parser: anchors, aliases, multi-line keys, and other unusual forms can bypass it.
 export function workflowRuleProblems(file, text) {
   const lines = text.split(/\r?\n/);
-  const problems = [];
-  if (!lines.some((line) => /^permissions:/.test(line))) problems.push(`${file}: нет permissions на верхнем уровне.`);
+  const problems = permissionProblems(file, lines);
+  const code = lines.filter((line) => !isComment(line));
   for (const event of forbiddenWorkflowEvents) {
-    const key = new RegExp(`^\\s*${event}\\s*:`);
-    const inline = new RegExp(`^on:.*\\b${event}\\b`);
-    if (lines.some((line) => key.test(line) || inline.test(line))) problems.push(`${file}: событие ${event} запрещено.`);
+    const patterns = eventPatterns(event);
+    if (code.some((line) => patterns.some((pattern) => pattern.test(line)))) problems.push(`${file}: событие ${event} запрещено.`);
   }
   lines.forEach((line, index) => {
     const number = index + 1;

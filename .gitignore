@@ -12,6 +12,21 @@ dist
 dist-*
 coverage
 *.local
+
+# Secrets and local agent settings
+.env
+.env.*
+!.env.example
+CLAUDE.local.md
+.claude/settings.local.json
+
+# Media files for manual reCast runs
+*.mp4
+*.m4v
+*.mkv
+*.mov
+*.avi
+*.webm
 reports/
 coverage/
 auth/
