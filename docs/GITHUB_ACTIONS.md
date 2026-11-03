@@ -138,20 +138,20 @@ After a network error during publication, examine the registry before a new star
 
 ## Security controls
 
-| Control                | Implementation                                                                                                                 |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| Token permissions      | The default is `contents: read`. Release sets `{}` and gives each job only the necessary permissions.                          |
-| OIDC token             | Only the real `publish` job has `id-token: write`. It does not install dependencies or run builds.                             |
-| Write access to GitHub | Only `github-release` has `contents: write`. It does not install dependencies.                                                 |
-| Checkout credentials   | All jobs use `persist-credentials: false`.                                                                                     |
-| Actions                | Each action is pinned to a full commit SHA with the version in a comment.                                                      |
-| Trigger events         | No `pull_request_target`, `workflow_run`, `issue_comment`, or pull request review events. `npm run check:config` rejects them. |
-| Input handling         | Inputs go to scripts through environment variables, not through `${{ }}` in shell text.                                        |
-| Dependency scripts     | `npm ci`, `npm pack`, and `npm publish` use `--ignore-scripts`. No dependency cache is used.                                   |
-| Archive checks         | Paths, entry types, package metadata, bin entry points, install scripts, and secret patterns are checked.                      |
-| Archive identity       | The publish job compares the archive integrity with the value recorded by Build.                                               |
-| Concurrency            | Only one Release run is active at a time. A new run waits.                                                                     |
-| Static analysis        | CodeQL checks source and workflows. Only its `analyze` job can upload results with `security-events`.                          |
+| Control                | Implementation                                                                                                                                                                                     |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Token permissions      | The default is `contents: read`. Release sets `{}` and gives each job only the necessary permissions. `npm run check:config` rejects `write` at the top level and `write-all` at each level.       |
+| OIDC token             | Only the real `publish` job has `id-token: write`. It does not install dependencies or run builds.                                                                                                 |
+| Write access to GitHub | Only `github-release` has `contents: write`. It does not install dependencies.                                                                                                                     |
+| Checkout credentials   | All jobs use `persist-credentials: false`.                                                                                                                                                         |
+| Actions                | Each action is pinned to a full commit SHA with the version in a comment.                                                                                                                          |
+| Trigger events         | No `pull_request_target`, `workflow_run`, `issue_comment`, pull request review, or discussion events. `npm run check:config` rejects them. See [Workflow check](ENFORCED_RULES.md#workflow-check). |
+| Input handling         | Inputs go to scripts through environment variables, not through `${{ }}` in shell text.                                                                                                            |
+| Dependency scripts     | `npm ci`, `npm pack`, and `npm publish` use `--ignore-scripts`. No dependency cache is used.                                                                                                       |
+| Archive checks         | Paths, entry types, package metadata, bin entry points, install scripts, and secret patterns are checked.                                                                                          |
+| Archive identity       | The publish job compares the archive integrity with the value recorded by Build.                                                                                                                   |
+| Concurrency            | Only one Release run is active at a time. A new run waits.                                                                                                                                         |
+| Static analysis        | CodeQL checks source and workflows. Only its `analyze` job can upload results with `security-events`.                                                                                              |
 
 Limits:
 

@@ -31,12 +31,44 @@ The shared [configuration](../configs/eslint.config.mjs) has these project rules
 | Package metadata     | `description`, `license`, `type`, `engines`, a narrow `files` list, `exports`, `repository.directory`, required scripts, one bin entry, and the shebang.                                                                                                                              |
 | Dependencies         | Runtime dependencies are in `runtimeDependencyAllowlist`. Applications have no devDependencies. Root devDependencies use exact versions.                                                                                                                                              |
 | Lockfile             | The application version agrees with `package-lock.json`.                                                                                                                                                                                                                              |
-| Structure            | Uppercase rule file names, rule files only in the root, no tracked `dist/`, one lockfile, no shell scripts outside `shellScriptAllowlist`, and equal skill adapter descriptions.                                                                                                      |
-| Workflows            | Top-level `permissions`, actions pinned to full SHAs with a version comment, `persist-credentials: false` for checkout, no `${{ }}` in `run`, and no `pull_request_target`, `workflow_run`, `issue_comment`, `pull_request_review`, or `pull_request_review_comment` event.           |
+| Structure            | Uppercase rule file names, rule files only in the root, no tracked `dist/`, one lockfile, no shell scripts outside `shellScriptAllowlist`, no agent host settings files outside `hostConfigAllowlist`, and equal skill adapter descriptions.                                          |
+| Workflows            | Read-only top-level `permissions`, no `write-all` at any level, actions pinned to full SHAs with a version comment, `persist-credentials: false` for checkout, no `${{ }}` in `run`, and no forbidden event. See [Workflow check](#workflow-check).                                   |
 | Skills               | Each third-party skill file in `.agents/skills` has the SHA-256 value from `docs/skill-provenance.json`. `allowed-tools` contains only tools from `skillToolAllowlist`. SKILL.md has no `hooks` field and no pre-prompt command. Links in `.claude/skills` point to `.agents/skills`. |
 | Node.js version      | `.nvmrc` contains an exact version `X.Y.Z`. The release jobs use this Node.js version and its npm.                                                                                                                                                                                    |
 
+### Agent host settings files
+
+Agents load some files automatically. These files can run commands, start MCP servers, grant tool permissions, or replace AGENTS.md.
+The structure check rejects these tracked files. Names are not case-sensitive, because the macOS file system is not case-sensitive.
+
+- `.claude/settings.json` and `.claude/settings.local.json`
+- `.mcp.json`, `.gemini/settings.json`, and `.codex/config.toml`
+- All files in `.cursor/`, and `.vscode/tasks.json`, `.vscode/settings.json`, and `.vscode/mcp.json`
+- `AGENTS.override.md` in each directory. Codex reads it instead of AGENTS.md.
+- `CLAUDE.local.md` and `GEMINI.local.md` in each directory
+- `.cursorrules`, `.windsurfrules`, and `.clinerules` as a file or a directory
+
+`hostConfigAllowlist` in [scripts/ci/config.mjs](../scripts/ci/config.mjs) is empty. Only a human can add an entry.
+`.claude/agents/*.md`, `.claude/skills/**`, and `.github/copilot-instructions.md` are permitted.
+
+### Workflow check
+
+The workflow check rejects these events: `pull_request_target`, `workflow_run`, `issue_comment`, `pull_request_review`, `pull_request_review_comment`, `discussion`, and `discussion_comment`.
+They run with secrets or write access for code or text that other users write.
+The check ignores comment lines. It finds each event, with or without quotes, in four forms:
+
+- A key, for example `workflow_run:`.
+- A block list item, for example `- pull_request_target`.
+- A flow list or map on the `on` line, for example `"on": [push, issue_comment]`.
+- An item on a continuation line of a flow list, for example `  issue_comment]`.
+
+`issues` is not in the list, because `issues:` is also a permission name.
+
+Top-level `permissions` must be read-only: `read-all`, `{}`, or scopes without `write`.
+`permissions: write-all` is rejected at each level. A job can give `write` to one scope, for example `security-events: write` for CodeQL.
+
 The workflow check reads the line structure of the workflow files. It is not a complete YAML parser.
+YAML anchors and aliases, multi-line keys, and other unusual forms can bypass it. A review must examine each workflow change.
 
 ## Git hooks
 
