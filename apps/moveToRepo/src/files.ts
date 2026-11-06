@@ -10,11 +10,17 @@ const maxPathLength = 1024;
 const maxSegmentLength = 255;
 
 /**
- * One path segment: ASCII letters, digits, and `_ + @ - .`, with single spaces between other characters.
+ * One path segment: Latin and Russian Cyrillic letters, digits, and `_ + @ - .`, with single spaces between other characters.
  * The first character cannot be a dot, a hyphen, or a space. This rejects `.`, `..`, `.git`, `.env`, and option-like names.
- * ASCII only: similar-looking letters from other scripts and Unicode normalization cannot change the path.
+ * The check uses the NFC form, so a decomposed letter from the file system, such as a Cyrillic short i, is the same name.
  */
-const segmentPattern = /^[A-Za-z0-9_+@](?:[A-Za-z0-9_+@.-]| (?! ))*$/;
+const segmentPattern = /^[A-Za-zА-яЁё0-9_+@](?:[A-Za-zА-яЁё0-9_+@.-]| (?! ))*$/;
+/**
+ * Each word, a sequence of letters without other characters, must use one script.
+ * This rejects a Cyrillic letter that looks like a Latin letter inside a Latin word, for example a Cyrillic `e` in `file.txt`.
+ */
+const wordPattern = /[A-Za-zА-яЁё]+/g;
+const oneScriptWord = /^(?:[A-Za-z]+|[А-яЁё]+)$/;
 
 // Typical files with keys, certificates with private keys, password stores, and credentials.
 const secretExtensions = new Set(['pem', 'key', 'p12', 'pfx', 'p8', 'jks', 'keystore', 'ppk', 'asc', 'gpg', 'pgp', 'kdbx', 'ovpn', 'env', 'tfstate', 'tfvars', 'secret', 'secrets']);
@@ -53,7 +59,10 @@ const secretContentPatterns: [RegExp, string][] = [
 export type Entry = { source: string; target: string };
 export type SourceFile = Entry & { content: Buffer; executable: boolean };
 
-/** Check a relative path and return its segments. A leading `./` is accepted for a source path. */
+/**
+ * Check a relative path and return its segments. A leading `./` is accepted for a source path.
+ * The rules apply to the NFC form. The segments keep the given form, so the file opens with the name the user gave.
+ */
 export function pathSegments(value: string, label: string, leadingDot = false): string[] {
   const path = leadingDot && value.startsWith('./') ? value.slice(2) : value;
   if (path === '') throw new Error(`${label}: пустой путь.`);
@@ -64,10 +73,14 @@ export function pathSegments(value: string, label: string, leadingDot = false): 
     if (segment === '') throw new Error(`${label}: пустой сегмент пути (// или / в конце): ${value}`);
     if (segment === '..' || segment === '.') throw new Error(`${label}: выход из каталога запрещён: ${value}`);
     if (segment.startsWith('.')) throw new Error(`${label}: файлы и каталоги, имя которых начинается с точки, запрещены: ${value}`);
-    if (segment.length > maxSegmentLength || !segmentPattern.test(segment)) {
-      throw new Error(`${label}: недопустимые символы в пути: ${value}. Разрешены латинские буквы, цифры, _ + @ - . и одиночные пробелы внутри имени.`);
+    const normal = segment.normalize('NFC');
+    if (normal.length > maxSegmentLength || !segmentPattern.test(normal)) {
+      throw new Error(`${label}: недопустимые символы в пути: ${value}. Разрешены латинские и русские буквы, цифры, _ + @ - . и одиночные пробелы внутри имени.`);
     }
-    if (segment.endsWith('.') || segment.endsWith(' ')) throw new Error(`${label}: имя не может заканчиваться точкой или пробелом: ${value}`);
+    if (!(normal.match(wordPattern) ?? []).every((word) => oneScriptWord.test(word))) {
+      throw new Error(`${label}: латинские и русские буквы смешаны в одном слове: ${value}. Похожие буквы из разных алфавитов запрещены.`);
+    }
+    if (normal.endsWith('.') || normal.endsWith(' ')) throw new Error(`${label}: имя не может заканчиваться точкой или пробелом: ${value}`);
   }
   return segments;
 }
@@ -110,11 +123,15 @@ export function checkRoot(root: string, expected: DirectoryId = directoryId(root
   if (actual.dev !== expected.dev || actual.ino !== expected.ino) throw new Error(`Каталог ${root} изменился во время работы. Запуск остановлен.`);
 }
 
-/** Map a source path and a destination directory to the path in the repository. `.` is the repository root. */
+/**
+ * Map a source path and a destination directory to the path in the repository. `.` is the repository root.
+ * The repository path uses the NFC form, so the same name in a different Unicode form cannot make a second file.
+ */
 export function targetPath(source: string, dest: string): string {
   const segments = pathSegments(source, 'Файл', true);
   const name = segments.at(-1) ?? '';
-  return dest === '.' ? name : `${pathSegments(dest, '--dest').join('/')}/${name}`;
+  const target = dest === '.' ? name : `${pathSegments(dest, '--dest').join('/')}/${name}`;
+  return target.normalize('NFC');
 }
 
 /** Check the list: limits, secret names, and duplicate destinations, also without letter case. */

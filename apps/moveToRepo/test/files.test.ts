@@ -20,6 +20,18 @@ describe('path segments', () => {
     expect(pathSegments('a/My notes+v2@x.md', 'f')).toEqual(['a', 'My notes+v2@x.md']);
   });
 
+  test('accept Russian Cyrillic names and Latin and Cyrillic words in one name', () => {
+    expect(pathSegments('Манускрипты/Младшая Звезда.md', 'f')).toEqual(['Манускрипты', 'Младшая Звезда.md']);
+    expect(pathSegments('__build/Младшая Звезда - beta - 0_3_0.docx', 'f')).toEqual(['__build', 'Младшая Звезда - beta - 0_3_0.docx']);
+    expect(pathSegments('Ёлка/ёжик й.txt', 'f')).toEqual(['Ёлка', 'ёжик й.txt']);
+  });
+
+  test('a decomposed name is checked in the NFC form and keeps its given form', () => {
+    const decomposed = 'Новый ёж.txt'.normalize('NFD');
+    expect(decomposed).not.toBe('Новый ёж.txt');
+    expect(pathSegments(decomposed, 'f')).toEqual([decomposed]);
+  });
+
   test.each([
     ['', /пустой путь/],
     ['/etc/passwd', /относительный путь/],
@@ -36,8 +48,15 @@ describe('path segments', () => {
     ['a\\b.txt', /недопустимые символы/],
     ['a/b\nc.txt', /недопустимые символы/],
     ['a/b‮c.txt', /недопустимые символы/],
-    ['файл.txt', /недопустимые символы/],
-    ['filе.txt', /недопустимые символы/],
+    ['filе.txt', /смешаны в одном слове/],
+    ['сredentials.json', /смешаны в одном слове/],
+    ['Звeзда.md', /смешаны в одном слове/],
+    ['a/Mладшая.md', /смешаны в одном слове/],
+    ['ґ.txt', /недопустимые символы/],
+    ['і.txt', /недопустимые символы/],
+    ['α.txt', /недопустимые символы/],
+    ['е\u0301.txt', /недопустимые символы/],
+    ['а\u200bб.txt', /недопустимые символы/],
     ['a  b.txt', /недопустимые символы/],
     [' a.txt', /недопустимые символы/],
     ['a.txt ', /заканчиваться/],
@@ -83,6 +102,27 @@ describe('destinations', () => {
     expect(() => targetPath('a.txt', '../x')).toThrow(/выход из каталога/);
     expect(() => targetPath('a.txt', '.github')).toThrow(/начинается с точки/);
     expect(() => targetPath('a.txt', '/abs')).toThrow(/относительный путь/);
+  });
+
+  test('a Cyrillic name goes into a Cyrillic or Latin directory in the NFC form', () => {
+    expect(targetPath('__build/Младшая Звезда - beta - 0_3_0.epub', 'export')).toBe('export/Младшая Звезда - beta - 0_3_0.epub');
+    expect(targetPath('Манускрипты/Младшая Звезда.md', 'Рукописи')).toBe('Рукописи/Младшая Звезда.md');
+    expect(targetPath('Новый ёж.txt'.normalize('NFD'), 'Ёлка'.normalize('NFD'))).toBe('Ёлка/Новый ёж.txt'.normalize('NFC'));
+  });
+
+  test('the same name in two Unicode forms or in another letter case is one destination', () => {
+    expect(() =>
+      checkEntries([
+        { source: 'a/ёж.txt', target: targetPath('a/ёж.txt', 'd') },
+        { source: 'b/ёж.txt'.normalize('NFD'), target: targetPath('b/ёж.txt'.normalize('NFD'), 'd') }
+      ])
+    ).toThrow(/один путь/);
+    expect(() =>
+      checkEntries([
+        { source: 'a/Звезда.md', target: 'd/Звезда.md' },
+        { source: 'b/звезда.md', target: 'd/звезда.md' }
+      ])
+    ).toThrow(/один путь/);
   });
 
   test('duplicate destinations are rejected, also without letter case', () => {
@@ -163,6 +203,13 @@ describe.skipIf(process.platform === 'win32')('reading sources', () => {
     writeFileSync(join(root, 'run.sh'), '#!/bin/sh\n', { mode: 0o755 });
     expect(readSource(root, './from-A/some1.txt')).toEqual({ content: Buffer.from('one'), executable: false });
     expect(readSource(root, 'run.sh').executable).toBe(true);
+  });
+
+  test('a file with a Cyrillic name is read', (context) => {
+    const root = fixture(context);
+    mkdirSync(join(root, 'Манускрипты'));
+    writeFileSync(join(root, 'Манускрипты/Младшая Звезда.md'), 'текст');
+    expect(readSource(root, 'Манускрипты/Младшая Звезда.md').content.toString('utf8')).toBe('текст');
   });
 
   test('a symbolic link to a file outside the directory is rejected', (context) => {

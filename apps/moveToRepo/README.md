@@ -76,7 +76,9 @@ The program stops before any network access when one of these rules fails:
 - A path segment cannot start with a dot. For example, `.env`, `.git`, and `.github` are not permitted.
 - The current directory cannot be inside a directory that starts with a dot, for example `~/.docker` or `~/.config/gh`.
   The program checks the real path, after links.
-- Paths contain only ASCII letters, digits, `_`, `+`, `@`, `-`, `.`, and single spaces inside a name.
+- Paths contain only Latin letters, Russian Cyrillic letters (`А-Я`, `а-я`, `Ё`, `ё`), digits, `_`, `+`, `@`, `-`, `.`, and single spaces inside a name.
+  One word cannot mix Latin and Cyrillic letters. For example, `Младшая Звезда - beta.docx` is permitted, and `Mладшая.md` with a Latin `M` is not.
+- The repository path uses the Unicode NFC form of the name.
 - A file and each directory in its path cannot be a symbolic link. A file with hard links is not permitted.
 - Typical secret files are not permitted, for example `*.pem`, `*.key`, `*.p12`, `id_rsa`, `credentials.json`, and `*.env`.
   All extensions of a name are checked, so `terraform.tfstate.backup` is not permitted too.
