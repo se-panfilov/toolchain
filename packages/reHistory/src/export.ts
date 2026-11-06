@@ -1,6 +1,6 @@
 import { existsSync, lstatSync, mkdirSync, realpathSync, readFileSync, readdirSync, writeFileSync, openSync, readSync, closeSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
-import { Repository, runGit, parts, field, validateIdentity, type Plan, type Options } from '@reHistory/engine';
+import { Repository, runGit, parts, field, validateIdentity, normalizeCommitMessage, type Plan, type Options } from '@reHistory/engine';
 import { inventory, objectClosure, stamp } from '@reHistory/audit';
 
 export const manifestName = 'rehistory-export.json';
@@ -10,7 +10,7 @@ type Manifest = {
   refs: { name: string; oid: string }[];
   objects: string[];
   commitOrder: string[];
-  policy: { start: number; interval: number; tagPolicy: 'normalize' | 'preserve'; identity?: Options['identity']; tagIdentity?: Options['tagIdentity'] };
+  policy: { start: number; interval: number; tagPolicy: 'normalize' | 'preserve'; identity?: Options['identity']; tagIdentity?: Options['tagIdentity']; commitMessage?: string };
 };
 function within(parent: string, child: string): boolean {
   const rel = relative(parent, child);
@@ -66,13 +66,21 @@ function loadManifest(path: string): Manifest {
   if (!Array.isArray(m.commitOrder) || !m.commitOrder.length || !m.commitOrder.every(oid) || !unique(m.commitOrder)) fail();
   const width = m.commitOrder[0].length;
   if (![...m.objects, ...m.commitOrder, ...m.refs.map((r) => r.oid)].every((item) => item.length === width)) fail();
-  if (!exactKeys(m.policy, ['start', 'interval', 'tagPolicy'], ['identity', 'tagIdentity'])) fail();
+  if (!exactKeys(m.policy, ['start', 'interval', 'tagPolicy'], ['identity', 'tagIdentity', 'commitMessage'])) fail();
   const { start, interval, tagPolicy, identity, tagIdentity } = m.policy;
   if (!Number.isSafeInteger(start) || start < 0 || !Number.isSafeInteger(interval) || interval < 1 || interval > 31536000) fail();
   const last = start + (m.commitOrder.length - 1) * interval;
   if (!Number.isSafeInteger(last) || last > 253402300799 || !['normalize', 'preserve'].includes(tagPolicy)) fail();
   if (identity !== undefined && !validIdentity(identity)) fail();
   if (tagIdentity !== undefined && !validIdentity(tagIdentity)) fail();
+  if (m.policy.commitMessage !== undefined) {
+    if (typeof m.policy.commitMessage !== 'string') fail();
+    try {
+      normalizeCommitMessage(m.policy.commitMessage);
+    } catch {
+      fail();
+    }
+  }
   return m;
 }
 
@@ -312,12 +320,14 @@ export function verifyExport(path: string) {
       const a = stamp(raw, 'author');
       const c = stamp(raw, 'committer');
       const expected = manifest.policy.start + index * manifest.policy.interval;
+      if (manifest.policy.commitMessage !== undefined) check(parts(raw).message.equals(normalizeCommitMessage(manifest.policy.commitMessage)), `Неверное сообщение коммита ${oid}.`);
       check(a.timestamp === expected && c.timestamp === expected && a.timezone === '+0000' && c.timezone === '+0000', `Неверные даты коммита ${oid}.`);
       if (manifest.policy.identity) {
         const who = `${manifest.policy.identity.name} <${manifest.policy.identity.email}>`;
         check(a.identity === who && c.identity === who, `Неверная идентичность коммита ${oid}.`);
       }
       for (const h of parts(raw).headers) {
+        if (manifest.policy.commitMessage !== undefined) check(field(h) !== 'encoding', `Неверная кодировка сообщения коммита ${oid}.`);
         check(!['gpgsig', 'gpgsig-sha256', 'mergetag'].includes(field(h)), `Остался заголовок подписи в ${oid}.`);
         if (field(h) === 'parent') check(times.has(h.subarray(7).toString('ascii')) && times.get(h.subarray(7).toString('ascii'))! < expected, `Неверный порядок родителей ${oid}.`);
       }
@@ -380,7 +390,14 @@ export function exportPlan(plan: Plan, destination: string) {
       refs,
       objects: [...expectedObjects].sort(),
       commitOrder: plan.commitOrder,
-      policy: { start: plan.options.start, interval: plan.options.interval, identity: plan.options.identity, tagPolicy: plan.options.tagPolicy || 'normalize', tagIdentity: plan.options.tagIdentity }
+      policy: {
+        start: plan.options.start,
+        interval: plan.options.interval,
+        identity: plan.options.identity,
+        tagPolicy: plan.options.tagPolicy || 'normalize',
+        tagIdentity: plan.options.tagIdentity,
+        commitMessage: plan.options.commitMessage
+      }
     };
     // Exclude old commit and tag IDs, source paths, and other branch names.
     writeFileSync(join(target, manifestName), JSON.stringify(manifest, null, 2) + '\n', { flag: 'wx', mode: 0o600 });

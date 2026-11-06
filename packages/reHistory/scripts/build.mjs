@@ -9,7 +9,7 @@ import viteConfig from '../vite.config.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const out = join(root, 'dist');
-const runtime = ['engine', 'audit', 'export', 'demo', 'prompts', 'cli'];
+const runtime = ['engine', 'audit', 'export', 'demo', 'prompts', 'cli', 'remote'];
 const tests = ['engine.test', 'features.test', 'prompts.test'];
 const expected = runtime.map((name) => `src/${name}.js`).sort();
 const legacy = [...[...runtime, ...tests].map((name) => `${name}.js`), ...tests.map((name) => `test/${name}.js`)];

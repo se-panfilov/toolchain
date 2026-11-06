@@ -339,7 +339,7 @@ test('demo: URL обязателен; опасные URL и несовмести
     'https://example.org/a\n'
   ])
     assert.throws(() => validateDemoURL(url));
-  assert.equal(validateDemoURL('git@example.org:owner/repo.git'), 'ssh://git@example.org/owner/repo.git');
+  assert.equal(validateDemoURL('git@example.org:owner/repo.git'), 'git@example.org:owner/repo.git');
   for (const args of [['--demo'], ['--audit', '--export', '/tmp/x'], ['--json'], ['--repo', '/tmp/x', '--verify-export', '/tmp/y'], ['--demo-remote', 'https://example.org/repo']])
     assert.throws(() => parseArguments(args));
 });
@@ -402,7 +402,7 @@ test('проверка экспорта отвергает посторонни�
   assert(verifyExport(target).errors.some((e) => e.includes('Неожиданный служебный')));
 });
 
-test('вне demo сетевые и файловые Git-транспорты запрещены', (t) => {
+test('вне явного сетевого адаптера сетевые и файловые Git-транспорты запрещены', (t) => {
   const repo = fixture(t);
   assert.throws(() => repo.git(['ls-remote', 'https://example.invalid/repo.git']), /not allowed/);
   assert.throws(() => repo.git(['ls-remote', repo.path]), /not allowed/);

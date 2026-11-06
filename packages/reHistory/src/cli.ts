@@ -2,7 +2,8 @@
 import { stdin, stdout } from 'node:process';
 import { pathToFileURL } from 'node:url';
 import { realpathSync } from 'node:fs';
-import { Repository, makePlan, applyPlan, validateIdentity, defaultBackupBranch } from '@reHistory/engine';
+import { Repository, makePlan, applyPlan, validateIdentity, normalizeCommitMessage, defaultBackupBranch, type Plan } from '@reHistory/engine';
+import { pushRemotes, preparePush, executePush } from '@reHistory/remote';
 import { auditRepository, auditText } from '@reHistory/audit';
 import { exportDestination, exportPlan, verifyExport } from '@reHistory/export';
 import { runDemo, validateDemoURL } from '@reHistory/demo';
@@ -31,8 +32,9 @@ Node.js 24.12+, Git 2.39+. Запуск: node /путь/toolchain/packages/reHis
   --demo-dir NEW_PATH  Новый каталог demo; по умолчанию — системный temp.
   --help               Справка.
 
-Обычное переписывание и экспорт интерактивны. Push есть только в demo,
-только на явно указанный сервер, без force push. Публикация npm не выполняется.
+Переписывание и экспорт интерактивны. После переписывания можно отдельно
+подтвердить push ветки и её тегов с точными force-with-lease. По умолчанию push выключен.
+Demo отправляет только тестовые данные на явно указанный сервер. Публикация npm не выполняется.
 Подробности и восстановление: README.md и SECURITY.md пакета.`);
 }
 export function parseDate(value: string): number {
@@ -176,6 +178,33 @@ async function main(): Promise<void> {
       }
     }
   }
+  async function offerPush(plan: Plan): Promise<void> {
+    try {
+      if (!(await choose('Сделать push?', false))) return;
+      const remotes = pushRemotes(repo, plan.head);
+      if (!remotes.names.length) {
+        print('Remote не настроен. Локальная история сохранена.', 'warning');
+        return;
+      }
+      const index = remotes.names.length === 1 ? 0 : await prompts.select('Remote для push', remotes.names, remotes.initial);
+      const push = preparePush(plan, remotes.names[index]);
+      print(`Push → ${push.remote} · ${push.url}`, 'accent');
+      for (const ref of push.refs) print(`${ref.destination}: ${ref.expected ? ref.expected.slice(0, 12) : 'новая ссылка'} → ${ref.oid.slice(0, 12)}`);
+      print('Другие ссылки и старые копии остаются без изменений.', 'muted');
+      if (!(await choose('Отправить ветку и теги?', false))) {
+        print('Push пропущен.');
+        return;
+      }
+      executePush(push);
+      print('✓ Push выполнен.', 'success');
+    } catch (error) {
+      if (error instanceof PromptCancelled) {
+        print('Push отменён. Локальная история сохранена.');
+        return;
+      }
+      throw new Error(`Локальная история сохранена. Push не подтверждён; проверьте remote перед повтором.\n${error instanceof Error ? error.message : error}`, { cause: error });
+    }
+  }
   try {
     let backupBranch: string | undefined;
     if (!mode.destination) {
@@ -231,12 +260,26 @@ async function main(): Promise<void> {
     if (identity) {
       if (await choose('То же имя/email для тегов?', true)) tagIdentity = identity;
     } else if (await choose('Заменить создателей тегов?', false)) tagIdentity = await newIdentity();
+    let commitMessage: string | undefined;
+    if (await choose('Заменить сообщения всех коммитов?', false)) {
+      for (;;) {
+        const value = await ask('Новое сообщение');
+        try {
+          normalizeCommitMessage(value);
+          commitMessage = value;
+          break;
+        } catch (error) {
+          print(error instanceof Error ? error.message : error);
+        }
+      }
+    }
     print('Готовлю план…');
-    const plan = makePlan(repo, { start, interval, identity, backupBranch, tagPolicy, tagIdentity });
+    const plan = makePlan(repo, { start, interval, identity, backupBranch, tagPolicy, tagIdentity, commitMessage });
     print('\nПлан', 'accent');
     print(`Коммиты: ${plan.commits} · шаг: ${interval} с · теги: ${plan.selected.filter((r) => r.name.startsWith('refs/tags/')).length}`);
     print(`${new Date(start * 1000).toISOString()} → ${new Date((start + (plan.commits - 1) * interval) * 1000).toISOString()}`);
     print(`Автор и коммитер: ${identity ? `${identity.name} <${identity.email}>` : 'без изменений'}`);
+    print(`Сообщения: ${commitMessage === undefined ? 'без изменений' : commitMessage}`);
     print(`Теги: даты ${tagPolicy === 'normalize' ? 'нормализовать' : 'сохранить исходными'}; создатель ${tagIdentity ? `${tagIdentity.name} <${tagIdentity.email}>` : 'без изменений'}`);
     print(mode.destination ? 'Исходник сохранится.' : `Бекап: ${backupBranch || 'нет'}`, 'muted');
     for (const ref of plan.selected) print(`  ${ref.name}  ${ref.oid.slice(0, 12)} → ${plan.mapping.get(ref.oid)!.slice(0, 12)}`, 'muted');
@@ -262,6 +305,7 @@ async function main(): Promise<void> {
       const result = applyPlan(plan);
       print(`✓ Готово · коммиты: ${plan.commits}`, 'success');
       print(`Восстановление: ${result.recovery}${result.backupPrefix ? `\nБекап-ссылки: ${result.backupPrefix}` : ''}`, 'muted');
+      await offerPush(plan);
     }
   } finally {
     prompts.close();
