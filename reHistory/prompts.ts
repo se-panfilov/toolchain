@@ -8,14 +8,14 @@ export class PromptCancelled extends Error {
 type Key = { name?: string; ctrl?: boolean; meta?: boolean; sequence?: string };
 function safe(value: string): string { return value.replace(/[\p{Cc}\p{Cf}]/gu, '?'); }
 
-// ANSI добавляется только после очистки текста; отчёты в pipe остаются plain text.
+// Add ANSI colors only after text sanitization. Keep pipe output without colors.
 export function terminalStyle(output: Pick<WriteStream, 'isTTY'> = stdout) {
   const enabled = Boolean(output.isTTY) && process.env.TERM !== 'dumb' && !('NO_COLOR' in process.env) && process.env.FORCE_COLOR !== '0';
   const color = (code: number) => (text: string) => enabled ? `\x1b[${code}m${text}\x1b[0m` : text;
   return { plain: (text: string) => text, accent: color(36), muted: color(2), strong: color(1), success: color(32), warning: color(33), error: color(31) };
 }
 
-/** Каждый вопрос владеет своими обработчиками и восстанавливает состояние TTY. */
+/** Each prompt owns its handlers and restores the TTY state. */
 export class TerminalPrompts {
   input: ReadStream;
   output: WriteStream;
@@ -54,8 +54,8 @@ export class TerminalPrompts {
           settled = true;
           resolve(value.trim());
         });
-        // Это содержимое редактируемой строки, а не подпись или placeholder.
-        // Очистка строки пользователем оставляет пустой ответ для валидатора.
+        // Put the initial value in the editable line, not in a label or placeholder.
+        // If the user clears the line, pass an empty value to the validator.
         rl.write(safe(initial));
       });
     } finally {
@@ -70,7 +70,7 @@ export class TerminalPrompts {
     }
   }
 
-  /** Взаимоисключающие чекбоксы: стрелки двигают фокус, пробел отмечает вариант. */
+  /** Use exclusive checkboxes. Arrows move focus. Space selects an answer. */
   async confirm(question: string, defaultYes: boolean): Promise<boolean> {
     this.check();
     const wasRaw = Boolean(this.input.isRaw);
@@ -110,7 +110,7 @@ export class TerminalPrompts {
           if (key.name === 'up' || key.name === 'down') { focused = 1 - focused; render(); }
           else if (key.name === 'space') { selected = focused; render(); }
           else if (key.name === 'return' || key.name === 'enter') finish();
-          // Цифры и буквенные ответы намеренно не подтверждают опасные операции.
+          // Do not accept digits or letters as confirmation of destructive operations.
         };
         emitKeypressEvents(this.input);
         this.input.on('keypress', keypress);
@@ -119,7 +119,7 @@ export class TerminalPrompts {
         process.once('SIGTERM', cancel);
         this.input.setRawMode(true);
         this.input.resume();
-        // Вставка текста в bracketed paste не должна выбирать и подтверждать ответ.
+        // Do not let bracketed paste select or confirm an answer.
         this.output.write(`\x1b[?2004h${this.style.accent('◆')} ${this.style.strong(safe(question))}\n`);
         render();
       });

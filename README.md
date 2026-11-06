@@ -1,5 +1,10 @@
 # Toolchain
 
-CLI-утилиты для локальной работы. Предпочитаемый язык — TypeScript с прямым запуском на Node.js.
+Toolchain is a set of CLI utilities for local work.
+Use TypeScript with direct Node.js execution for new utilities.
 
-- [reHistory](reHistory/README.md) — нормализация дат коммитов и тегов, аудит локальной истории, проверяемый экспорт и автоматический demo с явным URL сервера.
+- [reHistory](reHistory/README.md) changes Git dates and makes an export.
+
+The documentation uses English with ASD-STE100 writing rules.
+Code comments use English.
+The user interface uses Russian.

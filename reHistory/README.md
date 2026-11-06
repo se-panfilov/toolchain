@@ -1,212 +1,522 @@
 # reHistory
 
-CLI для нормализации истории текущей ветки Git, аудита всего локального хранилища и экспорта выбранной истории в самостоятельный репозиторий. Интерфейс на русском языке. TypeScript запускается прямо на Node.js, без установки зависимостей.
+reHistory changes commit dates in the current Git branch.
+It can make an export without changes to the source repository.
+The user interface uses Russian.
 
-**Нормализованные даты искусственные: они не устанавливают фактическое время написания кода.** Проверки относятся к локальным метаданным Git. Содержимое файлов и сообщений, подмодули, внешние копии, серверные журналы и сетевая активность не очищаются.
+Use [TERMINOLOGY.md](TERMINOLOGY.md) for technical terms and documentation rules.
+Use [SECURITY.md](SECURITY.md) for security controls and limits.
 
-## Требования
+## Safety
 
-- Node.js 24.12+; `.nvmrc` проекта выбирает ветку Node.js 24.
-- Git 2.39+.
-- macOS — проверенная платформа. Реализация использует API Node.js и Git без bash, но Windows/Linux отдельно не проверялись.
-- Для обычного переписывания и экспорта нужен интерактивный ANSI-терминал (Terminal, iTerm и аналогичные). TERM=dumb не поддерживает требуемое редактирование и отклоняется до начала диалога. Аудит, повторная проверка экспорта и demo обходятся без TTY.
+**CAUTION: Keep a complete repository copy in a different location before you change a repository.**
+A changed history has different object IDs.
 
-Далее `node /путь/toolchain/reHistory/cli.ts` можно использовать из любого каталога. Если `--repo` отсутствует, выбирается текущий каталог. Пути с пробелами заключайте в кавычки. `--help` показывает справку.
+**CAUTION: Stop other Git operations before you start this program.**
+Close Git tools that can change the same repository.
 
-## Аудит без изменений
+Changed dates do not show the time of the work.
+Other copies can keep the initial dates.
+Files, messages, tag names, and submodules can also contain dates.
+The program does not remove these dates.
 
-```sh
-node /путь/toolchain/reHistory/cli.ts --repo /путь/к/проекту --audit
-node /путь/toolchain/reHistory/cli.ts --repo /путь/к/проекту --audit --json
-```
+## Requirements
 
-Аудит ничего не пишет и не требует чистого дерева, отсутствия stash или attached HEAD. Он показывает:
+- Node.js 24.12 or later.
+- Git 2.39 or later.
+- An ANSI terminal for a history change or an export.
+- A complete repository with a local branch that contains a commit.
 
-- все локальные refs, включая ветки, теги, remote-tracking, stash, notes и скрытые пространства имён;
-- принадлежность конечного коммита каждой ссылки к текущей истории;
-- даты автора и коммитера **всех доступных коммитов в хранилище**, включая недостижимые;
-- отдельные даты и идентичности создателей annotated-тегов, включая старые объекты тегов;
-- reflog, объекты вне текущих refs, резервные ссылки, файлы восстановления и блокировки;
-- shallow/partial clone, grafts, alternates, дополнительные worktree, незавершённые операции и наличие подмодулей в вершине текущей истории.
+macOS is the test platform.
+Linux and Windows do not have different test results.
+External packages and a build step are not necessary for the source program.
 
-Даты в текстовом отчёте — Unix-секунды с исходным смещением часового пояса. JSON содержит структурированные `refs`, `commits`, `tags`, `reflog`, `unreachable`, `metadata`, `warnings`. Вывод может содержать персональные сведения; храните перенаправленные отчёты как чувствительные файлы. Сам скрипт отчёт на диск не сохраняет.
+An interactive terminal is not necessary for the audit, export check, or demo.
+The interactive modes do not operate with `TERM=dumb`.
 
-Код завершения `0` означает, что опись завершена, **а не отсутствие старых дат**. Код `2` означает неполноту аудита (например, shallow/partial clone, отсутствующие объекты или изменение refs в процессе). Сеть и lazy fetch запрещены. Повреждения/ошибки, при которых отчёт нельзя построить, завершают CLI с кодом `1`. Аудит видит доступное локальное хранилище, но не проверяет сервер.
+## Command paths
 
-## Переписывание на месте
+Replace the example paths with your paths.
+Put paths that contain spaces in double quotes.
 
-Сначала dry-run:
-
-```sh
-node /путь/toolchain/reHistory/cli.ts --repo /путь/к/проекту --dry-run
-node /путь/toolchain/reHistory/cli.ts --repo /путь/к/проекту
-```
-
-Диалог:
-
-1. Бекап-ветка и резервные ссылки затронутых тегов — «Да» по умолчанию. Предлагается фиксированное имя `rehistory-backup/original`, без даты, времени и счётчика. Можно ввести другое допустимое имя. Если ветка уже существует, запуск останавливается; имя автоматически не меняется и ветка не перезаписывается.
-2. Интервал между соседними коммитами топологического обхода — `1` секунда по умолчанию, допустимы целые значения 1–31536000.
-3. Начало истории задаётся **двумя отдельными полями**: дата (по умолчанию сегодня, формат `ГГГГ-ММ-ДД`) и время (по умолчанию `00:00:00`). Время можно ввести как `18:30` или `18:30:45`. Без суффикса используется системный часовой пояс; для точного смещения доступны `18:30:45+01:00` и `17:30:45Z`. Несуществующее местное время при переводе часов отклоняется. Для неоднозначного времени укажите явное смещение. Даты должны находиться в пределах 1970–9999 годов. Итог записывается в UTC; последние коммиты могут оказаться в будущем.
-4. Замена имён/email **авторов и коммитеров** всех выбранных коммитов — «Нет» по умолчанию. При отказе исходные идентичности сохраняются.
-5. Нормализация собственных дат annotated-тегов — **«Да» по умолчанию**. Каждый тег, включая вложенный, получает дату своего конечного коммита и пояс `+0000`. Можно явно сохранить исходную дату и пояс.
-6. Замена имени/email создателей тегов (`tagger`). Если введена новая идентичность коммитов, предлагается применить её к тегам («Да» по умолчанию). Иначе предлагается отдельный ввод («Нет» по умолчанию). Идентичности из Git config автоматически не подставляются.
-7. Компактный план показывает меняющиеся refs (хеши сокращены до 12 символов), диапазон дат, идентичности, политику тегов и удаляемые подписи. Затем нужно отдельное подтверждение применения («Нет» по умолчанию). Удаление подписей требует дополнительного согласия.
-
-В вопросах с вариантами отображаются взаимоисключающие чекбоксы `☑`/`☐`. Вариант по умолчанию уже отмечен, фокус находится на нём. **↑/↓** перемещают фокус, **пробел** отмечает вариант, **Enter** подтверждает отмеченный ответ. Перемещение фокуса само по себе не меняет ответ. Цифры `1`/`2` больше не используются; одновременный выбор «Да» и «Нет» невозможен.
-
-Оформление использует цветовые акценты: вопросы — бирюзовые, успех — зелёный, предупреждения — жёлтые, ошибки — красные. Подсказки о клавишах в диалоге не выводятся. `NO_COLOR` или `FORCE_COLOR=0` отключают цвет; при перенаправлении вывода и в JSON цветовые коды не добавляются. Выбор различим и без цвета.
-
-В текстовых вопросах значение по умолчанию **уже введено в редактируемую строку после вопроса**, а не показано в квадратных скобках. Enter принимает текущий текст; его можно править стрелками, Backspace и Delete, Ctrl+U очищает строку. Если стереть всё, валидатор получит пустую строку: удалённое значение автоматически не подставляется заново. История ввода в readline отключена.
-
-Ctrl+C отменяет любой интерактивный вопрос, Esc — вопрос с чекбоксами. Raw mode и обработчики восстанавливаются; отмена клавишами завершает CLI с кодом `130`. Простое подтверждение отмеченного «Нет» штатно отменяет операцию с кодом `0`. Перед записью и удалением подписей по умолчанию отмечено «Нет». Не прерывайте процесс во время применения.
-
-### Область изменения
-
-Переписываются все коммиты, достижимые из текущей локальной ветки, сама текущая ветка и теги, конечные коммиты которых входят в эту историю. Остальные ветки, `origin/*` и теги вне выбранной истории сохраняются. Теги на blob/tree также не меняются. Теги глобальны: изменение тега на общем предке видно при просмотре любых веток.
-
-Сохраняются деревья, файлы, побайтовые сообщения, пустые коммиты и упорядоченный список родителей, включая merge. Авторская дата и дата коммитера одинаковы. Родитель всегда раньше потомка; в разветвлённой истории конкретные родитель и потомок могут разделяться несколькими интервалами общего обхода.
-
-У annotated-тегов сохраняются имя и сообщение; ссылка на объект, дата и tagger обрабатываются по выбранной политике. Неизменяемые сообщения могут сами содержать старые даты или `Signed-off-by`. Нестандартные/неполные теги без tagger приводят к отказу.
-
-При изменении объектов старые подписи теряют силу. Удаляются `gpgsig`, `gpgsig-sha256`, `mergetag` и стандартные блоки подписей тегов (PGP/SSH/X.509). Новые подписи не создаются.
-
-Dry-run не создаёт даже объектов Git, бекапов и файлов блокировки/восстановления. Обычный режим не выполняет push/fetch, очистку reflog, GC или изменение файлов рабочего дерева.
-
-## Экспорт в самостоятельный репозиторий
+Without `--repo`, the program uses the current directory.
 
 ```sh
-node /путь/toolchain/reHistory/cli.ts --repo /путь/к/проекту --export /путь/к/new-export.git --dry-run
-node /путь/toolchain/reHistory/cli.ts --repo /путь/к/проекту --export /путь/к/new-export.git
+node /path/to/toolchain/reHistory/cli.ts --help
 ```
 
-Используется тот же диалог нормализации, но без вопроса о бекап-ветке: **исходный репозиторий целиком остаётся неизменным**, включая старые объекты и reflog. Экспорт не требует предварительного переписывания на месте.
+## Audit procedure
 
-Результат — новый **bare-репозиторий** без рабочего дерева. Родительский каталог должен существовать, путь результата — отсутствовать и находиться вне исходного проекта/его служебного каталога. Существующие каталоги и символические ссылки не перезаписываются.
+1. Start the audit.
 
-Экспорт переносит только выбранную ветку и соответствующие теги. Исходные commit/tag-объекты не копируются: записываются их рассчитанные новые версии. Исходные tree/blob-объекты копируются по содержимому с проверкой хешей, без checkout, hardlink и alternates. Не переносятся посторонние ветки/теги, remote/config исходника, stash, бекапы, reflog, файлы восстановления и недостижимые объекты. Если исходный объект уже полностью совпадает с планом нормализации, его хеш может совпасть с новым — это допустимо.
+   ```sh
+   node /path/to/toolchain/reHistory/cli.ts --repo /path/to/project --audit
+   ```
 
-В корне экспорта сохраняется `rehistory-export.json` с POSIX-правами `0600`. Он содержит **только итоговые** refs, хеши объектов и политику нормализации; старые commit/tag-хеши, путь исходника и имена исключённых веток не записываются. Манифест не является криптографической аттестацией: подмена одновременно данных и манифеста находится вне модели проверки.
+2. Read the report.
 
-После записи автоматически проверяются:
+The audit does not write files or Git objects.
+You can use it with a dirty working tree, a stash, or detached HEAD.
 
-- точное соответствие refs и полной описи объектов плану;
-- достижимость всех объектов и отсутствие лишней истории;
-- даты автора/коммитера, выбранная идентичность, порядок родителей;
-- даты/идентичности annotated-тегов по выбранной политике и отсутствие старых подписей;
-- отсутствие reflog, alternates, remote/partial clone, shallow, grafts и неожиданных служебных файлов;
-- отсутствие символических ссылок, специальных файлов и общих hardlink;
-- `git fsck --full --strict --no-reflogs`.
+The report includes these items:
 
-Успех сообщается только после прохождения проверок. При ошибке новый каталог сохраняется как **незавершённый экспорт**, чтобы не удалять файлы автоматически; исходник не переписывается. Не публикуйте такой результат.
+- All local refs, including hidden refs and remote-tracking refs.
+- Commit dates and tagger dates in the available object store.
+- Objects not reachable from the current branch.
+- Unreachable objects and reflog entries.
+- Backup refs, recovery files, and a lock file.
+- Shallow clone data, partial clone data, grafts, and alternates.
+- Additional worktrees and not complete Git operations.
+- Submodule entries at the current HEAD.
 
-Повторная проверка без изменений:
+The report gives timestamps in Unix seconds with the initial time zone offset.
+It does not examine the server.
+The audit does not get missing objects from the network.
+
+For a JSON report, use this command:
 
 ```sh
-node /путь/toolchain/reHistory/cli.ts --verify-export /путь/к/new-export.git
-node /путь/toolchain/reHistory/cli.ts --verify-export /путь/к/new-export.git --json
+node /path/to/toolchain/reHistory/cli.ts --repo /path/to/project --audit --json
 ```
 
-Код `0` — проверка пройдена, `1` — ошибка или несоответствие. Проверка не сравнивает содержимое с внешней независимой копией и не ищет даты внутри файлов/сообщений. Gitlinks подмодулей сохраняются: их отдельная история не экспортируется.
+The JSON fields include `refs`, `commits`, `tags`, `reflog`, `unreachable`, `metadata`, and `warnings`.
+The report can contain personal data.
+Keep report files in a location with restricted access.
 
-Для получения обычного рабочего дерева можно самостоятельно выполнить `git clone --no-local /путь/к/new-export.git /путь/к/рабочей-копии`. Скрипт не создаёт remote и не публикует экспорт.
+## History change procedure
 
-## Автоматический demo
+**CAUTION: Do a dry-run first.**
+The dry-run gives a plan without writes.
 
-**URL сервера обязателен. Локальный bare-сервер demo не создаёт. Без URL выполнение останавливается до создания файлов, коммитов и сетевых запросов.**
+1. Start the dry-run.
 
-Подготовьте отдельный пустой репозиторий на своём сервере. Не указывайте рабочий проект: demo откажется, если сервер объявляет хотя бы одну ссылку.
+   ```sh
+   node /path/to/toolchain/reHistory/cli.ts --repo /path/to/project --dry-run
+   ```
+
+2. Enter the required values.
+3. Do a check of the plan.
+4. Start the program without `--dry-run`.
+
+   ```sh
+   node /path/to/toolchain/reHistory/cli.ts --repo /path/to/project
+   ```
+
+5. Enter the required values again.
+6. If the plan is correct, select Yes to give permission for the change.
+
+Enter these values at the program questions:
+
+| Item | Initial value | Effect |
+| --- | --- | --- |
+| Backup | Yes | Keep the initial branch and the selected tags. |
+| Backup branch | `rehistory-backup/original` | Stop if there is a branch with this name. |
+| Commit interval | `1` second | Use an integer from 1 to 31536000. |
+| First date | Today | Use `YYYY-MM-DD`. |
+| First time | `00:00:00` | Use local time unless you add an offset. |
+| Commit identity change | No | Change all selected authors and committers if you select Yes. |
+| Tag date change | Yes | Set each annotated tag date to its target commit date. |
+| Tagger identity change | No | Enter a different name and email address. |
+| Permission to write | No | Write only after a specified Yes. |
+
+If you change the commit identity, the initial tagger choice is Yes.
+This choice uses the same name and email address for taggers.
+The program does not get an identity from Git config.
+
+You can change the backup branch name.
+The program does not add a date, time, or counter to this name.
+If a branch has the selected name, the program stops.
+It does not replace the branch.
+
+### Date and time
+
+The input has different fields for the date and time.
+These time formats are permitted:
+
+| Example | Meaning |
+| --- | --- |
+| `18:30` | Local time with zero seconds. |
+| `18:30:45` | Local time with specified seconds. |
+| `18:30:45+01:00` | Time with a specified UTC offset. |
+| `17:30:45Z` | UTC time. |
+
+If a local time does not exist during a clock change, the program rejects it.
+Use a specified offset for a local time that occurs twice.
+The permitted UTC range is 1970 through 9999.
+The program writes new dates in UTC.
+The last commit can have a future date.
+
+### Terminal controls
+
+The initial answer has a selected checkbox.
+The Yes label is `Да`.
+The No label is `Нет`.
+The markers are `☑` and `☐`.
+
+- Use the arrow keys to move the focus.
+- Use Space to select one answer.
+- Use Enter to accept the selected answer.
+- Use Esc to cancel a checkbox question.
+- Use Ctrl+C to cancel an input question.
+
+Movement of the focus does not select an answer.
+Digits do not give permission to write.
+
+A text field contains its initial value.
+You can edit or remove this value.
+Ctrl+U clears the line.
+If you clear the line, the program gives an empty value to the validator.
+It does not insert the removed value again.
+
+The input fields do not keep a readline history.
+The program restores the terminal state after a question.
+
+The terminal uses color for questions, results, warnings, and errors.
+Selection is visible without color.
+`NO_COLOR` or `FORCE_COLOR=0` disables color.
+Pipe output and JSON reports contain no color codes.
+
+### Change scope
+
+The program changes all commits reachable from the current local branch.
+It also changes tags whose target commits are in that history.
+Other branches and remote-tracking refs keep their values.
+Tags not in that history keep their values.
+Tags that point to blobs or trees also keep their values.
+
+A tag is different from a branch.
+A tag on a shared ancestor can change although another branch stays with no changes.
+
+The program keeps trees, file contents, messages, empty commits, and the order of parent links.
+It puts each parent before its child in the date sequence.
+Each pair of adjacent commits has the selected interval.
+A parent and child can have a larger interval in a merge graph.
+
+The author date and committer date are equal for each new commit.
+The program keeps each initial identity unless you select an identity change.
+
+The program keeps annotated tag names and messages.
+It changes the target object and the selected tagger fields.
+A nested tag uses the date of its target commit.
+As an alternative, you can keep the initial tagger date and offset.
+A tag without a tagger causes the program to stop.
+
+If there are signatures, select Yes at a different question to remove them.
+It removes `gpgsig`, `gpgsig-sha256`, `mergetag`, and standard tag signature blocks.
+It does not make new signatures.
+
+The plan shows all selected refs.
+It shows 12 characters of each object ID.
+Git operations and recovery files use complete object IDs.
+
+The normal mode does not change working files or the index.
+It does not send data to a server.
+It does not remove reflog entries or old objects.
+
+## Export procedure
+
+**CAUTION: Use a new destination external to the source repository.**
+The destination parent directory must exist.
+
+1. Start the export dry-run.
+
+   ```sh
+   node /path/to/toolchain/reHistory/cli.ts --repo /path/to/project --export /path/to/export.git --dry-run
+   ```
+
+2. Do a check of the plan.
+3. Start the export without `--dry-run`.
+
+   ```sh
+   node /path/to/toolchain/reHistory/cli.ts --repo /path/to/project --export /path/to/export.git
+   ```
+
+4. Select Yes only if the plan is correct.
+5. Make sure that the result shows a correct export check.
+
+The program does not change the source repository.
+The export is a bare repository without a working tree.
+A previous history change in the source is not necessary for an export.
+If the destination path is present, the program stops.
+
+The export contains only the selected branch and its selected tags.
+It contains new commit and tag objects and the necessary trees and blobs.
+An object can keep its ID if its contents are the same as the plan.
+
+The export does not contain these source items:
+
+- Other branches or tags.
+- Remote config or remote-tracking refs.
+- Backup refs, a stash, or a reflog.
+- Recovery files or unreachable objects.
+- Alternates or shared hard links.
+
+The program copies object contents without a checkout.
+It does not use source file links.
+The program does not change submodule entries.
+The export does not include the different submodule histories.
+
+The file `rehistory-export.json` contains the new refs, object IDs, and date policy.
+It does not contain old commit IDs, old tag IDs, or the source path.
+On POSIX systems, the file has mode `0600`.
+
+The export check compares the refs and the full object inventory with the plan.
+It examines reachability, dates, identities, parent order, and tag signatures.
+It rejects unexpected files, config entries, symbolic links, hard links, and special files.
+It also uses `git fsck --full --strict --no-reflogs`.
+
+If a check fails, the program keeps the not complete destination.
+Do not publish that destination.
+The program does not change the source repository.
+
+### Repeat the export check
+
+Use this command for another check:
 
 ```sh
-node /путь/toolchain/reHistory/cli.ts --demo --demo-remote git@example.org:owner/empty-demo.git
-node /путь/toolchain/reHistory/cli.ts --demo --demo-remote ssh://git@example.org/owner/empty-demo.git --demo-dir /путь/к/new-demo
+node /path/to/toolchain/reHistory/cli.ts --verify-export /path/to/export.git
 ```
 
-Поддерживаются HTTPS/SSH URL и форма `git@host:owner/repo.git`. Не поддерживаются file/git/http/ext, токены/пароли в URL, query/fragment, пути с пробелами и нестандартными символами. Нормализованный URL проверяется до любых записей.
+Add `--json` for a JSON report.
+This check does not write data.
+The manifest has no digital signature.
+If someone changes the manifest and the objects, this check can give an incorrect result.
 
-Demo не запрашивает ответов. SSH работает через уже настроенный агент/ключи и известный host key (`BatchMode=yes`). Проверки TLS и SSH host key не отключаются; HTTPS redirects запрещены. Системный/глобальный Git config и credential helpers из него не читаются, интерактивный запрос логина запрещён. Для HTTPS аутентификация должна уже работать без этих helpers; обычно удобнее SSH. Сервер должен поддерживать atomic push.
-
-Сценарий:
-
-1. Проверяет, что сервер объявляет пустой набор refs.
-2. Создаёт новый изолированный каталог (`--demo-dir`, иначе каталог в системном temp), новый source-репозиторий и синтетические файлы. Ваш текущий проект не используется.
-3. Создаёт 10 коммитов main с разницей **в метаданных** 3 секунды, lightweight/annotated-теги и отправляет их на сервер. Реальных пауз по 3 секунды нет.
-4. Создаёт 3 отдельные ветки по 2 коммита с тегами и отправляет все исходные ветки/теги. Всего: 16 коммитов, 4 ветки, 9 тегов.
-5. Запускает **тот же движок обычного переписывания** main с фиксированными demo-ответами: интервал 1 секунда, начало сегодня, синтетическая идентичность, нормализация tagger и бекап. Отдельного публичного `--yes` для произвольных репозиториев нет.
-6. Делает аудит source и проверяет, что исходная история действительно осталась в бекапах/других ветках.
-7. Экспортирует main и её 3 тега в `export.git`, запускает проверку экспорта и повторный аудит. Ожидается 10 коммитов, без посторонних refs/старых объектов/reflog.
-8. Проверяет неизменность серверных refs после локального переписывания. Сохраняет `demo-result.json` и сообщает успех.
-
-Demo — **единственный режим с push**. Он отправляет только сгенерированные данные: серверные ветки именуются `rehistory-demo-<UUID>/main` и `…/feature-N`, теги также имеют уникальный префикс. Используются точные refspec и `--atomic`, без force/mirror/delete. Переписанная история, бекапы и экспорт на сервер не отправляются. После сбоя уже завершённые push не откатываются; локальные результаты сохраняются. Удаление данных demo с сервера остаётся за пользователем.
-
-Проверка пустоты относится только к объявленным сервером refs; скрытые серверные данные/параллельные действия проверить полностью нельзя. Уникальное пространство имён снижает риск конфликтов. Используйте выделенный пустой репозиторий и не меняйте его параллельно.
-
-## Безопасность и ограничения
-
-Git вызывается с массивами аргументов, без пользовательской shell-интерполяции. Наследуемые `GIT_*` исключаются; системный/глобальный Git config не читается. Локальный config исходника читается, но hooks, fsmonitor, replace, automatic maintenance/gc и все Git-транспорты принудительно отключены. Только demo явно разрешает HTTPS/SSH для `ls-remote` и точного push. Это не изоляция враждебных файловой системы, Git executable или SSH-конфигурации.
-
-Для переписывания/экспорта нужны чистые рабочее дерево и индекс, включая untracked-файлы/подмодули, attached HEAD и полный репозиторий. Игнорируемые файлы допускаются. Отклоняются shallow/partial clone (включая любую настройку promisor), grafts, дополнительные worktree, незавершённые операции, символические локальные ветки/теги и неизвестные пространства refs, включая stash/notes/replace. Аудит может показать эти состояния без их удаления. Служебные `refs/codex/*` разрешены: они сохраняются без изменений, проверяются при применении и не попадают в экспорт. Они могут удерживать исходную историю; CLI предупреждает об этом, аудит показывает их вместе с остальными refs.
-
-Поддерживаются SHA-1/SHA-256, полный bare-репозиторий и история с merge. Лимит создаваемых метаданных commit/tag — 128 МиБ. Один ответ Git ограничен 256 МиБ; очень большой отдельный blob или опись могут остановить операцию. Алгоритм хранит план в памяти и запускает несколько процессов Git на объект.
-
-При переписывании перед изменением refs записывается файл восстановления, новые объекты, затем выполняется одна транзакция `update-ref` с проверкой исходных хешей. Остальные прямые ссылки только проверяются. Эксклюзивный `rehistory.lock` защищает от второго экземпляра reHistory, но не от IDE/других Git-процессов. Не работайте с репозиторием параллельно. Проверки снимков и хешей уменьшают риск гонок, но не устраняют их полностью и не защищают от сбоя питания/носителя.
-
-## Восстановление переписывания на месте
-
-Бекап-ветка сохраняет исходную вершину. Ссылки `refs/rehistory/backups/<UUID>/…` сохраняют исходную ветку и затронутые теги. UUID случайный (v4), без даты и времени. Они удерживают старые объекты и намеренно сохраняют старые даты.
-
-Файл `rehistory-recovery-<UUID>.json` (также без даты и времени в имени) в общем каталоге Git создаётся эксклюзивно с POSIX-правами `0600`, синхронизируется через fsync и содержит для каждой ссылки `name`, `old`, `new`. Наличие файла не доказывает, что транзакция состоялась: после сбоя сравните refs.
-
-Для восстановления завершите другие Git-операции, проверьте чистоту дерева и составьте файл из значений JSON:
-
-```text
-start
-option no-deref
-update <name-ветки> <old-ветки> <new-ветки>
-option no-deref
-update <name-тега> <old-тега> <new-тега>
-prepare
-commit
-```
-
-Добавьте `option no-deref` и `update` для **каждой** записи `refs`; замените обозначения в угловых скобках реальными значениями. Из нужного репозитория:
+To get a working tree, use this command:
 
 ```sh
-git -c core.hooksPath= update-ref --stdin < /путь/к/командам-восстановления.txt
-git fsck --strict
+git clone --no-local /path/to/export.git /path/to/working-copy
 ```
 
-Проверка `new` не даст затереть коммиты, появившиеся после переписывания. При несовпадении остановитесь и разберите изменения, не убирайте эту проверку. Бекапы сохраняются. `reset --hard` для возврата метаданных не требуется.
+## Demo procedure
 
-Без бекапа JSON хранит только хеши; после GC восстановление может стать невозможным. Если после аварии остался `rehistory.lock`, проверьте, что процесс с записанным PID и другие экземпляры не работают, сохраните файл восстановления и лишь затем удаляйте оставшуюся блокировку вручную. Скрипт автоматически не удаляет объекты, reflog, чужие файлы или refs.
+**CAUTION: Use a different empty server repository for the demo.**
+The demo sends generated data to that server.
 
-## Подготовка npm/npx
+1. Prepare an empty repository on your server.
+2. Prepare authentication without user input.
+3. Start the demo with a specified server URL.
 
-В `package.json` есть имя-кандидат `toolchain-rehistory`, версия, `bin` (`rehistory`), engines, MIT-лицензия и точный список файлов пакета. **`private: true` намеренно блокирует публикацию.** Имя в npm не резервировалось, учётные записи/токены/registry не менялись.
+   ```sh
+   node /path/to/toolchain/reHistory/cli.ts --demo --demo-remote git@example.org:owner/empty-demo.git
+   ```
+
+4. Read the result.
+
+Without `--demo-remote`, the program stops before file creation or network access.
+The demo does not make a local server.
+It makes a new source directory in the system temporary directory.
+As an alternative, select a new directory with `--demo-dir /path/to/new-demo`.
+
+The demo does these operations:
+
+1. It makes sure that the server advertises no refs.
+2. It makes 10 commits on main, with date intervals of 3 seconds.
+3. It makes tags for main.
+4. It sends main and its tags to the server.
+5. It makes three other branches, each with two commits and tags.
+6. It sends all generated branches and tags to the server.
+7. It changes main with the normal engine and automatic demo answers.
+8. It does an audit of the source.
+9. It makes an export of main and its three tags.
+10. It does the export check and another audit.
+11. It makes sure that server refs did not change after the local history change.
+12. It writes `demo-result.json`.
+
+The source has 16 commits, four branches, and nine tags before the history change.
+The export has 10 commits and three tags.
+The demo changes metadata dates without delays between commits.
+
+Server branch names start with `rehistory-demo-<UUID>/`.
+Tag names also have a unique prefix.
+The demo uses specified refspecs and atomic push.
+It does not use force push, mirror push, or ref deletion.
+It does not send the changed history, backup refs, or export to the server.
+
+The URL must use HTTPS, SSH, or the format `git@host:owner/repo.git`.
+The program rejects credentials, query strings, fragments, spaces, and unsupported path characters in the URL.
+It rejects file, git, HTTP, and ext protocols.
+
+An SSH key and a known host key are necessary.
+It uses `BatchMode=yes`.
+HTTPS authentication must operate without global Git credential helpers.
+The program keeps TLS checks and rejects HTTPS redirects.
+Atomic push must be available on the server.
+
+If the demo stops after server writes, those writes do not change.
+The program keeps the demo files.
+Remove server data yourself only after a check.
+The program cannot examine refs that the server does not advertise.
+
+## Recovery procedure
+
+**CAUTION: Stop other Git operations before recovery.**
+Make sure that the working tree and index are clean.
+
+The backup branch keeps the initial branch tip.
+Backup refs have the format `refs/rehistory/backups/<UUID>/...`.
+The recovery file has the format `rehistory-recovery-<UUID>.json`.
+Both names use random UUID v4 values without a timestamp.
+The backup keeps the initial history and dates.
+
+The recovery file contains `name`, `old`, and `new` for each selected ref.
+It has mode `0600` on POSIX systems.
+The program writes this file before it makes new objects.
+The presence of the file does not show that the ref transaction completed.
+
+1. Compare the refs in the repository with the recovery file.
+2. Make a text file for the recovery transaction.
+
+   ```text
+   start
+   option no-deref
+   update <BRANCH_REF> <OLD_OID> <NEW_OID>
+   option no-deref
+   update <TAG_REF> <OLD_OID> <NEW_OID>
+   prepare
+   commit
+   ```
+
+3. Insert one `option no-deref` line before each `update` line.
+4. Include every ref from the recovery file.
+5. Replace each placeholder with the applicable field value.
+6. Start the recovery transaction from the correct repository.
+
+   ```sh
+   git -c core.hooksPath= update-ref --stdin < /path/to/recovery-commands.txt
+   ```
+
+7. Do the integrity check.
+
+   ```sh
+   git fsck --strict
+   ```
+
+If a ref in the repository is different from `new`, stop.
+Do not remove the expected object ID from the command.
+This value prevents loss of commits made after the history change.
+The backup refs stay in place after recovery.
+A `reset --hard` operation is not necessary for metadata recovery.
+
+Without backup refs, the recovery file contains only object IDs.
+Garbage collection can remove the initial objects.
+The recovery file cannot restore objects that are not available.
+
+### A remaining lock file
+
+1. Make sure that no reHistory process is active.
+2. Read the PID in `rehistory.lock`.
+3. Make sure that this PID does not identify an active reHistory process.
+4. Keep the recovery file.
+5. Examine the refs in the repository.
+6. Remove the lock file only after these checks.
+
+Do not remove an active lock file.
+The program does not remove another lock file automatically.
+
+## Rejected source states
+
+A history change and an export reject these states:
+
+- A dirty index or working tree, including untracked files and changed submodules.
+- Detached HEAD or a branch without a commit.
+- A shallow clone or partial clone config, including a promisor entry set to false.
+- Grafts or additional worktrees.
+- Incomplete merge, rebase, cherry-pick, revert, sequencer, or bisect operations.
+- Symbolic local branches or tags.
+- Unsupported refs, including stash, notes, and replace refs.
+
+The program does not change ignored files.
+You can use SHA-1 and SHA-256 repositories.
+You can also use complete bare repositories.
+
+The program can use `refs/codex/*` service refs.
+It keeps their values and includes them in the audit.
+These refs can keep the initial history.
+The export excludes these refs.
+
+## Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| `0` | The operation completed, or the user selected No. |
+| `1` | An error occurred, or the export check failed. |
+| `2` | The audit inventory is not complete. |
+| `130` | The user canceled an interactive question. |
+
+An audit result of `0` does not show that all old dates are absent.
+Read the warnings and object data in the report.
+
+## Package preparation
+
+The package is private and has no runtime dependencies.
+The npm bin name is `rehistory`.
+`private: true` prevents publication.
+Make sure that the npm package name is available before publication.
+
+1. Open the package directory.
+
+   ```sh
+   cd /path/to/toolchain/reHistory
+   ```
+
+2. Do the tests.
+
+   ```sh
+   npm test
+   ```
+
+3. Make the JavaScript build.
+
+   ```sh
+   npm run build
+   ```
+
+4. Examine the package contents.
+
+   ```sh
+   npm pack --dry-run
+   ```
+
+5. Make a local archive.
+
+   ```sh
+   npm pack --pack-destination /path/to/package-directory
+   ```
+
+The build uses `node:module.stripTypeScriptTypes`.
+This API can show an experimental warning.
+It does not do a TypeScript type check.
+The package contains JavaScript because Node.js does not strip TypeScript types in `node_modules`.
+The `prepack` script makes the build.
+There are no install lifecycle scripts.
+
+Use the archive name from the npm output for a local bin check.
+Replace `PACKAGE.tgz` with that archive name.
 
 ```sh
-cd /путь/toolchain/reHistory
-npm test
-npm run build
-npm pack --dry-run
-npm pack --pack-destination /путь/к/каталогу-пакетов
+npx --offline --yes --package /path/to/PACKAGE.tgz rehistory --help
 ```
 
-`build.mjs` использует встроенный `node:module.stripTypeScriptTypes`: сборка не требует зависимостей, но API может выводить experimental warning. Проверку типов он не выполняет. В пакет попадает обычный JavaScript `dist/*.js`, поскольку Node.js ограничивает прямой запуск TypeScript в `node_modules`. На установке нет lifecycle scripts; `prepack` запускает сборку только при упаковке исходников.
+Before publication, select an available package name.
+Select a release version.
+Prepare npm authentication independently.
+Remove `private` only when publication is necessary.
+The program does not publish itself.
 
-Локальная проверка подготовленного архива без registry:
+## Development checks
 
 ```sh
-npx --offline --yes --package /путь/toolchain-rehistory-0.1.0.tgz rehistory --help
+node --test /path/to/toolchain/reHistory/engine.test.ts /path/to/toolchain/reHistory/features.test.ts /path/to/toolchain/reHistory/prompts.test.ts
 ```
 
-Это подготовка, не опубликованный production-пакет. Перед публикацией пользователь должен выбрать доступное имя/версию, решить вопрос поддержки, проверить пакет, настроить свою npm-аутентификацию и снять `private`. Скрипт сам этого не делает.
+Tests use different temporary repositories.
+The demo test uses a local test server through a transport adapter.
+A specified network URL is necessary for the product demo.
 
-## Проверки разработки
+## Technical references
 
-```sh
-node --test /путь/toolchain/reHistory/engine.test.ts /путь/toolchain/reHistory/features.test.ts /путь/toolchain/reHistory/prompts.test.ts
-```
-
-Тесты создают только свои временные репозитории. Полный demo проверяется через тестовый адаптер с настоящими локальными push; локальный сервер существует **только в тесте**, не в пользовательском demo. Сетевой demo требует предоставленного пользователем URL и отдельно настроенной аутентификации.
-
-Подробности проверки безопасности: [SECURITY.md](SECURITY.md). Первоисточники: [Node.js TypeScript](https://nodejs.org/api/typescript.html), [git update-ref](https://git-scm.com/docs/git-update-ref), [git cat-file](https://git-scm.com/docs/git-cat-file), [npm package.json](https://docs.npmjs.com/cli/configuring-npm/package-json/).
+- [Node.js TypeScript support](https://nodejs.org/api/typescript.html).
+- [Git ref transactions](https://git-scm.com/docs/git-update-ref).
+- [Git object inventory](https://git-scm.com/docs/git-cat-file).
+- [npm package fields](https://docs.npmjs.com/cli/configuring-npm/package-json/).

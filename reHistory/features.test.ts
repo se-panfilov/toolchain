@@ -170,7 +170,7 @@ test('demo отказывает для непустого сервера до с
 
 test('полный demo с адаптером транспорта: реальные push, аудит, экспорт и проверка', t => {
   const root = temp(t); const server = join(root, 'test-server.git');
-  // Тестовый сервер — исключительно деталь теста. Продукт его не создаёт.
+  // The server belongs to this test only. The product does not create it.
   runGit(root, ['init', '-q', '--bare', '--template=', server]);
   let pushes = 0;
   const result = runDemo({ remote: 'https://example.invalid/empty.git', directory: join(root, 'demo') }, {

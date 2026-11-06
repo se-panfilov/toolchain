@@ -8,7 +8,7 @@ import { exportDestination, exportPlan, verifyExport } from './export.ts';
 import { runDemo, validateDemoURL } from './demo.ts';
 import { TerminalPrompts, PromptCancelled, terminalStyle } from './prompts.ts';
 
-// Метаданные Git и ошибки могут содержать управляющие символы терминала.
+// Git metadata and errors can contain terminal control characters.
 function safe(value: unknown): string { return String(value).replace(/[\p{Cc}\p{Cf}]/gu, ch => ch === '\n' ? ch : '?'); }
 const style = terminalStyle();
 function print(value: unknown, tone: keyof ReturnType<typeof terminalStyle> = 'plain'): void { console.log(style[tone](safe(value))); }
@@ -51,10 +51,10 @@ export function parseDate(value: string): number {
   return result;
 }
 
-/** Отдельные дата и время; без суффикса время относится к системному поясу. */
+/** Read separate date and time values. Use the system time zone without a suffix. */
 export function parseStart(date: string, time: string): number {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('Дата: ГГГГ-ММ-ДД.');
-  // Календарь проверяем независимо от местного перехода через полночь.
+  // Validate the calendar date independently of local midnight transitions.
   parseDate(`${date}T00:00:00Z`);
   const match = /^(\d{2}):(\d{2})(?::(\d{2}))?(Z|[+-]\d{2}:\d{2})?$/.exec(time);
   if (!match) throw new Error('Время: ЧЧ:ММ[:СС], при необходимости с +ЧЧ:ММ или Z.');
@@ -158,7 +158,7 @@ async function main(): Promise<void> {
           const candidate = await ask('Ветка бекапа', defaultBackupBranch);
           try { repo.git(['check-ref-format', `refs/heads/${candidate}`]); }
           catch (error) { print(error instanceof Error ? error.message : error); continue; }
-          // Занятое имя — остановка, без подбора суффиксов и без перезаписи.
+          // Stop if the name exists. Do not add a suffix or overwrite the branch.
           if (repo.refs().some(r => r.name === `refs/heads/${candidate}`)) throw new Error('Бекап-ветка уже существует.');
           backupBranch = candidate; break;
         }
@@ -217,9 +217,9 @@ async function main(): Promise<void> {
     }
   } finally { prompts.close(); }
 }
-// npm bin может быть символической ссылкой; сравниваем реальные пути.
+// An npm bin can be a symbolic link. Compare the real paths.
 let entry = '';
-try { if (process.argv[1]) entry = pathToFileURL(realpathSync(process.argv[1])).href; } catch { /* импорт из stdin/eval */ }
+try { if (process.argv[1]) entry = pathToFileURL(realpathSync(process.argv[1])).href; } catch { /* Import from stdin or eval. */ }
 if (import.meta.url === entry) {
   main().catch(error => {
     if (error instanceof PromptCancelled) { print('Отменено.', 'muted'); process.exitCode = 130; }

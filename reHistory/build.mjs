@@ -3,8 +3,8 @@ import { mkdirSync, readFileSync, writeFileSync, chmodSync, lstatSync } from 'no
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 
-// Только собственные модули из фиксированного списка. npm не запускает TypeScript
-// из node_modules; пакет получает обычный JavaScript без runtime-зависимостей.
+// Build only modules from the fixed list. Node.js does not strip types in node_modules.
+// Write JavaScript modules without runtime dependencies.
 const root = fileURLToPath(new URL('.', import.meta.url));
 const out = join(root, 'dist');
 try {

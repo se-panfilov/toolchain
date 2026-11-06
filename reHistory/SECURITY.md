@@ -1,104 +1,252 @@
-# Проверка безопасности reHistory
+# Security checks
 
-Дата: 28 октября 2026 года. Проведены самостоятельные проверки после изменений ядра, добавления аудита/экспорта, подключения demo и подготовки npm-пакета. Это проверка реализации и интеграционных сценариев, а не независимая сертификация.
+Document date: 2026-10-29.
+This document gives the security controls and specified limits of reHistory.
+It is not an security certificate from another organization.
 
-## Область и модель угроз
+## Conditions for use
 
-Проверены `engine.ts`, `audit.ts`, `export.ts`, `demo.ts`, `cli.ts`, `prompts.ts`, `build.mjs`, состав npm-пакета и документация. Основные риски: потеря исходной истории, изменение посторонних refs, сохранение исходных объектов в экспорте, частичное применение, скрытые записи в read-only режимах, выполнение команд из ввода, неявная отправка данных на сервер и случайная публикация npm.
+**CAUTION: Use tools and files that you trust.**
+The program does not isolate local software or file systems that can attack it.
 
-Предполагаются доверенные Git/Node/PATH, локальная конфигурация исходного репозитория, ОС, файловая система и SSH-конфигурация пользователя. Другие процессы не должны одновременно менять исходник или результат экспорта. Код не является песочницей для враждебных локальных пользователей/конфигураций.
+These conditions are necessary:
 
-## Изменения по результатам проверки
+- The Node.js and Git executables are correct.
+- The operating system and PATH are correct.
+- The source config and SSH config are under your control.
+- No other process changes the source or export during an operation.
 
-1. Сохранено исправление абсолютных путей признаков незавершённых Git-операций. Незатрагиваемые прямые refs проверяются через `verify`, а не обновляются тем же хешем.
-2. Частичные клоны блокируются по любой настройке promisor/partialclone; shallow/grafts также блокируют переписывание и экспорт. Аудит помечает такие состояния как неполные.
-3. Все Git-транспорты, включая file и ext, по умолчанию запрещены параметрами командной строки. Поэтому аудит/проверка не могут неявно загрузить объект partial clone. Только сетевой адаптер demo явно разрешает HTTPS/SSH.
-4. Убран вариант автоматического локального сервера demo. Без явного URL CLI завершается до создания файлов/коммитов/сетевых запросов. URL валидируется по строгому списку протоколов, форм и символов; пароли/токены/query/fragment запрещены.
-5. Пустота серверного репозитория проверяется до создания demo и повторно перед первым push. Проба изолирована в временном каталоге с запретом поиска родительской Git-конфигурации; каталог после пробы удаляется. Проба не создаёт локального репозитория.
-6. Demo использует уникальные серверные refs и atomic push с точными refspec, без force/mirror/delete. После переписывания проверяет неизменность сервера, не отправляет бекапы или экспорт. SSH работает в BatchMode, TLS проверяется, HTTPS redirects отключены, неизвестные SSH host keys автоматически не принимаются.
-7. Annotated-теги по умолчанию получают даты конечных коммитов; tagger меняется по отдельному выбору. Вложенные теги обрабатываются рекурсивно. Подписи и mergetag удаляются с отдельным согласием в интерактивных режимах.
-8. Экспорт физически создаётся заново: копируются только нужные tree/blob и рассчитанные commit/tag. Нет clone --local, hardlink, alternates, исходного config, reflog или бекапов. Манифест содержит только итоговые данные, без списка старых commit/tag-хешей и пути исходника.
-9. Проверка экспорта усилена: помимо fsck и дат сравниваются точные наборы refs/объектов, их достижимость, порядок родителей, метаданные тегов, отсутствие посторонних служебных файлов/настроек, символических ссылок, общих hardlink и специальных файлов.
-10. При подготовке npm выявлена ошибка запуска CLI через символическую ссылку bin. Исправлено сравнение реальных путей; добавлен регрессионный тест и проверен запуск упакованного пакета через npm exec --offline.
-11. npm-пакет имеет точный allowlist файлов, без source-тестов, demo-данных, отчётов и произвольных файлов dist. Публикацию блокирует `private: true`. Сборка отказывается писать через символические ссылки и общие hardlink в dist.
+Use [README.md](README.md) for the operating procedures.
+Use [TERMINOLOGY.md](TERMINOLOGY.md) for project terms.
 
-## Проверенные свойства
+## Git command controls
 
-- Git вызывается через `spawnSync` с массивами аргументов. Пользовательские имена, пути, сообщения и URL не интерполируются в shell. SSH BatchMode задаётся постоянной строкой без пользовательских вставок.
-- Исключаются наследуемые `GIT_*`; системный/глобальный Git config отключён. Командной строкой отключены hooks, fsmonitor, replace, автоматические maintenance/gc и автоматическое подписание. Локальный config источника не копируется.
-- Терминальный вывод очищается от управляющих символов. JSON сохраняет данные в JSON-экранировании. Машинные отчёты могут содержать персональные сведения и по умолчанию не записываются на диск.
-- Обычное применение и экспорт требуют TTY и подтверждения с ответом «Нет» по умолчанию. Публичного --yes нет; автоматизация demo работает только с созданным им source и синтетическими данными.
-- В read-only аудит и verify допускаются неинтерактивные вызовы. Побайтовые снимки подтверждают отсутствие изменений в source/экспорте. Dry-run также не создаёт объектов и каталогов.
-- Переписывание на месте сохраняет деревья, сообщения и родителей. До изменения refs сохраняются файл восстановления с правами 0600/fsync и новые объекты. Все выбранные изменения/бекапы применяются одной транзакцией с проверкой исходных хешей; конфликт prepare не приводит к частичному обновлению.
-- `rehistory.lock` эксклюзивно блокирует второе применение reHistory. Файл восстановления и манифест создаются через эксклюзивную запись, без перезаписи существующих файлов. Старые резервные объекты автоматически не удаляются.
-- Экспорт требует нового пути вне исходного репозитория и общего git-dir. Существующие каталоги и символические ссылки не перезаписываются. Ошибка оставляет новый каталог с явным сообщением о незавершённом экспорте; автоматического удаления пользовательских каталогов нет.
-- Целостность экспорта проверяется через `git fsck --full --strict --no-reflogs`. SHA-1/SHA-256, двоичные данные файлов, сообщения и вложенные теги покрыты тестами.
-- Все demo-push направлены только на указанный URL; генерируется 16 коммитов, 4 ветки и 9 тегов. В итоговом экспорте ожидаются main с 10 коммитами и 3 тегами. Текущий Toolchain не коммитится и не отправляется.
+The program gives Git an argument array.
+It does not insert user text into a shell command.
+The SSH BatchMode command is a constant string.
+It contains no user input.
 
-## Воспроизводимые проверки
+The program removes inherited `GIT_*` variables before a Git call.
+It does not read system or global Git config.
+It reads local source config.
 
-```sh
-node --test reHistory/engine.test.ts reHistory/features.test.ts reHistory/prompts.test.ts
-```
+Command options disable these functions:
 
-**46/46 проверка успешно выполнена** через npm test на macOS, Node.js 26.5.1, Git 2.39.5. Новые сценарии refs/codex и проверка GIT_* с FORCE_COLOR=1 дополнительно проходят на Node.js 24.12.0. Проверены исходные сценарии переписывания, бекапы/восстановление, read-only аудит, stash/скрытые refs/недостижимые объекты, нормализация и сохранение tagger, экспорт SHA-1/SHA-256, независимость исходника, посторонние объекты/refs/файлы/config, неверные даты тегов, конфликтующие пути, изменение source после планирования, обязательность/валидация URL, отказ для непустого сервера, запрет транспортов, запуск CLI через symlink и полный demo.
+- Hooks and fsmonitor.
+- Replace objects and automatic signatures.
+- Automatic maintenance and garbage collection.
+- Network and file transports except through the demo adapter.
 
-Полный demo в тесте использует внедряемый адаптер транспорта с настоящими локальными Git push в тестовый сервер. Этот сервер — деталь теста: пользовательский demo локальный сервер не создаёт. Исходные тестовые репозитории/серверы удаляются тестами.
+Only HTTPS and SSH are available through the demo adapter.
+The source does not give remote helpers or a remote URL to other modes.
+The audit cannot start a lazy fetch for a missing object.
 
-Дополнительно проверены интерактивный экспорт через PTY, подтверждение пользователя, повторная JSON-проверка результата и неизменность source refs. Выполнен read-only CLI-аудит самого Toolchain. Собраны JavaScript-модули, проверен состав npm-архива и запуск его bin через `npm exec --offline` без registry. Сборка не проверяет TypeScript-типы, но выполняемые сценарии проверяются тестами.
+## Input controls
 
-**Сетевой demo на настоящем сервере не запускался:** пользовательский URL не предоставлен. Аутентификация, SSH/TLS и поведение конкретного hosting-провайдера требуют отдельного прогона с выделенным пустым серверным репозиторием. Полноценные криптографические подписи в тестах не генерируются: используются синтетические блоки для проверки удаления.
+The program validates branch names with Git.
+If there is a backup branch with the selected name, the program stops.
+The initial backup name is `rehistory-backup/original`.
+It does not contain a date, time, or counter.
 
-## Оставшиеся ограничения
+Recovery files and backup refs use random UUID v4 values.
+These UUID values do not encode the current time.
+The program does not change earlier files and refs.
+The audit and recovery format also operate with them.
 
-- Git-даты управляются пользователем и не доказывают время фактической работы. Проверка не обещает отсутствия трудовых/договорных претензий.
-- Тексты файлов, сообщений и имён тегов могут содержать даты/имена/email. Содержимое, локальные mtime/ctime и история подмодулей не очищаются. Сохранение исходных дат tagger — допустимый явный выбор пользователя.
-- Другие процессы не соблюдают rehistory.lock. Проверки снимков/старых хешей не устраняют все гонки: например, изменение HEAD, новые refs и изменения файлов сразу после проверки. Транзакция refs не заменяет независимый бекап и не гарантирует восстановление при сбое питания/диска; читатели нескольких refs могут видеть промежуточное состояние.
-- После сбоя могут остаться новые объекты, файл восстановления, блокировка или незавершённый экспорт. Перед удалением необходимо установить фактическое состояние. Без бекапа JSON не удерживает старые объекты от GC.
-- Пустота demo-сервера определяется объявленными refs; скрытые данные и параллельные изменения не исключаются. Выделенный пустой репозиторий и уникальные имена уменьшают риск; уже завершённые push не откатываются. Обратная очистка сервера автоматически не выполняется.
-- Сервер должен поддерживать atomic push. SSH/HTTPS требуют заранее работающей неинтерактивной аутентификации; глобальные credential helpers не используются. URL/аутентификация намеренно ограничены.
-- Повторная проверка экспорта сверяет данные с локальным манифестом, который не подписан. Она не защищает от согласованной подмены манифеста и содержимого и не является внешней аттестацией. Дополнительные изменения в экспорте (новые refs/объекты/config/служебные файлы) могут намеренно сделать проверку неуспешной.
-- Лимиты: 128 МиБ на новые commit/tag-метаданные и 256 МиБ на один ответ Git. План в памяти, несколько процессов Git на объект; очень большие истории/файлы могут привести к безопасному отказу. Аудит не заменяет проверку целостности всех внешних копий.
-- Windows/Linux и реальная npm-публикация не проверялись. npm-имя не резервировалось. Пакет остаётся private, без runtime-зависимостей и install lifecycle scripts; сборка использует API stripTypeScriptTypes с experimental warning и не выполняет статическую проверку типов.
+The program validates calendar dates, times, offsets, intervals, names, and email addresses.
+It rejects nonexistent local times during daylight saving time changes.
+Use a specified offset for an ambiguous local time.
 
-Обнаруженные проблемы исправлены; включённые проверки проходят. Известные ограничения и правила восстановления отражены в README.
+The program removes control characters from displayed user data.
+The program adds its own color codes after this step.
+JSON output follows a different path without colors.
+
+## Terminal controls
+
+An ANSI terminal with TTY input and output is necessary for interactive changes.
+The program rejects `TERM=dumb` before raw mode starts.
+
+The initial answer for permission to write is No.
+The initial permission to remove signatures is also No.
+
+Arrow keys move focus without permission to write.
+Space selects an answer.
+Enter accepts that answer.
+Digits cannot give permission to write.
+Bracketed paste cannot select or accept an answer.
+
+Input fields contain editable initial values.
+An empty field stays empty for validation.
+The input fields do not keep a readline history.
+
+Each question removes its event handlers after completion or cancellation.
+It restores the initial raw mode and stream state.
+Cancellation does not become another date or time question.
+The CLI gives exit code `130` for an input cancellation.
+
+## Source protection
+
+The program examines HEAD, refs, the index, and the working tree before a change.
+It examines the state again before the ref transaction.
+It rejects not complete operations and unsupported source states.
+The README lists these states.
+
+The program uses only the exact `refs/codex/` namespace as a service exception.
+The similar name `refs/codex-untrusted/` does not give this permission.
+Service refs stay with no changes and appear in the audit.
+They do not enter the export.
+They can keep the initial history in the source.
+
+The program writes a recovery file before new objects.
+It makes a new file with POSIX mode `0600`.
+It synchronizes the file with `fsync`.
+The program does not replace a file or symbolic link at the selected path.
+
+The program writes the selected refs and backup refs in one transaction.
+The transaction compares complete old object IDs.
+The transaction uses `verify` for unselected direct refs.
+It uses `no-deref` to prevent a write through a substituted symbolic ref.
+If transaction preparation fails, the refs keep their old values.
+
+The file `rehistory.lock` prevents another reHistory write operation.
+Other Git tools do not obey this lock.
+
+**CAUTION: Do not remove an active lock file.**
+Use the lock procedure in the README after a process error.
+
+## Object controls
+
+The new commits keep trees, file contents, messages, and parent order.
+A parent date is before its child date.
+The author date and committer date are equal.
+
+The program changes annotated tag dates and identities only under the selected policy.
+Nested tags use their target commit dates.
+The program removes invalid signatures and mergetag headers with user permission.
+It does not make replacement signatures.
+
+A dry-run does not write objects, refs, directories, lock files, or recovery files.
+The byte comparison found no changes to temporary repositories.
+
+## Export controls
+
+The destination must be new and external to the source repository and the common Git directory.
+The program does not replace a directory or symbolic link at the destination.
+It does not delete a failed destination automatically.
+
+The export contains only selected history objects.
+It copies necessary tree and blob contents without a checkout.
+It does not copy the source config, source reflog, backup refs, or unrelated objects.
+It does not use hard links or alternates.
+
+The manifest contains only new object IDs, refs, and policy data.
+It does not record old commit IDs, old tag IDs, or the source path.
+The program compares the complete inventory with this manifest.
+It examines dates, identities, parent order, and reachability.
+It rejects extra refs, config, files, links, and special files.
+It also uses `git fsck --full --strict --no-reflogs`.
+
+**CAUTION: Do not publish an export that fails a check.**
+A failed export can be not complete.
+
+## Demo controls
+
+A specified network URL is necessary before the demo makes files or uses the network.
+It does not make a local server.
+It uses generated data in a new source directory.
+It does not use the current project as demo input.
+
+The URL validator rejects credentials, unsupported protocols, and unsafe path forms.
+The program examines server refs before it makes demo files and before the first push.
+It stops if the server advertises a ref.
+The probe uses a temporary directory without parent repository config.
+
+Server refs use a unique demo prefix.
+The demo uses atomic push and specified refspecs.
+It does not use force push, mirror push, or ref deletion.
+The program does not send changed history, backup refs, or the export after the initial demo data.
+
+SSH uses BatchMode and the configured host key controls.
+HTTPS keeps TLS verification and rejects redirects.
+Global Git credential helpers and interactive login are unavailable.
+
+If a push completes before a later error, the program keeps that server data.
+The program does not undo completed push operations.
+The user controls server cleanup.
+
+## Known limits
+
+- Changed Git dates do not show the time of the work.
+- Files, messages, tag names, file timestamps, and submodule histories can contain initial dates.
+- Other copies and server records can keep initial data.
+- A recovery file without backup refs cannot prevent object loss through garbage collection.
+- Another process can change HEAD, refs, or files after the last state check.
+- A ref transaction cannot prevent damage from a disk error or a power loss.
+- A reader of two or more refs can see an intermediate state.
+- The process can stop after writes to objects, recovery files, lock files, or the destination.
+- The manifest has no digital signature.
+- If someone changes the manifest and data, the export check can give an incorrect result.
+- The server can hide refs from the demo probe.
+- Atomic push must be available on the server.
+- The program does not examine file contents for dates or personal data.
+
+The limit for new commit and tag metadata is 128 MiB.
+The limit for one Git response is 256 MiB.
+The program keeps the plan in memory.
+It starts two or more Git processes for each object.
+Large objects or histories can cause an operation to stop.
+
+## Previous implementation checks
+
+The last complete test result was 46 of 46 correct test results.
+The test platform was macOS with Node.js 26.5.1 and Git 2.39.5.
+Selected terminal and date cases also passed with Node.js 24.12.0.
+
+The checks included these subjects:
+
+- Merge graphs, empty commits, binary files, and message bytes.
+- Backup conflicts, recovery transactions, and source state changes.
+- Dirty trees, stash, shallow clones, partial clones, grafts, and worktrees.
+- Service refs and unsupported namespaces.
+- SHA-1 and SHA-256 exports.
+- Extra refs, objects, config, files, and incorrect tag dates.
+- Hooks, Git routing variables, and concurrent reHistory writes.
+- Forced terminal colors and JSON output.
+- Input defaults, cancellation, paste, raw mode, and color controls.
+- Fixed backup names, UUID v4 names, time offsets, and daylight saving time changes.
+- Demo URL validation, empty server requirements, and the complete demo sequence.
+
+The demo test used Git pushes through a local test adapter.
+A real network server was not part of that test.
+Do different tests for authentication and hosting behavior with a specified empty server URL.
+Signature tests used synthetic blocks, not complete cryptographic signature generation.
+
+Linux, Windows, and npm publication have no different test results.
+The npm package is private.
+The build does not do a TypeScript type check.
+
+## Documentation change controls
+
+This revision changes documentation and code comments.
+It keeps the Russian interface text and program instructions with no changes.
+The source comparison reverses each comment replacement and compares the initial source text.
+The documentation check examines sentence length, links, terminology, and safety instructions.
+The English vocabulary check uses the ASD-STE100 Issue 9 dictionary.
+
+A vocabulary check alone does not show correct meaning or part of speech.
+Another person has not done an STE language check.
 
 
-## Исправления после пользовательского запуска
+## Checks for this documentation revision
 
-- Разрешены только служебные ссылки внутри точного пространства `refs/codex/`. Они не включаются в план переписывания/экспорта, не удаляются и не обновляются. При применении прямые ссылки проверяются через прежний `verify`; изменение снимка refs по-прежнему останавливает операцию. Отдельно проверено, что сходное имя `refs/codex-untrusted/` не расширяет разрешённую область.
-- CLI предупреждает, что служебные ссылки могут сохранять исходную историю. Аудит продолжает их показывать; экспорт исключает их и их посторонние объекты.
-- Начальный `git init` тестовой фикстуры переведён на тот же изолированный runner, без наследования GIT_* и пользовательских шаблонов/hooks. Иначе окружение терминала могло влиять на саму подготовку тестов. Каталоги hooks/info, необходимые отдельным тестам, создаются ими явно.
-- Проверка GIT_* запускается отдельным .mjs из CWD фикстуры, без eval/package scope npm и внутреннего NODE_TEST_* контекста. В качестве ложного назначения используется другой настоящий временный репозиторий; побайтовые снимки подтверждают, что оба хранилища остаются неизменными. Добавлены ограничение времени дочернего процесса и диагностика Node/status/signal/stdout/stderr.
-- Полный пользовательский лог подтвердил ложное падение: console.log(number) при принудительной окраске терминала возвращал ANSI-последовательности вокруг числа 1. Git-защита при этом не была нарушена. Машинный результат теперь выводится JSON-строкой; регрессионный сценарий явно задаёт FORCE_COLOR=1, не маскируя проблему отключением цвета.
+The source comparison confirms 35 comment replacements in ten source files.
+Executable instructions and Russian interface strings did not change.
 
+All prose sentences contain at most 20 words under the conservative mechanical count.
+All paragraphs contain at most six sentences.
+Local document links and package document entries are correct.
+The JavaScript build and syntax checks completed without errors.
+The package inventory includes the terminology document.
 
-## Проверка нового терминального интерфейса
-
-- Ввод номеров заменён взаимоисключающими чекбоксами: стрелки меняют только фокус, пробел выбирает, Enter подтверждает отмеченный вариант. Перед изменением refs/экспортом и удалением подписей заранее выбрано «Нет». Старая последовательность `1` + Enter не превращается в согласие.
-- Выбор использует raw mode только на время вопроса. В finally снимаются обработчики ввода/сигналов и восстанавливаются исходный raw mode и состояние потока. Ctrl+C, Ctrl+D/Esc в выборе, EOF и закрытие диалога отменяют активный вопрос; SIGINT/SIGTERM также прерывают ожидание.
-- Bracketed paste в чекбоксах не меняет и не подтверждает выбор. Управляющие символы в вопросах/начальном тексте не выводятся как команды терминала. Ввод пользователя по-прежнему проверяется валидаторами Git, интервала, даты и идентичности до записи.
-- Начальные текстовые значения передаются через публичный readline.write в редактируемую строку. Очистка строки не восстанавливает удалённый default. История readline отключена. Требуются TTY и ANSI-терминал; TERM=dumb отклоняется до смены raw mode.
-- При аудите нового потока найдено и исправлено поглощение отмены внутри валидационного цикла даты: PromptCancelled пробрасывается до верхнего обработчика. Отмена не становится повторным вопросом и завершается с кодом 130 без применения изменений.
-- Добавлены 10 тестов диалога: defaults, стрелки/пробел/Enter, запрет цифрового подтверждения, вставка, редактирование/полная очистка, Ctrl+C, закрытие, восстановление обработчиков/raw mode, очистка управляющих символов и отказ для неподдерживаемого терминала. Полный npm test: 41/41, Node.js 26.5.1.
-- Дополнительно на Node.js 24.12.0 в PTY проверены полный интерактивный экспорт, ввод изменённого интервала, очистка default с повторной валидацией, отказ по цифровому вводу, Ctrl+C в выборе и в поле даты, неизменность source refs и восстановление ICANON/ECHO терминала.
-- Новый модуль prompts включён в фиксированный список сборки и npm-allowlist. Внешних зависимостей не добавлено. Логика нормализации, экспортируемые данные, Git-транзакции и demo-транспорт не изменялись.
-
-
-## Проверка оформления и короткого диалога
-
-- Добавлены только оформление и сокращённые формулировки. Клавиатурная логика, заранее отмеченное «Нет» перед записью/удалением подписей, проверки данных и Git-транзакции сохранены. Чекбоксы ☑/☐ и фокус видны без цвета.
-- Цветовые ANSI-последовательности добавляются после очистки пользовательского текста. Цвет отключён при stdout без TTY, NO_COLOR, FORCE_COLOR=0 и TERM=dumb. JSON выводится отдельным неизменённым путём без стилизации. Дополнительные зависимости и протоколы не добавлялись.
-- Убраны повторяющиеся подсказки клавиш, сокращены вопросы, статусы и план. Сохраняются список выбранных refs, даты, идентичности, бекап, предупреждения о подписях и старой истории. Хеши в плане сокращены до 12 символов только при отображении; операции и файлы восстановления используют полные значения.
-- Добавлена проверка управления цветом. Новый UI проверен в PTY на Node.js 24.12.0: цветной диалог, Unicode-маркеры, редактирование начального значения, подтверждённый экспорт, отказ по умолчанию, NO_COLOR, JSON-проверка и неизменность source refs. Подсказки клавиш в выводе отсутствуют; состояние терминала восстанавливается.
-- Итоговый npm test: 42/42 успешно. Сборка, состав npm-архива и его запуск через npm exec --offline проверены; Git-история Toolchain не изменялась.
-
-
-## 29 октября 2026: имена бекапов и время первого коммита
-
-- Дата/время убраны из default-имени ветки: используется фиксированное rehistory-backup/original. CLI повторно проверяет существование ветки после ввода и останавливается при совпадении имени. Проверка движка и атомарная create-транзакция остаются дополнительной защитой от перезаписи/гонки. Автоматический подбор дат, номеров и суффиксов не выполняется.
-- Из имён служебных backup refs и файлов восстановления также удалён текущий timestamp. Используется случайный UUID v4, не UUID с временной компонентой. Эксклюзивное создание файлов и refs, fsync, права и формат JSON восстановления сохранены. Старые файлы/ссылки не мигрируются автоматически и остаются совместимыми с аудитом/восстановлением.
-- Дата и время вводятся отдельно; время предзаполнено 00:00:00. Поддерживаются ЧЧ:ММ, ЧЧ:ММ:СС, явный UTC/offset. Парсер проверяет календарь, диапазоны часов/минут/секунд/смещения и диапазон Git-дат. В локальном поясе проверяется обратное совпадение всех компонентов: пропущенные при DST часы не округляются молча. Для повторяющегося времени можно указать смещение явно.
-- Валидация даты/времени не перехватывает отмену: ожидание ввода находится вне validation catch. Сохраняются безопасные defaults подтверждений, защита терминала, отсутствие записей до подтверждения и контроль исходных refs.
-- Добавлены проверки фиксированного занятого имени (без записей), UUID v4 в именах, явного времени в author/committer, локального времени и смещения, неверных календарных/временных значений, верхней границы и переходов DST Europe/Amsterdam.
-- Проверка этапа завершена: npm test 46/46, сборка успешна. В PTY на Node.js 24.12.0 подтверждены запись точного времени со смещением, UUID-имена, остановка при занятой default-ветке до следующего вопроса (без изменений .git), Ctrl+C в поле времени и восстановление raw mode. git fsck --strict проходит.
+The full implementation test suite was not repeated for comment and documentation changes.
+The previous result of 46 tests is the implementation baseline.

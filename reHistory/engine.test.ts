@@ -10,7 +10,7 @@ import { parseDate, parseStart } from './cli.ts';
 function fixture(t: { after: (fn: () => void) => void }, format?: string): Repository {
   const dir = mkdtempSync(join(tmpdir(), 'rehistory-test-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
-  // Создание фикстуры тоже изолировано от GIT_* и пользовательских шаблонов.
+  // Isolate fixture creation from GIT_* variables and user templates too.
   runGit(tmpdir(), ['init', '-q', '--template=', '-b', 'main', ...(format ? [`--object-format=${format}`] : []), dir]);
   const repo = new Repository(dir);
   repo.git(['config', 'user.name', 'Тестовый автор']);
@@ -119,8 +119,8 @@ test('нельзя перезаписать существующий бекап 
   const repo = fixture(t);
   repo.git(['branch', 'rehistory-backup/existing']);
   assert.throws(() => makePlan(repo, { ...options, backupBranch: 'rehistory-backup/existing' }), /уже существует/);
-  // Родительская ссылка мешает создать вложенную. При ошибке prepare
-  // все ссылки должны сохранить старые значения.
+  // The parent ref prevents creation of the nested ref.
+  // If prepare fails, all refs must keep their old values.
   const before = repo.refs();
   const plan = makePlan(repo, { ...options, backupBranch: 'rehistory-backup/existing/child' });
   assert.throws(() => applyPlan(plan), /Git update-ref/);
@@ -243,12 +243,12 @@ test('переменные GIT_* не перенаправляют работу 
   `);
   const before = snapshot(repo);
   const foreignBefore = snapshot(foreign);
-  // Отдельный .mjs и CWD фикстуры не зависят от package scope npm или eval.
-  // Внутренний контекст Node test runner не передаётся обычному дочернему CLI.
+  // Use an .mjs file and the fixture directory to avoid npm or eval scope.
+  // Do not pass internal Node test context to the child CLI.
   const childEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('NODE_TEST_')));
   const result = spawnSync(process.execPath, [child, repo.path], {
     cwd: repo.path, timeout: 30000,
-    // IDE может включать FORCE_COLOR: машинный JSON не должен получать ANSI-окраску.
+    // An IDE can set FORCE_COLOR. Machine JSON must not contain ANSI colors.
     env: { ...childEnv, FORCE_COLOR: '1', GIT_DIR: foreign.common, GIT_WORK_TREE: foreign.path, GIT_INDEX_FILE: join(foreign.common, 'index'), GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'core.hooksPath', GIT_CONFIG_VALUE_0: '/nonexistent' },
   });
   const diagnostic = `Node ${process.version}; status=${result.status}; signal=${result.signal}; error=${result.error?.message || 'нет'}\nstdout: ${result.stdout?.toString()}\nstderr: ${result.stderr?.toString()}`;
