@@ -1,6 +1,7 @@
 import { closeSync, constants, fstatSync, lstatSync, openSync, readSync, realpathSync, statSync } from 'node:fs';
 
 import { logName } from '@moveToRepo/log';
+import { type DirectoryId, directoryId, inDirectory } from '@moveToRepo/tools';
 
 export const maxFiles = 100;
 export const maxFileSize = 10 * 1024 * 1024;
@@ -96,12 +97,17 @@ export function secretContent(content: Buffer): string | undefined {
   return secretContentPatterns.find(([pattern]) => texts.some((value) => pattern.test(value)))?.[1];
 }
 
-/** Reject a root directory when its real path has a segment that starts with a dot, for example `~/.docker` or `~/.config/gh`. */
-export function checkRoot(root: string): void {
+/**
+ * Reject a root directory when its real path has a segment that starts with a dot, for example `~/.docker` or `~/.config/gh`.
+ * The real path must lead to the expected directory. Each later step into the root checks the identity again.
+ */
+export function checkRoot(root: string, expected: DirectoryId = directoryId(root)): void {
   const real = realpathSync(root);
   if (real.split('/').some((segment) => segment.startsWith('.'))) {
     throw new Error(`Текущий каталог находится внутри каталога, имя которого начинается с точки: ${real}. Такие каталоги часто содержат секреты, запуск из них запрещён.`);
   }
+  const actual = directoryId(real);
+  if (actual.dev !== expected.dev || actual.ino !== expected.ino) throw new Error(`Каталог ${root} изменился во время работы. Запуск остановлен.`);
 }
 
 /** Map a source path and a destination directory to the path in the repository. `.` is the repository root. */
@@ -134,19 +140,17 @@ export function checkEntries(entries: Entry[]): void {
  * Read one source file below the root directory. Do not follow symbolic links in any segment.
  * Reject hard links, special files, and large files.
  *
- * Node.js has no `openat`, so the current directory is the directory handle. The function goes into each directory
- * with a relative name and compares the device and inode of `.` with the checked directory. A directory that is replaced
- * by a link after the check gives another inode, and the run stops. The file name is opened relative to the current
+ * Node.js has no `openat`, so the current directory is the directory handle. The function goes into the root
+ * and checks its identity (see `inDirectory`). Then it goes into each directory with a relative name and compares
+ * the device and inode of `.` with the checked directory. A directory that is replaced by a link after the check
+ * gives another inode, and the run stops. The file name is opened relative to the current
  * directory with `O_NOFOLLOW`, so a change of a parent name after the step cannot select another file.
  * All file checks use the opened descriptor.
- * The current directory is restored at the end. The CLI is synchronous, so no other code sees the change.
  */
-export function readSource(root: string, source: string): { content: Buffer; executable: boolean } {
+export function readSource(root: string, source: string, rootId: DirectoryId = directoryId(root)): { content: Buffer; executable: boolean } {
   const segments = pathSegments(source, 'Файл', true);
   const name = segments.at(-1) ?? '';
-  const start = process.cwd();
-  try {
-    process.chdir(root);
+  return inDirectory(root, rootId, () => {
     for (const segment of segments.slice(0, -1)) {
       let stat;
       try {
@@ -186,18 +190,16 @@ export function readSource(root: string, source: string): { content: Buffer; exe
     } finally {
       closeSync(fd);
     }
-  } finally {
-    process.chdir(start);
-  }
+  });
 }
 
-/** Read all files. Check the total size and the contents for known secret formats. */
-export function readSources(root: string, entries: Entry[]): SourceFile[] {
+/** Read all files. Check the total size and the contents for known secret formats. `rootId` is the identity of the root at the start. */
+export function readSources(root: string, entries: Entry[], rootId: DirectoryId = directoryId(root)): SourceFile[] {
   checkEntries(entries);
-  checkRoot(root);
+  checkRoot(root, rootId);
   let total = 0;
   return entries.map((entry) => {
-    const { content, executable } = readSource(root, entry.source);
+    const { content, executable } = readSource(root, entry.source, rootId);
     total += content.length;
     if (total > maxTotalSize) throw new Error(`Общий размер файлов больше ${maxTotalSize / 1024 / 1024} МиБ.`);
     const secret = secretContent(content);

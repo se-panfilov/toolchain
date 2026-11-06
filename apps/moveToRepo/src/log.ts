@@ -1,5 +1,7 @@
-import { closeSync, constants, fstatSync, lstatSync, openSync, type Stats, writeSync } from 'node:fs';
-import { join, posix } from 'node:path';
+import { closeSync, constants, fchmodSync, fstatSync, fsyncSync, lstatSync, openSync, type Stats, writeSync } from 'node:fs';
+import { posix } from 'node:path';
+
+import { type DirectoryId, directoryId, inDirectory } from '@moveToRepo/tools';
 
 /** The operation log in the current directory. The name starts with `__`. */
 export const logName = '__movetorepo-log.md';
@@ -29,15 +31,27 @@ export function code(value: string): string {
 }
 
 export type LogFile = { source: string; target: string; state: 'add' | 'replace' };
-export type LogStart = { time: Date; directory: string; repository: string; base: string; branch: string; commit: string; files: LogFile[] };
+/**
+ * Hide known token formats and credentials in URLs and headers. Error text from Git and gh goes to the log through this function.
+ * Other secret formats are not detected.
+ */
+export function redact(value: string): string {
+  return value
+    .replace(/\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})/g, '[скрыто]')
+    .replace(/\b([a-z][a-z0-9+.-]*:\/\/)[^\s/@]+@/gi, '$1[скрыто]@')
+    .replace(/\b(authorization:\s*)(?:(bearer|token|basic)\s+)?\S+/gi, (_, name: string, scheme?: string) => `${name}${scheme ? `${scheme} ` : ''}[скрыто]`);
+}
+
+export type LogStart = { id: string; time: Date; directory: string; repository: string; base: string; branch: string; commit: string; files: LogFile[] };
 
 /** The first part of a log entry. It is written before the push. moveToRepo runs on macOS and Linux, so local paths use `/`. */
 export function startEntry(entry: LogStart): string {
   const files = entry.files.map((file) => `  - ${code(posix.join(entry.directory, file.source))} → ${code(file.target)} (${file.state === 'add' ? 'новый' : 'замена'})`);
   return [
     '',
-    `## ${formatTime(entry.time)}`,
+    `## ${formatTime(entry.time)} · операция ${code(entry.id)}`,
     '',
+    `- ID операции: ${code(entry.id)}`,
     `- Дата и время: ${formatTime(entry.time)}`,
     `- Целевой репозиторий: ${code(entry.repository)} (https://github.com/${entry.repository})`,
     `- Целевая ветка: ${code(entry.base)}`,
@@ -51,24 +65,30 @@ export function startEntry(entry: LogStart): string {
   ].join('\n');
 }
 
-/** The last line of a log entry: the pull request or the error. */
-export function resultLine(time: Date, result: string): string {
-  return `- Результат (${formatTime(time)}): ${result.replace(/[\p{Cc}\p{Cf}]/gu, ' ')}\n`;
+/**
+ * The result of an operation: the pull request or the error. Parallel runs can write between the start and the result,
+ * so the result line names the operation ID. The detail is in inline code with known tokens hidden.
+ */
+export function resultLine(id: string, time: Date, result: string, detail?: string): string {
+  const text = detail === undefined ? '' : ` ${code(redact(detail).replace(/\s+/g, ' ').trim())}`;
+  return `- Результат операции ${code(id)} (${formatTime(time)}): ${result.replace(/[\p{Cc}\p{Cf}]/gu, ' ')}${text}\n`;
 }
 
 /**
  * Check the log path without a write. A missing file is accepted. An existing path must be a regular file
  * of the current user with one link. A symbolic link stops the run. Use it before network access.
  */
-export function checkLog(directory: string): void {
-  let stat;
-  try {
-    stat = lstatSync(join(directory, logName));
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
-    throw new Error(`Журнал ${logName} недоступен: ${(error as Error).message}`, { cause: error });
-  }
-  checkStat(stat);
+export function checkLog(directory: string, expected: DirectoryId = directoryId(directory)): void {
+  inDirectory(directory, expected, () => {
+    let stat;
+    try {
+      stat = lstatSync(logName);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+      throw new Error(`Журнал ${logName} недоступен: ${(error as Error).message}`, { cause: error });
+    }
+    checkStat(stat);
+  });
 }
 
 function checkStat(stat: Stats): void {
@@ -79,17 +99,19 @@ function checkStat(stat: Stats): void {
 }
 
 /**
- * The append-only operation log. The file opens with `O_APPEND` and `O_NOFOLLOW`, mode `0600` for a new file.
- * The checks use the opened descriptor. Each record is one write, so records of parallel runs do not mix.
+ * The append-only operation log. The file opens relative to the checked directory with `O_APPEND` and `O_NOFOLLOW`.
+ * A new file gets mode `0600`. An existing file with access for the group or others is changed to `0600`.
+ * The checks use the opened descriptor. Each record is one write followed by `fsync`, so records of parallel runs do not mix.
  */
 export class OperationLog {
   private constructor(private fd: number | undefined) {}
 
-  static open(directory: string): OperationLog {
+  static open(directory: string, expected: DirectoryId = directoryId(directory)): OperationLog {
     let fd;
     try {
-      fd = openSync(join(directory, logName), constants.O_WRONLY | constants.O_APPEND | constants.O_CREAT | constants.O_NOFOLLOW | constants.O_NONBLOCK, 0o600);
+      fd = inDirectory(directory, expected, () => openSync(logName, constants.O_WRONLY | constants.O_APPEND | constants.O_CREAT | constants.O_NOFOLLOW | constants.O_NONBLOCK, 0o600));
     } catch (error) {
+      if (!(error as NodeJS.ErrnoException).code) throw error;
       const code = (error as NodeJS.ErrnoException).code;
       if (code === 'ELOOP' || code === 'EMLINK') throw new Error(`Журнал ${logName} — символическая ссылка. Удалите или переименуйте его.`, { cause: error });
       throw new Error(`Не удалось открыть журнал ${logName}: ${(error as Error).message}`, { cause: error });
@@ -97,7 +119,11 @@ export class OperationLog {
     try {
       const stat = fstatSync(fd);
       checkStat(stat);
-      if (stat.size === 0) writeSync(fd, header);
+      if ((stat.mode & 0o077) !== 0) fchmodSync(fd, 0o600);
+      if (stat.size === 0) {
+        writeSync(fd, header);
+        fsyncSync(fd);
+      }
     } catch (error) {
       closeSync(fd);
       throw error;
@@ -110,6 +136,7 @@ export class OperationLog {
     const data = Buffer.from(text, 'utf8');
     const written = writeSync(this.fd, data);
     if (written !== data.length) throw new Error(`Запись в журнал ${logName} не завершена.`);
+    fsyncSync(this.fd);
   }
 
   close(): void {
