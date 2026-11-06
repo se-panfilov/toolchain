@@ -2,16 +2,26 @@ import { spawnSync } from 'node:child_process';
 import { constants, existsSync, openSync, closeSync, unlinkSync, writeFileSync, fsyncSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { devNull } from 'node:os';
 
-type Ref = { name: string; oid: string; symbolic: string };
-export type Options = { interval: number; start: number; identity?: { name: string; email: string }; backupBranch?: string };
-type ObjectData = { type: 'commit' | 'tag'; data: Buffer; oid: string };
-export type Plan = { repo: Repository; options: Options; refs: Ref[]; selected: Ref[]; objects: ObjectData[]; mapping: Map<string, string>; commits: number; stripped: number; head: string; headOid: string };
+export type Ref = { name: string; oid: string; symbolic: string };
+export type Options = { interval: number; start: number; identity?: { name: string; email: string }; backupBranch?: string; tagPolicy?: 'normalize' | 'preserve'; tagIdentity?: { name: string; email: string } };
+export type ObjectData = { type: 'commit' | 'tag'; data: Buffer; oid: string };
+export type Plan = { repo: Repository; options: Options; refs: Ref[]; selected: Ref[]; objects: ObjectData[]; mapping: Map<string, string>; commits: number; stripped: number; head: string; headOid: string; commitOrder: string[] };
 
 // Git вызывается без shell. Убираем наследуемые перенаправления Git,
 // чтобы --repo всегда выбирал именно указанный репозиторий.
 const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')));
-Object.assign(env, { GIT_NO_REPLACE_OBJECTS: '1', GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0', GIT_NO_LAZY_FETCH: '1', LC_ALL: 'C' });
+Object.assign(env, { GIT_NO_REPLACE_OBJECTS: '1', GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0', GIT_NO_LAZY_FETCH: '1', LC_ALL: 'C', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_SYSTEM: devNull, GIT_CONFIG_GLOBAL: devNull });
+export function runGit(path: string, args: string[], input?: Buffer | string, extraEnv: Record<string, string> = {}): Buffer {
+  const result = spawnSync('git', ['--no-pager', '-c', 'core.hooksPath=', '-c', 'core.fsmonitor=false', '-c', 'gc.auto=0', '-c', 'maintenance.auto=false', '-c', 'commit.gpgSign=false', '-c', 'tag.gpgSign=false', '-c', 'protocol.allow=never', '-c', 'protocol.file.allow=never', '-c', 'protocol.https.allow=never', '-c', 'protocol.ssh.allow=never', '-c', 'protocol.http.allow=never', '-c', 'protocol.ext.allow=never', '-C', path, ...args], {
+    env: { ...env, ...extraEnv }, input, maxBuffer: 256 * 1024 * 1024, windowsHide: true,
+  });
+  if (result.error) throw new Error(`Не удалось запустить Git: ${result.error.message}`);
+  if (result.status !== 0) throw new Error(`Git ${args[0]}: ${result.stderr?.toString('utf8').trim() || `код ${result.status}`}`);
+  return result.stdout;
+}
+
 export class Repository {
   path: string;
   common: string;
@@ -19,15 +29,10 @@ export class Repository {
     this.path = resolve(path);
     this.common = this.text(['rev-parse', '--path-format=absolute', '--git-common-dir']);
   }
-  git(args: string[], input?: Buffer | string): Buffer {
-    const result = spawnSync('git', ['--no-pager', '-c', 'core.hooksPath=', '-c', 'core.fsmonitor=false', '-c', 'gc.auto=0', '-c', 'maintenance.auto=false', '-C', this.path, ...args], {
-      env, input, maxBuffer: 256 * 1024 * 1024, windowsHide: true,
-    });
-    if (result.error) throw new Error(`Не удалось запустить Git: ${result.error.message}`);
-    if (result.status !== 0) throw new Error(`Git ${args[0]}: ${result.stderr?.toString('utf8').trim() || `код ${result.status}`}`);
-    return result.stdout;
+  git(args: string[], input?: Buffer | string, extraEnv: Record<string, string> = {}): Buffer {
+    return runGit(this.path, args, input, extraEnv);
   }
-  text(args: string[], input?: Buffer | string): string { return this.git(args, input).toString('utf8').trim(); }
+  text(args: string[], input?: Buffer | string, extraEnv: Record<string, string> = {}): string { return this.git(args, input, extraEnv).toString('utf8').trim(); }
   refs(): Ref[] {
     const output = this.text(['for-each-ref', '--format=%(refname)%00%(objectname)%00%(symref)']);
     return output ? output.split('\n').map(line => { const [name, oid, symbolic] = line.split('\0'); return { name, oid, symbolic }; }) : [];
@@ -56,7 +61,7 @@ export class Repository {
   }
 }
 
-function parts(data: Buffer): { headers: Buffer[]; message: Buffer } {
+export function parts(data: Buffer): { headers: Buffer[]; message: Buffer } {
   const end = data.indexOf('\n\n');
   if (end < 0) throw new Error('Некорректный Git-объект: нет разделителя заголовков.');
   const headers: Buffer[] = [];
@@ -68,7 +73,7 @@ function parts(data: Buffer): { headers: Buffer[]; message: Buffer } {
   }
   return { headers, message: data.subarray(end + 2) };
 }
-function field(header: Buffer): string { return header.subarray(0, header.indexOf(' ')).toString('ascii'); }
+export function field(header: Buffer): string { return header.subarray(0, header.indexOf(' ')).toString('ascii'); }
 function assemble(headers: Buffer[], message: Buffer): Buffer { return Buffer.concat([...headers.flatMap((h, i) => i ? [Buffer.from('\n'), h] : [h]), Buffer.from('\n\n'), message]); }
 export function validateIdentity(name: string, email: string): void {
   if (!name.trim() || /[<>\p{Cc}\p{Cf}]/u.test(name) || name.length > 200) throw new Error('Имя должно содержать 1–200 символов без <, > и управляющих символов.');
@@ -76,7 +81,7 @@ export function validateIdentity(name: string, email: string): void {
 }
 function identity(header: Buffer, timestamp: number, replacement?: Options['identity']): Buffer {
   const text = header.toString('latin1');
-  const match = /^(author|committer) (.*) (-?\d+) ([+-]\d{4})$/.exec(text);
+  const match = /^(author|committer|tagger) (.*) (-?\d+) ([+-]\d{4})$/.exec(text);
   if (!match) throw new Error('Некорректная дата или идентичность в коммите.');
   const who = replacement ? Buffer.from(`${replacement.name} <${replacement.email}>`, 'utf8') : Buffer.from(match[2], 'latin1');
   return Buffer.concat([Buffer.from(`${match[1]} `), who, Buffer.from(` ${timestamp} +0000`)]);
@@ -84,6 +89,8 @@ function identity(header: Buffer, timestamp: number, replacement?: Options['iden
 export function makePlan(repo: Repository, options: Options): Plan {
   if (!Number.isSafeInteger(options.interval) || options.interval < 1 || options.interval > 31536000) throw new Error('Интервал: целое число от 1 до 31536000 секунд.');
   if (options.identity) validateIdentity(options.identity.name, options.identity.email);
+  if (options.tagIdentity) validateIdentity(options.tagIdentity.name, options.tagIdentity.email);
+  if (options.tagPolicy && !['normalize', 'preserve'].includes(options.tagPolicy)) throw new Error('Неизвестная политика дат тегов.');
   const { refs, head, headOid } = repo.inspect();
   const reachable = new Set(repo.text(['rev-list', headOid]).split('\n'));
   const selected = refs.filter(r => {
@@ -128,6 +135,7 @@ export function makePlan(repo: Repository, options: Options): Plan {
     }
     add(old, 'commit', assemble(updated, message));
   }
+  const dates = new Map(commits.map((old, index) => [old, options.start + index * options.interval]));
   const active = new Set<string>();
   function rewriteTag(old: string): string {
     if (mapping.has(old)) return mapping.get(old)!;
@@ -141,11 +149,24 @@ export function makePlan(repo: Repository, options: Options): Plan {
     let body = message;
     const marker = /(?:^|\n)-----BEGIN (?:PGP SIGNATURE|SSH SIGNATURE|SIGNED MESSAGE)-----/m.exec(message.toString('latin1'));
     if (marker) { body = message.subarray(0, marker.index + (message[marker.index] === 10 ? 1 : 0)); stripped++; }
-    const result = add(old, 'tag', assemble(headers.map(h => field(h) === 'object' ? Buffer.from(`object ${rewritten}`) : h), body));
+    const date = dates.get(target);
+    if (date === undefined) throw new Error('Не удалось определить дату конечного коммита тега.');
+    if (!headers.some(h => field(h) === 'tagger')) throw new Error('Annotated-тег без tagger: обработка остановлена.');
+    const updated = headers.map(h => {
+      if (field(h) === 'object') return Buffer.from(`object ${rewritten}`);
+      if (field(h) !== 'tagger') return h;
+      if (options.tagPolicy !== 'preserve') return identity(h, date, options.tagIdentity);
+      if (!options.tagIdentity) return h;
+      const match = / (-?\d+) ([+-]\d{4})$/.exec(h.toString('latin1'));
+      if (!match) throw new Error('Некорректная дата tagger.');
+      return Buffer.concat([Buffer.from(`tagger ${options.tagIdentity.name} <${options.tagIdentity.email}>`), Buffer.from(match[0])]);
+    });
+    const result = add(old, 'tag', assemble(updated, body));
+    dates.set(old, date);
     active.delete(old); return result;
   }
   for (const ref of selected) if (!mapping.has(ref.oid)) rewriteTag(ref.oid);
-  return { repo, options, refs, selected, objects, mapping, commits: commits.length, stripped, head, headOid };
+  return { repo, options, refs, selected, objects, mapping, commits: commits.length, stripped, head, headOid, commitOrder: commits.map(old => mapping.get(old)!) };
 }
 
 export function applyPlan(plan: Plan): { recovery: string; backupPrefix?: string } {
