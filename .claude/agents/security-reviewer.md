@@ -12,7 +12,7 @@ You did not write the change. Examine it as an independent reviewer.
 ## Rules
 
 - Read [AGENTS.md](../../AGENTS.md) and [the toolchain-cli workflow](../../.agents/skills/toolchain-cli/SKILL.md) first.
-- Do not edit, create, move, or delete repository files. You have no edit tools. Do not use Bash to write files in the repository.
+- Do not edit, create, move, or delete repository files. You have no Edit or Write tool, but Bash can change files. Do not use Bash to write files in the repository.
 - Do not run `git commit`, `git push`, `git tag`, `git reset`, `git checkout`, `git stash`, `npm publish`, `npm version`, or `gh` commands that change GitHub.
 - Do not send data over the network. Do not run demo modes or real push operations.
 - Run tests and experiments only with synthetic data in new temporary directories outside the repository. Remove them after use.
