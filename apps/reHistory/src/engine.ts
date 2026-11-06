@@ -13,9 +13,9 @@ export const flows = ['dates', 'authors', 'messages'] as const;
 export type Flow = (typeof flows)[number];
 /** Each run changes one kind of metadata. Other commit and tag data stay unchanged. */
 export type Options =
-  | { flow: 'dates'; start: number; interval: number; tagPolicy?: 'normalize' | 'preserve'; backupBranch?: string }
-  | { flow: 'authors'; identity: Identity; tagIdentity?: Identity; backupBranch?: string }
-  | { flow: 'messages'; commitMessage: string; backupBranch?: string };
+  | { flow: 'dates'; start: number; interval: number; tagPolicy?: 'normalize' | 'preserve' | undefined; backupBranch?: string | undefined }
+  | { flow: 'authors'; identity: Identity; tagIdentity?: Identity | undefined; backupBranch?: string | undefined }
+  | { flow: 'messages'; commitMessage: string; backupBranch?: string | undefined };
 export type ObjectData = { type: 'commit' | 'tag'; data: Buffer; oid: string };
 export type Plan = {
   repo: Repository;
@@ -30,6 +30,13 @@ export type Plan = {
   headOid: string;
   commitOrder: string[];
 };
+
+/** Return the rewritten object ID. Stop if the plan does not contain the object. */
+export function mapped(mapping: Map<string, string>, oid: string): string {
+  const value = mapping.get(oid);
+  if (value === undefined) throw new Error('Объект отсутствует в плане.');
+  return value;
+}
 
 // Call Git without a shell. Remove inherited Git routing variables.
 // This makes --repo select the specified repository.
@@ -145,7 +152,7 @@ export class Repository {
     const output = this.text(['for-each-ref', '--format=%(refname)%00%(objectname)%00%(symref)']);
     const refs = output
       ? output.split('\n').map((line) => {
-          const [name, oid, symbolic] = line.split('\0');
+          const [name = '', oid = '', symbolic = ''] = line.split('\0');
           return { name, oid, symbolic };
         })
       : [];
@@ -261,8 +268,9 @@ export function parts(data: Buffer): { headers: Buffer[]; message: Buffer } {
   const headers: Buffer[] = [];
   for (const line of data.subarray(0, end).toString('latin1').split('\n')) {
     if (line.startsWith(' ')) {
-      if (!headers.length) throw new Error('Некорректное продолжение заголовка.');
-      headers[headers.length - 1] = Buffer.concat([headers.at(-1)!, Buffer.from(`\n${line}`, 'latin1')]);
+      const last = headers.pop();
+      if (!last) throw new Error('Некорректное продолжение заголовка.');
+      headers.push(Buffer.concat([last, Buffer.from(`\n${line}`, 'latin1')]));
     } else headers.push(Buffer.from(line, 'latin1'));
   }
   return { headers, message: data.subarray(end + 2) };
@@ -285,13 +293,14 @@ export function normalizeCommitMessage(value: string): Buffer {
   return Buffer.from(value.endsWith('\n') ? value : `${value}\n`, 'utf8');
 }
 /** Validate an author, committer, or tagger line. Replace only the requested part. */
-function person(header: Buffer, change: { timestamp?: number; identity?: Identity } = {}): Buffer {
+function person(header: Buffer, change: { timestamp?: number | undefined; identity?: Identity | undefined } = {}): Buffer {
   const text = header.toString('latin1');
   const match = /^(author|committer|tagger) (.*) (-?\d+) ([+-]\d{4})$/.exec(text);
-  if (!match) throw new Error('Некорректная дата или идентичность в коммите.');
-  const who = change.identity ? Buffer.from(`${change.identity.name} <${change.identity.email}>`, 'utf8') : Buffer.from(match[2], 'latin1');
-  const when = change.timestamp === undefined ? `${match[3]} ${match[4]}` : `${change.timestamp} +0000`;
-  return Buffer.concat([Buffer.from(`${match[1]} `), who, Buffer.from(` ${when}`)]);
+  const [, role, identity, time, zone] = match ?? [];
+  if (role === undefined || identity === undefined || time === undefined || zone === undefined) throw new Error('Некорректная дата или идентичность в коммите.');
+  const who = change.identity ? Buffer.from(`${change.identity.name} <${change.identity.email}>`, 'utf8') : Buffer.from(identity, 'latin1');
+  const when = change.timestamp === undefined ? `${time} ${zone}` : `${change.timestamp} +0000`;
+  return Buffer.concat([Buffer.from(`${role} `), who, Buffer.from(` ${when}`)]);
 }
 
 function exactOptionKeys(options: Record<string, unknown>, keys: string[]): void {
@@ -352,12 +361,12 @@ export function* readMetadataBatches(repo: Repository, ids: string[]): Generator
     let offset = 0;
     for (const [index, oid] of batch.entries()) {
       const end = data.indexOf(10, offset);
-      const header = data.subarray(offset, end).toString('ascii').split(' ');
-      const size = Number(header[2]);
-      if (end < offset || header[0] !== oid || !['commit', 'tag'].includes(header[1]) || !Number.isSafeInteger(size) || size < 0 || end + size + 2 > data.length || data[end + size + 1] !== 10)
+      const [name, type = '', sizeText] = data.subarray(offset, end).toString('ascii').split(' ');
+      const size = Number(sizeText);
+      if (end < offset || name !== oid || !['commit', 'tag'].includes(type) || !Number.isSafeInteger(size) || size < 0 || end + size + 2 > data.length || data[end + size + 1] !== 10)
         throw new Error('Некорректный ответ cat-file при чтении метаданных.');
       const raw = data.subarray(end + 1, end + size + 1);
-      yield [start + index, oid, header[1], raw];
+      yield [start + index, oid, type, raw];
       offset = end + size + 2;
     }
     if (offset !== data.length) throw new Error('Лишние данные в ответе cat-file.');
@@ -372,10 +381,11 @@ export function writeObjects(repo: Repository, objects: ObjectData[]): void {
   let fd: number | undefined;
   try {
     const file = join(directory, 'metadata.pack');
-    fd = openSync(file, 'wx', 0o600);
+    const handle = openSync(file, 'wx', 0o600);
+    fd = handle;
     const digest = createHash(format);
     const write = (data: Buffer): void => {
-      writeFileSync(fd!, data);
+      writeFileSync(handle, data);
       digest.update(data);
     };
     const header = Buffer.alloc(12);
@@ -389,8 +399,7 @@ export function writeObjects(repo: Repository, objects: ObjectData[]): void {
       const bytes = [(object.type === 'commit' ? 1 : 4) * 16 + (size % 16)];
       size = Math.floor(size / 16);
       while (size > 0) {
-        bytes[bytes.length - 1] |= 128;
-        bytes.push(size % 128);
+        bytes.push((bytes.pop() ?? 0) | 128, size % 128);
         size = Math.floor(size / 128);
       }
       write(Buffer.from(bytes));
@@ -492,7 +501,8 @@ export function makePlan(repo: Repository, options: Options): Plan {
   const positions = new Map(commits.map((old, index) => [old, index]));
   const active = new Set<string>();
   function rewriteTag(old: string): string {
-    if (mapping.has(old)) return mapping.get(old)!;
+    const known = mapping.get(old);
+    if (known !== undefined) return known;
     if (active.has(old)) throw new Error('Циклическая ссылка тегов.');
     active.add(old);
     if (repo.text(['cat-file', '-t', old]) !== 'tag') throw new Error('Тег указывает на дерево/blob. Такие теги не поддерживаются.');
@@ -521,7 +531,7 @@ export function makePlan(repo: Repository, options: Options): Plan {
     return result;
   }
   for (const ref of selected) if (!mapping.has(ref.oid)) rewriteTag(ref.oid);
-  return { repo, options, refs, selected, objects, mapping, commits: commits.length, stripped, head, headOid, commitOrder: commits.map((old) => mapping.get(old)!) };
+  return { repo, options, refs, selected, objects, mapping, commits: commits.length, stripped, head, headOid, commitOrder: commits.map((old) => mapped(mapping, old)) };
 }
 
 // Multiple synchronous applications can finish before queued signals are delivered.
@@ -531,7 +541,7 @@ function recordInterrupt(): void {
   for (const state of pendingInterruptions) state.interrupted = true;
 }
 
-export function applyPlan(plan: Plan): { recovery: string; backupPrefix?: string; readonly interrupted: boolean } {
+export function applyPlan(plan: Plan): { recovery: string; backupPrefix?: string | undefined; readonly interrupted: boolean } {
   const { repo, options } = plan;
   const lock = join(repo.common, 'rehistory.lock');
   let fd: number;
@@ -594,7 +604,7 @@ export function applyPlan(plan: Plan): { recovery: string; backupPrefix?: string
     const selectedNames = new Set(plan.selected.map((r) => r.name));
     for (const ref of plan.refs.filter((r) => !r.symbolic)) {
       commands.push('option no-deref');
-      commands.push(selectedNames.has(ref.name) ? `update ${ref.name} ${plan.mapping.get(ref.oid)!} ${ref.oid}` : `verify ${ref.name} ${ref.oid}`);
+      commands.push(selectedNames.has(ref.name) ? `update ${ref.name} ${mapped(plan.mapping, ref.oid)} ${ref.oid}` : `verify ${ref.name} ${ref.oid}`);
     }
     if (backupPrefix) {
       for (const ref of plan.selected) commands.push(`create ${backupPrefix}/${ref.name.slice(5)} ${ref.oid}`);
@@ -612,7 +622,7 @@ export function applyPlan(plan: Plan): { recovery: string; backupPrefix?: string
       }
     };
   } catch (error) {
-    throw new Error(`${error instanceof Error ? error.message : error}${recovery ? `\nПлан восстановления: ${recovery}` : ''}`, { cause: error });
+    throw new Error(`${error instanceof Error ? error.message : String(error)}${recovery ? `\nПлан восстановления: ${recovery}` : ''}`, { cause: error });
   } finally {
     try {
       closeSync(fd);

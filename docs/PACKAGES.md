@@ -82,6 +82,8 @@ A version change does not authorize publication.
 
 - Use strict checking and the compilation settings required by AGENTS.md.
 - Enable `noImplicitReturns`, `noFallthroughCasesInSwitch`, `noImplicitOverride`, `noUnusedLocals`, and `noUnusedParameters`.
+- Enable `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes`. Check each index result and each regular expression group before use.
+- Do not use non-null assertions to satisfy these checks. Use an explicit check that stops with an error, or a value that fails the next validation.
 - Use `verbatimModuleSyntax`, explicit type imports, and `node:` imports for Node.js built-ins.
 - Prefer inferred local types. Give exported boundaries explicit types when inference hides their contract.
 - Use `unknown` and validate external data before narrowing it. Do not bypass checks with blanket casts or suppression comments.
@@ -111,7 +113,8 @@ Use root discovery files to expose the shared ESLint, Prettier, and Vitest confi
 Keep application wrappers small and limited to local roots, aliases, entries, and documented exceptions.
 Extend the shared TypeScript base from each application tsconfig.json.
 Set rootDir, outDir, include, exclude, and alias paths locally because they are relative to their config file.
-Use recommended JavaScript and TypeScript ESLint rules.
+Use recommended JavaScript rules and type-checked TypeScript ESLint rules.
+Application source uses the strict type-checked set. Application tests use the recommended type-checked set.
 Apply the adapted [ESLint rules](ESLINT.md) for Node.js applications.
 Use eslint-config-prettier to disable conflicting formatting rules. Keep Prettier separate from ESLint.
 Provide format, format:check, lint, and check commands.

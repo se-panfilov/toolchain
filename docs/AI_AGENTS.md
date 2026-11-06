@@ -6,15 +6,18 @@ Agent behavior also depends on the host, version, trust settings, and higher-pri
 
 ## Files
 
-| File                                                        | Purpose                                                          |
-| ----------------------------------------------------------- | ---------------------------------------------------------------- |
-| [AGENTS.md](../AGENTS.md)                                   | Requirements for the complete Toolchain repository.              |
-| [Shared SKILL.md](../.agents/skills/toolchain-cli/SKILL.md) | Development, security review, and archive verification workflow. |
-| [CLAUDE.md](../CLAUDE.md)                                   | Imports AGENTS.md through Claude's native import syntax.         |
-| [Claude SKILL.md](../.claude/skills/toolchain-cli/SKILL.md) | Makes the shared workflow discoverable in Claude Code.           |
-| [GEMINI.md](../GEMINI.md)                                   | Imports AGENTS.md through Gemini CLI's native import syntax.     |
-| [Copilot instructions](../.github/copilot-instructions.md)  | Directs Copilot to the common files.                             |
-| [Writing rules](WRITING.md)                                 | English documentation rules based on ASD-STE100 Issue 9.         |
+| File                                                         | Purpose                                                          |
+| ------------------------------------------------------------ | ---------------------------------------------------------------- |
+| [AGENTS.md](../AGENTS.md)                                    | Requirements for the complete Toolchain repository.              |
+| [Shared SKILL.md](../.agents/skills/toolchain-cli/SKILL.md)  | Development, security review, and archive verification workflow. |
+| [CLAUDE.md](../CLAUDE.md)                                    | Imports AGENTS.md through Claude's native import syntax.         |
+| [Claude SKILL.md](../.claude/skills/toolchain-cli/SKILL.md)  | Makes the shared workflow discoverable in Claude Code.           |
+| [new-app SKILL.md](../.agents/skills/new-app/SKILL.md)       | Steps to add an application to `apps/`.                          |
+| [Claude new-app adapter](../.claude/skills/new-app/SKILL.md) | Makes the new-app workflow discoverable in Claude Code.          |
+| [Security reviewer](../.claude/agents/security-reviewer.md)  | Claude Code subagent for the separate security review.           |
+| [GEMINI.md](../GEMINI.md)                                    | Imports AGENTS.md through Gemini CLI's native import syntax.     |
+| [Copilot instructions](../.github/copilot-instructions.md)   | Directs Copilot to the common files.                             |
+| [Writing rules](WRITING.md)                                  | English documentation rules based on ASD-STE100 Issue 9.         |
 
 Use the exact uppercase filenames `AGENTS.md` and `SKILL.md`.
 Do not add lowercase copies or separate copies of the project rules.
@@ -42,6 +45,13 @@ References: [AGENTS.md discovery](https://developers.openai.com/codex/guides/age
 The root CLAUDE.md imports AGENTS.md rather than copying it.
 The Claude skill adapter directs the agent to the shared workflow.
 Invoke `/toolchain-cli` explicitly when necessary.
+Invoke `/new-app` to add an application.
+
+The `security-reviewer` subagent does the separate security review from AGENTS.md in its own context.
+It has no edit tools. Its instructions forbid repository writes, Git history changes, publication, and network use.
+These instructions are not a sandbox. Its Bash tool can still run any command that the session permits.
+Ask Claude to use it after an implementation stage, for example: "use the security-reviewer subagent for this diff".
+The subagent reports findings. A human decides how to handle each finding.
 The import also supports sessions that do not read AGENTS.md directly.
 
 References: [project instructions and imports](https://code.claude.com/docs/en/memory) and [project skills](https://code.claude.com/docs/en/skills).

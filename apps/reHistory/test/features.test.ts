@@ -122,7 +122,7 @@ test('экспорт отвергает посторонние данные в c
     writeFileSync(path, before);
   }
   const path = join(target, manifestName);
-  const manifest = JSON.parse(readFileSync(path, 'utf8'));
+  const manifest = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
   manifest.sourcePath = '/private/project';
   writeFileSync(path, JSON.stringify(manifest));
   assert.throws(() => verifyExport(target), /манифест/);
@@ -133,7 +133,7 @@ test('схема манифеста отвергает неверные типы
   const target = join(repo.path, '..', 'schema-check.git');
   exportPlan(makePlan(repo, settings), target);
   const file = join(target, manifestName);
-  const original = JSON.parse(readFileSync(file, 'utf8'));
+  const original = JSON.parse(readFileSync(file, 'utf8')) as { objects: string[]; refs: unknown[]; commitOrder: string[]; policy: Record<string, unknown> };
   const cases = [
     null,
     [],
@@ -221,7 +221,7 @@ test('аудит читает stash, скрытые ссылки и исходн
   assert(report.tags.some((tag) => tag.tagger.timezone === '-0200'));
   assert(report.commits.some((c) => !c.inCurrentHistory));
   assert(report.reflog.entries > 0);
-  assert(report.unreachable.byType.blob > 0);
+  assert((report.unreachable.byType.blob ?? 0) > 0);
   assert.deepEqual(snapshot(repo.path), before);
 });
 
@@ -297,8 +297,10 @@ test('проверка экспорта выявляет неверную дат
   output.git(['update-ref', 'refs/tags/annotated', oid]);
   // Keep the inventory and refs consistent so the date check is exercised.
   const file = join(target, manifestName);
-  const manifest = JSON.parse(readFileSync(file, 'utf8'));
-  manifest.refs.find((ref: { name: string }) => ref.name === 'refs/tags/annotated').oid = oid;
+  const manifest = JSON.parse(readFileSync(file, 'utf8')) as { refs: { name: string; oid: string }[]; objects: string[] };
+  const annotated = manifest.refs.find((ref) => ref.name === 'refs/tags/annotated');
+  assert(annotated);
+  annotated.oid = oid;
   manifest.objects.push(oid);
   writeFileSync(file, JSON.stringify(manifest));
   assert(verifyExport(target).errors.some((e) => e.includes('дата тега')));

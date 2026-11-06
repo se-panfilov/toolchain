@@ -8,6 +8,8 @@ import { parseDate, parseStart } from '@reHistory/cli';
 import { applyPlan, defaultBackupBranch, makePlan, Repository, runGit, stripTagSignature, validateIdentity, withoutGitEnvironment } from '@reHistory/engine';
 import { test } from 'vitest';
 
+type Recovery = { refs: { name: string; old: string; new: string }[] };
+
 function fixture(t: { onTestFinished: (fn: () => void) => void }, format?: string): Repository {
   const dir = mkdtempSync(join(tmpdir(), 'rehistory-test-'));
   t.onTestFinished(() => rmSync(dir, { recursive: true, force: true }));
@@ -94,7 +96,7 @@ test('смена идентичности всех авторов и комми�
   assert.equal(repo.text(['show', '-s', '--format=%an|%ae|%cn|%ce']), 'Новый автор|new@example.org|Новый автор|new@example.org');
   // The authors flow keeps dates, time zones, and messages.
   assert.equal(repo.text(['show', '-s', '--format=%ad|%cd|%B', '--date=raw']), dates);
-  assert.equal(JSON.parse(readFileSync(result.recovery, 'utf8')).refs[0].new, repo.text(['rev-parse', 'HEAD']));
+  assert.equal((JSON.parse(readFileSync(result.recovery, 'utf8')) as Recovery).refs[0]?.new, repo.text(['rev-parse', 'HEAD']));
 });
 
 test('теги другой ветки и теги blob остаются без изменений', (t) => {
@@ -281,7 +283,7 @@ test('файл восстановления возвращает ветку и �
   repo.git(['tag', '-a', 'release', '-m', 'tag']);
   const before = repo.refs();
   const result = applyPlan(makePlan(repo, { ...options, backupBranch: 'my-backup' }));
-  const manifest = JSON.parse(readFileSync(result.recovery, 'utf8'));
+  const manifest = JSON.parse(readFileSync(result.recovery, 'utf8')) as Recovery;
   const commands = ['start'];
   for (const ref of manifest.refs) commands.push('option no-deref', `update ${ref.name} ${ref.old} ${ref.new}`);
   commands.push('prepare', 'commit', '');

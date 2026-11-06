@@ -11,7 +11,7 @@ The root package is private.
 | `package.json`       | Workspace definitions, shared development dependencies, and repository commands. |
 | `package-lock.json`  | One locked dependency tree for all workspaces.                                   |
 | `docs/`              | Project requirements, writing rules, and verification records.                   |
-| `.github/workflows/` | Test, build, and release workflows for GitHub Actions.                           |
+| `.github/workflows/` | Test, build, release, secret scan, and CodeQL workflows for GitHub Actions.      |
 | `scripts/ci/`        | Application selection, archive checks, and release steps for the workflows.      |
 
 ## GitHub Actions
@@ -19,6 +19,7 @@ The root package is private.
 The three application workflows are Tests, Build, and Release.
 Each application workflow can use all applications or one application, and has a dry-run mode.
 The separate Secrets workflow checks repository history and working files. See [Git hooks and secret checks](docs/GIT_HOOKS.md).
+The separate CodeQL workflow does static security analysis of the source and the workflows.
 Release publishes new application versions to npm through trusted publishing.
 See the [GitHub Actions guide](docs/GITHUB_ACTIONS.md).
 

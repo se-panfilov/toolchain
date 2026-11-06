@@ -30,14 +30,15 @@ export type AuditReport = {
 export function stamp(data: Buffer, key: string): Stamp {
   const header = parts(data).headers.find((h) => field(h) === key);
   const match = header && /^(?:author|committer|tagger) (.*) (-?\d+) ([+-]\d{4})$/.exec(header.toString('utf8'));
-  if (!match || !Number.isSafeInteger(Number(match[2]))) throw new Error(`Некорректный заголовок ${key}.`);
-  return { identity: match[1], timestamp: Number(match[2]), timezone: match[3] };
+  const [, identity, time, timezone] = match ?? [];
+  if (identity === undefined || time === undefined || timezone === undefined || !Number.isSafeInteger(Number(time))) throw new Error(`Некорректный заголовок ${key}.`);
+  return { identity, timestamp: Number(time), timezone };
 }
 export function inventory(repo: Repository): { oid: string; type: string }[] {
   const output = repo.text(['cat-file', '--batch-all-objects', '--batch-check=%(objectname) %(objecttype)']);
   return output
     ? output.split('\n').map((line) => {
-        const [oid, type] = line.split(' ');
+        const [oid = '', type = ''] = line.split(' ');
         if (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(oid) || !['blob', 'tree', 'commit', 'tag'].includes(type)) throw new Error('Некорректная опись объектов Git.');
         return { oid, type };
       })
@@ -135,12 +136,12 @@ export function auditRepository(repo: Repository): AuditReport {
           });
       } catch (error) {
         complete = false;
-        warnings.push(`${object.oid}: ${error instanceof Error ? error.message : error}`);
+        warnings.push(`${object.oid}: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
   } catch (error) {
     complete = false;
-    warnings.push(`Не удалось прочитать метаданные: ${error instanceof Error ? error.message : error}`);
+    warnings.push(`Не удалось прочитать метаданные: ${error instanceof Error ? error.message : String(error)}`);
   }
   const refDetails = refs.map((ref) => {
     let target = ref.oid;
@@ -189,7 +190,7 @@ export function auditRepository(repo: Repository): AuditReport {
       entries: reflog.length,
       refs: reflogRefs,
       records: reflog.map((line) => {
-        const [oid, selector] = line.split('\0');
+        const [oid = '', selector = ''] = line.split('\0');
         return { oid, selector };
       })
     },
