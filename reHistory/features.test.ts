@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { Repository, runGit, makePlan, applyPlan } from './engine.ts';
@@ -38,6 +38,118 @@ function snapshot(path: string): Map<string, Buffer> {
   walk(path); return result;
 }
 const settings = { start: 1700000000, interval: 2 };
+
+test('dangling symbolic refs видны в аудите и блокируют переписывание локальных веток и тегов', t => {
+  const repo = fixture(t);
+  for (const name of ['refs/heads/dangling', 'refs/tags/dangling']) {
+    const file = join(repo.common, name);
+    writeFileSync(file, 'ref: refs/heads/missing\n');
+    const before = snapshot(repo.path);
+    const report = auditRepository(repo);
+    assert.equal(report.complete, false);
+    assert(report.refs.some(ref => ref.name === name && ref.symbolic === 'refs/heads/missing'));
+    assert.throws(() => makePlan(repo, settings), /Символические ссылки/);
+    assert.deepEqual(snapshot(repo.path), before);
+    rmSync(file);
+  }
+});
+
+test('экспорт отвергает посторонние файлы и каталоги внутри objects и refs', t => {
+  const repo = fixture(t);
+  const target = join(repo.path, '..', 'nested-check.git');
+  exportPlan(makePlan(repo, settings), target);
+  for (const relative of ['objects/info/recovery-private.json', 'objects/pack/private.keep', 'objects/ff/notes.txt', 'refs/heads/main.lock']) {
+    const file = join(target, relative);
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, 'source-path=/private/project; old-date=2000-01-01\n');
+    const before = snapshot(target);
+    assert.equal(verifyExport(target).ok, false, relative);
+    assert.deepEqual(snapshot(target), before);
+    rmSync(file);
+  }
+  mkdirSync(join(target, 'objects', 'info', 'private'));
+  assert.equal(verifyExport(target).ok, false);
+});
+
+test('экспорт отвергает посторонние данные в config, HEAD и манифесте', t => {
+  const repo = fixture(t);
+  const target = join(repo.path, '..', 'metadata-check.git');
+  exportPlan(makePlan(repo, settings), target);
+  for (const file of ['config', 'HEAD']) {
+    const path = join(target, file);
+    const before = readFileSync(path);
+    writeFileSync(path, Buffer.concat([before, Buffer.from('# source-path=/private/project\n')]));
+    assert.equal(verifyExport(target).ok, false, file);
+    writeFileSync(path, before);
+  }
+  const path = join(target, manifestName);
+  const manifest = JSON.parse(readFileSync(path, 'utf8'));
+  manifest.sourcePath = '/private/project';
+  writeFileSync(path, JSON.stringify(manifest));
+  assert.throws(() => verifyExport(target), /манифест/);
+});
+
+test('схема манифеста отвергает неверные типы, дубликаты и дополнительные поля', t => {
+  const repo = fixture(t);
+  const target = join(repo.path, '..', 'schema-check.git');
+  exportPlan(makePlan(repo, settings), target);
+  const file = join(target, manifestName);
+  const original = JSON.parse(readFileSync(file, 'utf8'));
+  const cases = [null, [], 1, { ...original, refs: [null] }, { ...original, policy: null },
+    { ...original, objects: [...original.objects, original.objects[0]] },
+    { ...original, refs: [...original.refs, original.refs[0]] },
+    { ...original, commitOrder: [...original.commitOrder, original.commitOrder[0]] },
+    { ...original, policy: { ...original.policy, identity: { name: 'Test', email: 'test@example.org', sourcePath: '/private' } } },
+    { ...original, policy: { ...original.policy, sourcePath: '/private' } },
+    { ...original, policy: { ...original.policy, identity: null } },
+  ];
+  for (const value of cases) {
+    writeFileSync(file, JSON.stringify(value));
+    assert.throws(() => verifyExport(target), /манифест/);
+  }
+  writeFileSync(file, JSON.stringify(original));
+  assert.equal(verifyExport(target).ok, true);
+});
+
+for (const format of ['sha1', 'sha256']) test(`проверяются pack/idx и packed-refs ${format}, посторонние данные отвергаются`, t => {
+  const repo = fixture(t, format);
+  const target = join(repo.path, '..', 'packed-check.git');
+  exportPlan(makePlan(repo, settings), target);
+  const output = new Repository(target);
+  output.git(['-c', 'repack.writeBitmaps=false', '-c', 'pack.writeReverseIndex=false', 'repack', '-adn']);
+  output.git(['pack-refs', '--all', '--prune']);
+  assert.equal(verifyExport(target).ok, true);
+  const file = join(target, 'packed-refs');
+  const original = readFileSync(file, 'utf8');
+  for (const oid of [repo.text(['rev-parse', 'HEAD']), output.text(['rev-parse', 'HEAD^{tree}'])]) {
+    writeFileSync(file, original.replace(/^\^[a-f0-9]+$/m, `^${oid}`));
+    assert.equal(verifyExport(target).ok, false, 'подменённый cached peeled OID');
+  }
+  writeFileSync(file, original);
+  writeFileSync(file, original.replace('\n', ' source-path=/private/project\n'));
+  assert.equal(verifyExport(target).ok, false);
+  writeFileSync(file, original);
+  const pack = readdirSync(join(target, 'objects', 'pack')).find(name => name.endsWith('.pack'))!;
+  const keep = join(target, 'objects', 'pack', pack.replace(/\.pack$/, '.keep'));
+  writeFileSync(keep, 'private metadata');
+  assert.equal(verifyExport(target).ok, false);
+  rmSync(keep);
+  const idx = join(target, 'objects', 'pack', pack.replace(/\.pack$/, '.idx'));
+  const index = readFileSync(idx);
+  rmSync(idx);
+  assert.equal(verifyExport(target).ok, false);
+  writeFileSync(idx, index);
+  assert.equal(verifyExport(target).ok, true);
+  const renamed = pack.replace(/^pack-[a-f0-9]+/, `pack-${repo.text(['rev-parse', 'HEAD'])}`);
+  const renamedPack = join(target, 'objects', 'pack', renamed);
+  const renamedIdx = renamedPack.replace(/\.pack$/, '.idx');
+  renameSync(join(target, 'objects', 'pack', pack), renamedPack);
+  renameSync(idx, renamedIdx);
+  assert.equal(verifyExport(target).ok, false, 'имя pack не совпадает с checksum');
+  renameSync(renamedPack, join(target, 'objects', 'pack', pack));
+  renameSync(renamedIdx, idx);
+  assert.equal(verifyExport(target).ok, true);
+});
 
 test('аудит читает stash, скрытые ссылки и исходную историю; побайтово ничего не меняет', t => {
   const repo = fixture(t);
@@ -110,11 +222,11 @@ test('проверка экспорта обнаруживает лишний о
   const blob = output.text(['hash-object', '-w', '--stdin'], 'unexpected');
   let report = verifyExport(target);
   assert.equal(report.ok, false);
-  assert(report.errors.some(e => e.includes('лишние')));
-  assert(report.errors.some(e => e.includes('недостижимые')));
+  assert(report.errors.some(e => e.includes(`objects/${blob.slice(0, 2)}/${blob.slice(2)}`)));
   output.git(['update-ref', 'refs/tags/unexpected', blob]);
   report = verifyExport(target);
-  assert(report.errors.some(e => e.includes('Набор refs')));
+  assert.equal(report.ok, false);
+  assert(report.errors.some(e => e.includes('refs/tags/unexpected')));
 });
 
 test('проверка экспорта выявляет неверную дату tagger и отсутствие манифеста', t => {
@@ -125,6 +237,12 @@ test('проверка экспорта выявляет неверную дат
   const raw = Buffer.from(original.toString('utf8').replace(`${settings.start} +0000`, '1600000000 +0000'));
   const oid = output.text(['hash-object', '-w', '-t', 'tag', '--stdin'], raw);
   output.git(['update-ref', 'refs/tags/annotated', oid]);
+  // Keep the inventory and refs consistent so the date check is exercised.
+  const file = join(target, manifestName);
+  const manifest = JSON.parse(readFileSync(file, 'utf8'));
+  manifest.refs.find((ref: { name: string }) => ref.name === 'refs/tags/annotated').oid = oid;
+  manifest.objects.push(oid);
+  writeFileSync(file, JSON.stringify(manifest));
   assert(verifyExport(target).errors.some(e => e.includes('дата тега')));
   rmSync(join(target, manifestName));
   assert.throws(() => verifyExport(target));

@@ -198,7 +198,7 @@ Large objects or histories can cause an operation to stop.
 
 ## Previous implementation checks
 
-The last complete test result was 46 of 46 correct test results.
+An earlier implementation check had 46 of 46 correct test results.
 The test platform was macOS with Node.js 26.5.1 and Git 2.39.5.
 Selected terminal and date cases also passed with Node.js 24.12.0.
 
@@ -299,3 +299,39 @@ Git calls have no time limit.
 A server or local Git command can therefore stop an operation from completing.
 Large repositories can also exceed the response or memory limits.
 These limits remain applicable to publication.
+
+## Review with project skills: 2026-10-29
+
+The review used the Toolchain workflow, sharp edges analysis, differential review, property testing guidance, and code simplification guidance.
+An independent review used only temporary synthetic repositories.
+No network demo, npm publication, or change to Toolchain Git refs was performed.
+
+The review found these defects:
+
+- The export check accepted unexpected files inside allowed directories.
+- Git-ignored metadata in config and packed refs could pass the previous checks.
+- Dangling loose symbolic refs were omitted by Git and absent from the audit.
+- Multiple signature blocks could cause tag message text to be discarded.
+- Cached peeled tag targets and pack filenames could retain unrelated object IDs.
+
+The fixes add these controls:
+
+- A strict manifest schema rejects unknown fields, duplicate entries, mixed hash widths, and invalid identities.
+- File checks cover nested directories before Git reads the object store.
+- Only expected loose objects, refs, metadata, and minimal pack/idx pairs are accepted.
+- Metadata comments, unknown header words, unsupported values, and duplicate config keys are rejected.
+- Pack and index names must match their embedded pack checksums.
+- Cached peeled targets must occur in the manifest and match actual tag targets.
+- Omitted loose symbolic refs appear in the audit and block local branch or tag rewriting.
+- Signature removal accepts one complete trailing armor block and preserves message bytes before it.
+
+The new tests include 1024 deterministic binary-message and signature combinations.
+They check byte preservation, idempotence, and unchanged input buffers.
+They do not add a property testing dependency or automatic shrinking.
+The malformed-input tests cover unknown metadata, invalid types, duplicate entries, and signature ambiguity.
+SHA-1 and SHA-256 tests cover packed exports and cached peeled targets.
+
+The strict file profile can reject metadata created by ordinary Git maintenance.
+The verifier does not remove that metadata automatically.
+It does not inspect file contents for personal data or prove the actual time of work.
+The previous trust conditions and unsigned-manifest limitation still apply.

@@ -61,6 +61,7 @@ You can use it with a dirty working tree, a stash, or detached HEAD.
 The report includes these items:
 
 - All local refs, including hidden refs and remote-tracking refs.
+- Loose symbolic refs whose targets are missing. These make the audit incomplete.
 - Commit dates and tagger dates in the available object store.
 - Objects not reachable from the current branch.
 - Unreachable objects and reflog entries.
@@ -204,6 +205,8 @@ A tag without a tagger causes the program to stop.
 If there are signatures, select Yes at a different question to remove them.
 It removes `gpgsig`, `gpgsig-sha256`, `mergetag`, and standard tag signature blocks.
 It does not make new signatures.
+Ambiguous, nested, or multiple signature blocks stop plan creation.
+The program does not discard text between signature markers.
 
 The plan shows all selected refs.
 It shows 12 characters of each object ID.
@@ -263,6 +266,11 @@ On POSIX systems, the file has mode `0600`.
 The export check compares the refs and the full object inventory with the plan.
 It examines reachability, dates, identities, parent order, and tag signatures.
 It rejects unexpected files, config entries, symbolic links, hard links, and special files.
+The file check includes all nested directories.
+Unexpected metadata stops verification before Git reads the object store.
+The manifest rejects unknown fields, duplicate entries, and invalid identities.
+HEAD and loose refs must contain only their expected values.
+The config must contain only supported settings and values, without comments or duplicate keys.
 It also uses `git fsck --full --strict --no-reflogs`.
 
 If a check fails, the program keeps the not complete destination.
@@ -281,6 +289,14 @@ Add `--json` for a JSON report.
 This check does not write data.
 The manifest has no digital signature.
 If someone changes the manifest and the objects, this check can give an incorrect result.
+
+The verifier also supports minimal pack/idx pairs and packed refs.
+Pack filenames must match their embedded checksums.
+Cached peeled tag targets must match the actual tag targets.
+Other pack sidecars, commit graphs, server-info files, and maintenance metadata are rejected.
+An ordinary Git repack can create such files.
+If a changed export fails verification, make a new export or examine the reported metadata.
+The verifier does not delete files to make a check pass.
 
 To get a working tree, use this command:
 
