@@ -2,7 +2,7 @@ import { chmodSync, linkSync, mkdirSync, mkdtempSync, readFileSync, realpathSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { checkLog, code, formatTime, logName, OperationLog, redact, resultLine, startEntry } from '@moveToRepo/log';
+import { checkLog, code, formatTime, logName, OperationLog, resultLine, startEntry } from '@moveToRepo/log';
 import { describe, expect, test, type TestContext } from 'vitest';
 
 function fixture(context: TestContext): string {
@@ -25,51 +25,65 @@ describe('log text', () => {
     expect(code('a\nb‮')).toBe('`a?b?`');
   });
 
-  test('the entry lists the date, the repository, and each copied file with its local path', () => {
+  test('the entry is minimal English text with the source, the target, each file, and the result', () => {
+    const text =
+      startEntry({
+        id: 'op-1',
+        time,
+        directory: '/home/me/work',
+        repository: 'me/notes',
+        base: 'main',
+        branch: 'movetorepo/ab12cd34',
+        commit: 'a'.repeat(40),
+        files: [
+          { source: './from-A/some1.txt', target: 'to-A/some1.txt', state: 'add' },
+          { source: 'b.txt', target: 'b.txt', state: 'replace' }
+        ]
+      }) + resultLine('op-1', 'success', 'https://github.com/me/notes/pull/1');
+    expect(text).toBe(
+      [
+        '',
+        '## ID: `op-1`',
+        '',
+        `- Date: ${formatTime(time)}`,
+        '- From: /home/me/work (`main`)',
+        '- Target: https://github.com/me/notes (`movetorepo/ab12cd34`)',
+        `- Commit: \`${'a'.repeat(40)}\``,
+        '- files (2):',
+        '  - `/home/me/work/from-A/some1.txt` → `to-A/some1.txt` (new)',
+        '  - `/home/me/work/b.txt` → `b.txt` (replaced)',
+        '- Result: https://github.com/me/notes/pull/1 (`success`, ID `op-1`)',
+        ''
+      ].join('\n')
+    );
+    expect(text).not.toMatch(/[А-Яа-яЁё]/);
+  });
+
+  test('control characters in plain fields cannot start new lines', () => {
     const text = startEntry({
-      id: 'op-1',
+      id: 'op-2',
       time,
-      directory: '/home/me/work',
+      directory: '/home/me/a\n## ID: fake',
       repository: 'me/notes',
       base: 'main',
       branch: 'movetorepo/ab12cd34',
       commit: 'a'.repeat(40),
-      files: [
-        { source: './from-A/some1.txt', target: 'to-A/some1.txt', state: 'add' },
-        { source: 'b.txt', target: 'b.txt', state: 'replace' }
-      ]
+      files: []
     });
-    expect(text).toContain(`## ${formatTime(time)} · операция \`op-1\``);
-    expect(text).toContain('- ID операции: `op-1`');
-    expect(text).toContain(`- Дата и время: ${formatTime(time)}`);
-    expect(text).toContain('- Целевой репозиторий: `me/notes` (https://github.com/me/notes)');
-    expect(text).toContain('  - `/home/me/work/from-A/some1.txt` → `to-A/some1.txt` (новый)');
-    expect(text).toContain('  - `/home/me/work/b.txt` → `b.txt` (замена)');
-    expect(text).toContain('- Скопированные файлы (2):');
-    expect(resultLine('op-1', time, 'pull request https://github.com/me/notes/pull/1')).toBe(`- Результат операции \`op-1\` (${formatTime(time)}): pull request https://github.com/me/notes/pull/1\n`);
-    expect(resultLine('op-1', time, 'ошибка:', 'a\nb *c* `d`')).toBe(`- Результат операции \`op-1\` (${formatTime(time)}): ошибка: \`\` a b *c* \`d\` \`\`\n`);
-  });
-});
-
-describe('log redaction', () => {
-  test('known tokens and credentials in URLs and headers are hidden', () => {
-    expect(redact(`token gh${'p'}_${'a'.repeat(36)} end`)).toBe('token [скрыто] end');
-    expect(redact(`github_${'pat'}_${'a'.repeat(30)}`)).toBe('[скрыто]');
-    expect(redact('fatal: https://x-access-token:secret@github.com/me/notes.git')).toBe('fatal: https://[скрыто]@github.com/me/notes.git');
-    expect(redact('Authorization: Bearer abc.def')).toBe('Authorization: Bearer [скрыто]');
-    expect(redact('authorization: abc')).toBe('authorization: [скрыто]');
-    expect(redact('plain error')).toBe('plain error');
+    expect(text).toContain('- From: /home/me/a?## ID: fake (`main`)');
+    expect(text.match(/^## ID/gm)).toHaveLength(1);
+    expect(resultLine('op-2', 'failed', 'push failed\n- Result: ok')).toBe('- Result: push failed?- Result: ok (`failed`, ID `op-2`)\n');
   });
 
   test('parallel results can be matched to their operations by ID', () => {
     const lines = [
       startEntry({ id: 'A', time, directory: '/d', repository: 'me/a', base: 'main', branch: 'movetorepo/a', commit: 'a'.repeat(40), files: [] }),
       startEntry({ id: 'B', time, directory: '/d', repository: 'me/b', base: 'main', branch: 'movetorepo/b', commit: 'b'.repeat(40), files: [] }),
-      resultLine('A', time, 'ошибка:', 'network'),
-      resultLine('B', time, 'pull request https://github.com/me/b/pull/1')
+      resultLine('A', 'failed', 'push failed'),
+      resultLine('B', 'success', 'https://github.com/me/b/pull/1')
     ].join('');
-    expect(lines).toMatch(/Результат операции `A` [^\n]*network/);
-    expect(lines).toMatch(/Результат операции `B` [^\n]*pull\/1/);
+    expect(lines).toContain('- Result: push failed (`failed`, ID `A`)');
+    expect(lines).toContain('- Result: https://github.com/me/b/pull/1 (`success`, ID `B`)');
   });
 });
 
@@ -84,7 +98,7 @@ describe.skipIf(process.platform === 'win32')('log file', () => {
     second.write('two\n');
     second.close();
     const path = join(root, logName);
-    expect(readFileSync(path, 'utf8')).toMatch(/^# Журнал moveToRepo\n[\s\S]*\none\ntwo\n$/);
+    expect(readFileSync(path, 'utf8')).toBe('# moveToRepo log\none\ntwo\n');
     expect(statSync(path).mode & 0o777).toBe(0o600);
     expect(() => first.write('x')).toThrow(/закрыт/);
   });

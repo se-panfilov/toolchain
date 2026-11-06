@@ -61,10 +61,8 @@ export function commitMessage(changes: Change[]): string {
 }
 
 /** The pull request title: the list of changed files, shortened to about 120 characters. */
-export function pullRequestTitle(changes: Change[]): string {
-  const title = changes.map((change) => change.target).join(', ');
-  return title.length > 120 ? `${title.slice(0, 119)}…` : title;
-}
+/** The title of each pull request. It contains no file names. */
+export const pullRequestTitle = 'Moved files';
 
 export function pullRequestBody(changes: Change[]): string {
   return `${changes.map((change) => `- \`${change.target}\``).join('\n')}\n`;

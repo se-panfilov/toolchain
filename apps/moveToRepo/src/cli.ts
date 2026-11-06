@@ -8,7 +8,7 @@ import { pathToFileURL } from 'node:url';
 import { type Entry, readSources, targetPath } from '@moveToRepo/files';
 import { type Change, Clone, pullRequestBody, pullRequestTitle } from '@moveToRepo/git';
 import { checkBranch, checkOwner, cloneUrl, compareUrl, GitHub, parseRepository, type Repository } from '@moveToRepo/github';
-import { checkLog, logName, OperationLog, resultLine, startEntry } from '@moveToRepo/log';
+import { checkLog, logName, type LogStatus, OperationLog, resultLine, startEntry } from '@moveToRepo/log';
 import { directoryId, findExecutable, Interrupted, safe } from '@moveToRepo/tools';
 
 function help(): string {
@@ -177,10 +177,13 @@ async function main(): Promise<void> {
     if (!branch) throw new Error('Не удалось выбрать свободное имя ветки.');
     say(`Новая ветка: ${branch}`);
     await checkpoint();
-    // Write the log entry before the push. A log that cannot be written stops the run before any transfer.
+    // Write the start of the log entry before the push. A log that cannot be written stops the run before any transfer.
     const log = OperationLog.open(directory, rootId);
     // Parallel runs in the same directory can write between the start and the result of this operation.
     const id = randomUUID();
+    const record = (status: LogStatus, result: string): void => {
+      log.write(resultLine(id, status, result));
+    };
     try {
       log.write(
         startEntry({
@@ -196,29 +199,34 @@ async function main(): Promise<void> {
       );
       say(`Журнал: ${logName}`);
       let pushed = false;
+      let pr: string;
       try {
         clone.push(url, commit, branch);
         pushed = true;
-        let pr: string;
         try {
-          pr = github.createPullRequest(info, base, branch, pullRequestTitle(changed), pullRequestBody(changed));
+          pr = github.createPullRequest(info, base, branch, pullRequestTitle, pullRequestBody(changed));
         } catch (error) {
           say(`Ветка ${branch} отправлена, но pull request не создан.`);
           say(`Откройте его вручную: ${compareUrl(info, base, branch)}`);
           throw error;
         }
-        log.write(resultLine(id, new Date(), `pull request ${pr}`));
-        say('✓ Pull request создан');
-        process.stdout.write(`${safe(pr)}\n`);
       } catch (error) {
-        const prefix = pushed ? 'ветка отправлена, pull request не создан, ' : '';
+        const interrupted = error instanceof Interrupted;
+        const result = pushed ? `branch pushed, pull request not created: ${compareUrl(info, base, branch)}` : interrupted ? 'push interrupted' : 'push failed';
         try {
-          log.write(
-            error instanceof Interrupted ? resultLine(id, new Date(), `${prefix}прервано`) : resultLine(id, new Date(), `${prefix}ошибка:`, error instanceof Error ? error.message : String(error))
-          );
+          record(interrupted ? 'interrupted' : 'failed', result);
         } catch {
           say(`Не удалось записать результат в журнал ${logName}.`);
         }
+        throw error;
+      }
+      say('✓ Pull request создан');
+      process.stdout.write(`${safe(pr)}\n`);
+      // The pull request exists. A failed log write is reported after its URL.
+      try {
+        record('success', pr);
+      } catch (error) {
+        say(`Не удалось записать результат в журнал ${logName}.`);
         throw error;
       }
     } finally {
