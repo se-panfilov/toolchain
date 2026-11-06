@@ -83,11 +83,12 @@ export class TerminalPrompts {
     }
   }
 
-  /** Use exclusive checkboxes. Arrows move focus. Space selects an answer. */
+  /** Use radio buttons. Arrows move focus. Space selects an answer. */
   async confirm(question: string, defaultYes: boolean): Promise<boolean> {
     return (await this.select(question, ['Да', 'Нет'], defaultYes ? 0 : 1)) === 0;
   }
 
+  /** Single choice: one radio button is selected at a time. */
   async select(question: string, choices: readonly string[], initial = 0): Promise<number> {
     this.check();
     if (!choices.length || !Number.isInteger(initial) || initial < 0 || initial >= choices.length) throw new Error('Некорректный список вариантов.');
@@ -110,7 +111,7 @@ export class TerminalPrompts {
         choices
           .map((label, index) => {
             const cursor = focused === index ? this.style.accent('›') : ' ';
-            const mark = selected === index ? this.style.success('☑') : this.style.muted('☐');
+            const mark = selected === index ? this.style.success('◉') : this.style.muted('○');
             const text = focused === index ? this.style.accent(safe(label)) : this.style.muted(safe(label));
             return `  ${cursor} ${mark} ${text}\n`;
           })

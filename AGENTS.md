@@ -89,7 +89,7 @@ If unclear, keep the safer state and ask.
 
 - Make normal operation interactive. Non-interactive modes require explicit inputs and safe handling of missing values.
 - Write prompts, help, progress, and user errors in Russian. Keep text short and specific. Omit ordinary terminal-control instructions.
-- Use arrows and Space with checkboxes, not numbered answers. Preselect defaults and preserve single-choice or multiple-choice semantics.
+- Use arrows and Space with radio buttons for single choice and checkboxes for multiple choice, not numbered answers. Preselect defaults and preserve single-choice or multiple-choice semantics.
 - Put editable defaults in input fields, not questions. Prefer useful defaults. Require deliberate confirmation for destructive writes and signature removal.
 - Use restrained colors and clear marks. Respect `NO_COLOR` and terminal capabilities.
 - Keep machine output free of colors, progress, and prompts. Sanitize untrusted text before adding terminal control sequences.

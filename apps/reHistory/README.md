@@ -259,15 +259,16 @@ The last commit can have a future date.
 
 ### Terminal controls
 
-The initial answer has a selected checkbox.
+Each choice question accepts one answer and shows radio buttons.
+The initial answer has a selected radio button.
 The Yes label is `Да`.
 The No label is `Нет`.
-The markers are `☑` and `☐`.
+The markers are `◉` (selected) and `○` (not selected).
 
 - Use the arrow keys to move the focus.
 - Use Space to select one answer.
 - Use Enter to accept the selected answer.
-- Use Esc to cancel a checkbox question.
+- Use Esc to cancel a choice question.
 - Use Ctrl+C to cancel an input question.
 
 Movement of the focus does not select an answer.
