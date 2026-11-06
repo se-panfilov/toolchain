@@ -42,9 +42,11 @@ export async function findCodeowners(client: GitHubClient, repo: RepoInfo): Prom
 export function parseOwners(text: string): string[] {
   const owners = new Set<string>();
   for (const line of text.split(/\r?\n/)) {
-    const content = line.replace(/(^|\s)#.*$/, '').trim();
-    if (!content) continue;
-    const [, ...rest] = content.split(/\s+/);
+    // Split first, then cut at the first token that starts a comment. This is linear in the line length.
+    const tokens = line.split(/\s+/).filter(Boolean);
+    const comment = tokens.findIndex((token) => token.startsWith('#'));
+    const [pattern, ...rest] = comment < 0 ? tokens : tokens.slice(0, comment);
+    if (!pattern) continue;
     for (const token of rest) if (token.startsWith('@') || /^[^@\s]+@[^@\s]+$/.test(token)) owners.add(token);
   }
   return [...owners];

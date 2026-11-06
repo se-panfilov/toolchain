@@ -30,6 +30,12 @@ describe('CODEOWNERS discovery', () => {
   test('owners are parsed from rules, not from comments', () => {
     expect(parseOwners('# owner @nobody\n*.js @me @acme/devs # trailing @x\n/docs/ dev@example.com\n\n')).toEqual(['@me', '@acme/devs', 'dev@example.com']);
   });
+
+  test('a long line of comment markers is parsed in linear time', () => {
+    const start = performance.now();
+    expect(parseOwners(`#${' #'.repeat(200000)}\n* @me`)).toEqual(['@me']);
+    expect(performance.now() - start).toBeLessThan(1000);
+  });
 });
 
 describe('CODEOWNERS plan', () => {
