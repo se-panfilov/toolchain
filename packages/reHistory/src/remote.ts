@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { Repository, type Plan } from '@reHistory/engine';
+import { Repository, gitConfigKeys, type Plan } from '@reHistory/engine';
 
 /** Accept only explicit SSH/HTTPS destinations without embedded secrets. */
 export function validateRemoteURL(value: string): string {
@@ -57,7 +57,7 @@ export function networkGit(repo: Repository, args: string[]): Buffer {
   );
 }
 
-type Configuration = { values: Map<string, string[]>; digest: string };
+type Configuration = { values: Map<string, string[]>; keys: string[]; digest: string };
 function configuration(repo: Repository): Configuration {
   const raw = repo.git(['config', '--null', '--list']);
   const values = new Map<string, string[]>();
@@ -67,13 +67,13 @@ function configuration(repo: Repository): Configuration {
     const value = end < 0 ? '' : record.slice(end + 1);
     values.set(key, [...(values.get(key) ?? []), value]);
   }
-  return { values, digest: createHash('sha256').update(raw).digest('hex') };
+  return { values, keys: gitConfigKeys(repo), digest: createHash('sha256').update(raw).digest('hex') };
 }
 
 function rejectNetworkConfiguration(config: Configuration): void {
-  const keys = [...config.values.keys()];
+  const keys = config.keys;
   if (keys.some((key) => /^http\./i.test(key))) throw new Error('HTTP-настройки Git не поддерживаются для сетевых операций. Уберите http.* в отдельном клоне или используйте ручной push.');
-  if (keys.some((key) => /^url\..*\.(?:insteadof|pushinsteadof)$/i.test(key))) throw new Error('URL-подстановки Git не поддерживаются для push. Выполните отправку вручную.');
+  if (keys.some((key) => /^url\.[\s\S]*\.(?:insteadof|pushinsteadof)$/i.test(key))) throw new Error('URL-подстановки Git не поддерживаются для push. Выполните отправку вручную.');
 }
 
 export function pushRemotes(repo: Repository, head: string): { names: string[]; initial: number } {
