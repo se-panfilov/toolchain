@@ -303,6 +303,8 @@ It examines reachability, dates, identities, parent order, and tag signatures.
 It rejects unexpected files, config entries, symbolic links, hard links, and special files.
 The file check includes all nested directories.
 Unexpected metadata stops verification before Git reads the object store.
+The selected directory must contain its own HEAD, config, objects, and refs.
+The check rejects Git discovery that selects a different repository directory.
 The manifest rejects unknown fields, duplicate entries, and invalid identities.
 HEAD and loose refs must contain only their expected values.
 The config must contain only supported settings and values, without comments or duplicate keys.

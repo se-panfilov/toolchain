@@ -43,6 +43,39 @@ function snapshot(path: string): Map<string, Buffer> {
 }
 const settings = { start: 1700000000, interval: 2 };
 
+for (const format of ['sha1', 'sha256'])
+  test(`проверка экспорта ${format} не подменяет каталог родительским Git-репозиторием`, (t) => {
+    const repo = fixture(t, format);
+    const target = join(repo.path, '..', 'discovery.git');
+    exportPlan(makePlan(repo, settings), target);
+    const child = join(target, 'nested');
+    mkdirSync(child);
+    writeFileSync(join(child, manifestName), readFileSync(join(target, manifestName)));
+    const before = snapshot(target);
+    const report = verifyExport(child);
+    assert.equal(report.ok, false);
+    assert(report.errors.some((error) => error.includes('Отсутствует')));
+    assert.deepEqual(snapshot(target), before);
+  });
+
+test('проверка экспорта требует собственные HEAD, config, objects и refs', (t) => {
+  const repo = fixture(t);
+  const target = join(repo.path, '..', 'required-layout.git');
+  exportPlan(makePlan(repo, settings), target);
+  for (const missing of ['HEAD', 'config', 'objects', 'refs']) {
+    const child = join(target, `missing-${missing}`);
+    mkdirSync(child);
+    writeFileSync(join(child, manifestName), readFileSync(join(target, manifestName)));
+    for (const name of ['HEAD', 'config']) if (name !== missing) writeFileSync(join(child, name), readFileSync(join(target, name)));
+    for (const name of ['objects', 'refs']) if (name !== missing) mkdirSync(join(child, name));
+    const before = snapshot(target);
+    const result = verifyExport(child);
+    assert.equal(result.ok, false);
+    assert(result.errors.some((error) => error.includes(`элемент экспорта: ${missing}.`)));
+    assert.deepEqual(snapshot(target), before);
+  }
+});
+
 test('dangling symbolic refs видны в аудите и блокируют переписывание локальных веток и тегов', (t) => {
   const repo = fixture(t);
   for (const name of ['refs/heads/dangling', 'refs/tags/dangling']) {
