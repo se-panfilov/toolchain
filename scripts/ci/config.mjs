@@ -65,7 +65,7 @@ export const skillToolAllowlist = ['Read', 'Grep', 'Glob', 'LSP', 'Task', 'AskUs
 // Skills that this repository maintains. All other skills in .agents/skills must be in docs/skill-provenance.json.
 export const localSkills = ['new-app', 'toolchain-cli'];
 // Runtime dependencies that a human approved for each application package. Add an entry only after a dependency review.
-export const runtimeDependencyAllowlist = {};
+export const runtimeDependencyAllowlist = { 'tx-reporules': ['libsodium-wrappers'] };
 
 const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 const same = (left, right) => JSON.stringify(left) === JSON.stringify(right);
