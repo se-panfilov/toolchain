@@ -14,7 +14,7 @@ const style = terminalStyle();
 function print(value: unknown, tone: keyof ReturnType<typeof terminalStyle> = 'plain'): void { console.log(style[tone](safe(value))); }
 function help(): void {
   print(`reHistory — нормализация истории текущей ветки и её тегов.
-Node.js 24.12+, Git 2.39+. Прямой запуск: node /путь/reHistory/cli.ts [параметры]
+Node.js 24.12+, Git 2.39+. Прямой запуск: node /путь/toolchain/packages/reHistory/cli.ts [параметры]
 
   --repo PATH          Исходный репозиторий (по умолчанию текущий каталог).
   --dry-run            Рассчитать план без записи; совместим с --export.

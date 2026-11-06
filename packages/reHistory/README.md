@@ -42,7 +42,7 @@ Put paths that contain spaces in double quotes.
 Without `--repo`, the program uses the current directory.
 
 ```sh
-node /path/to/toolchain/reHistory/cli.ts --help
+node /path/to/toolchain/packages/reHistory/cli.ts --help
 ```
 
 ## Audit procedure
@@ -50,7 +50,7 @@ node /path/to/toolchain/reHistory/cli.ts --help
 1. Start the audit.
 
    ```sh
-   node /path/to/toolchain/reHistory/cli.ts --repo /path/to/project --audit
+   node /path/to/toolchain/packages/reHistory/cli.ts --repo /path/to/project --audit
    ```
 
 2. Read the report.
@@ -77,7 +77,7 @@ The audit does not get missing objects from the network.
 For a JSON report, use this command:
 
 ```sh
-node /path/to/toolchain/reHistory/cli.ts --repo /path/to/project --audit --json
+node /path/to/toolchain/packages/reHistory/cli.ts --repo /path/to/project --audit --json
 ```
 
 The JSON fields include `refs`, `commits`, `tags`, `reflog`, `unreachable`, `metadata`, and `warnings`.
@@ -92,7 +92,7 @@ The dry-run gives a plan without writes.
 1. Start the dry-run.
 
    ```sh
-   node /path/to/toolchain/reHistory/cli.ts --repo /path/to/project --dry-run
+   node /path/to/toolchain/packages/reHistory/cli.ts --repo /path/to/project --dry-run
    ```
 
 2. Enter the required values.
@@ -100,7 +100,7 @@ The dry-run gives a plan without writes.
 4. Start the program without `--dry-run`.
 
    ```sh
-   node /path/to/toolchain/reHistory/cli.ts --repo /path/to/project
+   node /path/to/toolchain/packages/reHistory/cli.ts --repo /path/to/project
    ```
 
 5. Enter the required values again.
@@ -224,14 +224,14 @@ The destination parent directory must exist.
 1. Start the export dry-run.
 
    ```sh
-   node /path/to/toolchain/reHistory/cli.ts --repo /path/to/project --export /path/to/export.git --dry-run
+   node /path/to/toolchain/packages/reHistory/cli.ts --repo /path/to/project --export /path/to/export.git --dry-run
    ```
 
 2. Do a check of the plan.
 3. Start the export without `--dry-run`.
 
    ```sh
-   node /path/to/toolchain/reHistory/cli.ts --repo /path/to/project --export /path/to/export.git
+   node /path/to/toolchain/packages/reHistory/cli.ts --repo /path/to/project --export /path/to/export.git
    ```
 
 4. Select Yes only if the plan is correct.
@@ -282,7 +282,7 @@ The program does not change the source repository.
 Use this command for another check:
 
 ```sh
-node /path/to/toolchain/reHistory/cli.ts --verify-export /path/to/export.git
+node /path/to/toolchain/packages/reHistory/cli.ts --verify-export /path/to/export.git
 ```
 
 Add `--json` for a JSON report.
@@ -314,7 +314,7 @@ The demo sends generated data to that server.
 3. Start the demo with a specified server URL.
 
    ```sh
-   node /path/to/toolchain/reHistory/cli.ts --demo --demo-remote git@example.org:owner/empty-demo.git
+   node /path/to/toolchain/packages/reHistory/cli.ts --demo --demo-remote git@example.org:owner/empty-demo.git
    ```
 
 4. Read the result.
@@ -471,7 +471,7 @@ The npm bin name is `rehistory`.
 1. Open the package directory.
 
    ```sh
-   cd /path/to/toolchain/reHistory
+   cd /path/to/toolchain/packages/reHistory
    ```
 
 2. Do the tests.
@@ -521,7 +521,7 @@ The program does not publish itself.
 ## Development checks
 
 ```sh
-node --test /path/to/toolchain/reHistory/engine.test.ts /path/to/toolchain/reHistory/features.test.ts /path/to/toolchain/reHistory/prompts.test.ts
+node --test /path/to/toolchain/packages/reHistory/engine.test.ts /path/to/toolchain/packages/reHistory/features.test.ts /path/to/toolchain/packages/reHistory/prompts.test.ts
 ```
 
 Tests use different temporary repositories.

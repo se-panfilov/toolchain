@@ -2,8 +2,9 @@
 
 Toolchain is a set of CLI utilities for local work.
 Use TypeScript with direct Node.js execution for new utilities.
+Keep all applications in separate directories under `packages/`.
 
-- [reHistory](reHistory/README.md) changes Git dates and makes an export.
+- [reHistory](packages/reHistory/README.md) changes Git dates and makes an export.
 
 The documentation uses English with ASD-STE100 writing rules.
 Code comments use English.
