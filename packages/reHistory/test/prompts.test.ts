@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { PassThrough, Writable } from 'node:stream';
 import { stripVTControlCharacters } from 'node:util';
 import type { ReadStream, WriteStream } from 'node:tty';
-import { TerminalPrompts, PromptCancelled, terminalStyle } from './prompts.js';
+import { TerminalPrompts, PromptCancelled, terminalStyle } from '#rehistory/prompts';
 
 class Input extends PassThrough {
   isTTY = true;
@@ -14,7 +14,7 @@ class Output extends Writable {
   isTTY = true;
   columns = 100;
   text = '';
-  _write(chunk: Buffer, _encoding: string, callback: () => void): void { this.text += chunk.toString(); callback(); }
+  override _write(chunk: Buffer, _encoding: string, callback: () => void): void { this.text += chunk.toString(); callback(); }
 }
 function fixture(t: { after: (fn: () => void) => void }) {
   // Model an ANSI terminal, not the TERM=dumb shell used by CI.

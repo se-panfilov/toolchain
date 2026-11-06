@@ -1,7 +1,7 @@
 import { existsSync, lstatSync, mkdirSync, realpathSync, readFileSync, readdirSync, writeFileSync, openSync, readSync, closeSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
-import { Repository, runGit, parts, field, validateIdentity, type Plan, type Options } from './engine.js';
-import { inventory, objectClosure, stamp } from './audit.js';
+import { Repository, runGit, parts, field, validateIdentity, type Plan, type Options } from '#rehistory/engine';
+import { inventory, objectClosure, stamp } from '#rehistory/audit';
 
 export const manifestName = 'rehistory-export.json';
 type Manifest = {

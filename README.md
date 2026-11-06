@@ -16,3 +16,4 @@ The user interface uses Russian.
 Read [AGENTS.md](AGENTS.md) for project requirements and agent instructions.
 Use [the agent setup guide](docs/AI_AGENTS.md) for vendor integration and verification.
 Use [the writing rules](docs/WRITING.md) for new documentation.
+Use [the application package requirements](docs/PACKAGES.md) for structure, npm distribution, TypeScript, and import aliases.

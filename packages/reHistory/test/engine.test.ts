@@ -4,8 +4,8 @@ import { mkdtempSync, rmSync, writeFileSync, readdirSync, readFileSync, mkdirSyn
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { Repository, makePlan, applyPlan, validateIdentity, runGit, defaultBackupBranch, withoutGitEnvironment, stripTagSignature } from './engine.js';
-import { parseDate, parseStart } from './cli.js';
+import { Repository, makePlan, applyPlan, validateIdentity, runGit, defaultBackupBranch, withoutGitEnvironment, stripTagSignature } from '#rehistory/engine';
+import { parseDate, parseStart } from '#rehistory/cli';
 
 function fixture(t: { after: (fn: () => void) => void }, format?: string): Repository {
   const dir = mkdtempSync(join(tmpdir(), 'rehistory-test-'));
@@ -283,7 +283,7 @@ test('переменные GIT_* не перенаправляют работу 
   const foreign = fixture(t);
   const child = join(repo.common, 'routing-check.mjs');
   writeFileSync(child, `
-    import { Repository, makePlan } from ${JSON.stringify(new URL('./engine.js', import.meta.url).href)};
+    import { Repository, makePlan } from ${JSON.stringify(new URL('../src/engine.js', import.meta.url).href)};
     const repo = new Repository(process.argv[2]);
     const plan = makePlan(repo, { start: 1700000000, interval: 1 });
     console.log(JSON.stringify({ commits: plan.commits, common: repo.common }));
@@ -337,7 +337,7 @@ test('локальное время проверяется при переход
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const child = join(dir, 'time-check.mjs');
   writeFileSync(child, `
-    import { parseStart } from ${JSON.stringify(new URL('./cli.js', import.meta.url).href)};
+    import { parseStart } from ${JSON.stringify(new URL('../src/cli.js', import.meta.url).href)};
     let missing = false;
     try { parseStart('2026-03-29', '02:30'); } catch { missing = true; }
     console.log(JSON.stringify({ missing, delta: parseStart('2026-10-25', '02:30+01:00') - parseStart('2026-10-25', '02:30+02:00') }));

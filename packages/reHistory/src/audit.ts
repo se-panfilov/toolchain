@@ -1,6 +1,6 @@
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { Repository, parts, field } from './engine.js';
+import { Repository, parts, field } from '#rehistory/engine';
 
 export type Stamp = { identity: string; timestamp: number; timezone: string };
 export function stamp(data: Buffer, key: string): Stamp {

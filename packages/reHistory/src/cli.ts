@@ -2,11 +2,11 @@
 import { stdin, stdout } from 'node:process';
 import { pathToFileURL } from 'node:url';
 import { realpathSync } from 'node:fs';
-import { Repository, makePlan, applyPlan, validateIdentity, defaultBackupBranch } from './engine.js';
-import { auditRepository, auditText } from './audit.js';
-import { exportDestination, exportPlan, verifyExport } from './export.js';
-import { runDemo, validateDemoURL } from './demo.js';
-import { TerminalPrompts, PromptCancelled, terminalStyle } from './prompts.js';
+import { Repository, makePlan, applyPlan, validateIdentity, defaultBackupBranch } from '#rehistory/engine';
+import { auditRepository, auditText } from '#rehistory/audit';
+import { exportDestination, exportPlan, verifyExport } from '#rehistory/export';
+import { runDemo, validateDemoURL } from '#rehistory/demo';
+import { TerminalPrompts, PromptCancelled, terminalStyle } from '#rehistory/prompts';
 
 // Git metadata and errors can contain terminal control characters.
 function safe(value: unknown): string { return String(value).replace(/[\p{Cc}\p{Cf}]/gu, ch => ch === '\n' ? ch : '?'); }
@@ -14,7 +14,7 @@ const style = terminalStyle();
 function print(value: unknown, tone: keyof ReturnType<typeof terminalStyle> = 'plain'): void { console.log(style[tone](safe(value))); }
 function help(): void {
   print(`reHistory — нормализация истории текущей ветки и её тегов.
-Node.js 24.12+, Git 2.39+. Запуск: node /путь/toolchain/packages/reHistory/dist/cli.js [параметры]
+Node.js 24.12+, Git 2.39+. Запуск: node /путь/toolchain/packages/reHistory/dist/src/cli.js [параметры]
 
   --repo PATH          Исходный репозиторий (по умолчанию текущий каталог).
   --dry-run            Рассчитать план без записи; совместим с --export.
