@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 import type { SourceFile } from '@moveToRepo/files';
 import { Clone, commitMessage, gitConfig, parentDirectories, parseTree, pullRequestTitle, pushArguments } from '@moveToRepo/git';
-import { findExecutable, toolEnvironment } from '@moveToRepo/tools';
+import { findExecutable, runTool, toolEnvironment } from '@moveToRepo/tools';
 import { describe, expect, test, type TestContext, vi } from 'vitest';
 
 // moveToRepo supports only macOS and Linux. On Windows, only the CLI platform check is tested.
@@ -86,6 +86,10 @@ describe('environment and settings', () => {
     expect(config.indexOf('credential.helper=')).toBeLessThan(config.indexOf('credential.helper=!/usr/local/bin/gh auth git-credential'));
   });
 
+  test.skipIf(!posix)('a timeout is reported as a timeout, not as an interruption', () => {
+    expect(() => runTool(findExecutable('sleep'), ['5'], { cwd: tmpdir(), timeout: 200 }, 'sleep')).toThrow('sleep: превышено время ожидания.');
+  });
+
   test('push never forces', () => {
     const args = pushArguments('https://github.com/me/notes.git', 'a'.repeat(40), 'movetorepo/ab12cd34');
     expect(args.some((arg) => arg.startsWith('+') || arg.startsWith('--force') || arg === '-f')).toBe(false);
@@ -156,5 +160,13 @@ describe.skipIf(!posix)('clone, plan, and commit', () => {
     expect(clone.run(['log', '-1', '--format=%B', commit])).toBe('to-A/some1.txt\nto-B/some4.txt\n\n');
     expect(clone.run(['rev-parse', `${commit}^`]).trim()).toBe(clone.run(['rev-parse', 'HEAD']).trim());
     expect(clone.run(['rev-parse', 'refs/heads/main']).trim()).toBe(clone.run(['rev-parse', 'HEAD']).trim());
+  });
+
+  // The production settings block the file transport, so these tests push with the fixture Git and the production arguments.
+  test('the push creates an absent branch', (context) => {
+    const { clone, bare } = fixture(context);
+    const commit = clone.commit(clone.plan([file('to-A/some1.txt', 'new')]));
+    git(clone.path, pushArguments(bare, commit, 'movetorepo/ab12cd34'));
+    expect(git(bare, ['rev-parse', 'refs/heads/movetorepo/ab12cd34']).trim()).toBe(commit);
   });
 });
