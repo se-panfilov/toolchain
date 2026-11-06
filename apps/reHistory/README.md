@@ -665,12 +665,54 @@ Replace `PACKAGE.tgz` with that archive name.
 npx --offline --yes --package /path/to/PACKAGE.tgz tx-rehistory --help
 ```
 
-Before publication, select an available package name.
-Select the required SemVer increment.
-Run `npm version patch --no-git-tag-version --ignore-scripts`, or use `minor` or `major` when required.
-Prepare npm authentication independently.
-Check the package name, version, and publication settings before publication.
-The program does not publish itself.
+### Publish the current version
+
+Use these commands from the source checkout.
+Install the locked development dependencies first.
+Configure npm authentication separately with `npm login`.
+The publication target is the public registry, `https://registry.npmjs.org/`.
+
+First, perform the local release check:
+
+```sh
+npm run release:dry-run
+```
+
+Then, publish the checked current version:
+
+```sh
+npm run release
+```
+
+From the Toolchain root, use `npm --prefix apps/reHistory run release`.
+The command does not increment the version, create Git commits or tags, or push Git refs.
+Select a SemVer increment before release when the iteration requires one.
+Use `npm version patch --no-git-tag-version --ignore-scripts`, or use `minor` or `major` when required.
+
+Each release run performs these steps:
+
+1. Check stable version metadata and lockfile consistency.
+2. Run formatting checks, ESLint, TypeScript, the Vite build, and the complete test suite.
+3. Pack into a new private temporary directory without another build or lifecycle scripts.
+4. Check SHA-512, tar headers, the exact file allowlist, permissions, and bytes against the built files.
+5. Install the local archive through offline npm exec with a private cache and blank account configurations.
+6. Check help and read-only audit outside the source tree.
+7. Check that source files, built files, and the archive did not change during verification.
+8. Publish that archive with public access and the `latest` tag, unless dry-run is selected.
+
+Both archive size and decompressed tar size are limited to 16 MiB.
+Only the current seven runtime modules and required package documents are permitted.
+Runtime dependencies, install hooks, and `publishConfig` require a separate review and stop this command.
+Prerelease versions are not supported by this publication command.
+
+Dry-run does not contact the registry or publish a package.
+The command retains its temporary archive and verification files for inspection, including after a handled preparation error.
+The output gives their location and archive integrity.
+Temporary release files can use additional disk space until you remove them.
+The actual publish uses your existing npm authentication and can require npm two-factor authentication.
+A registry error stops the command without an automatic retry.
+After a lost response, inspect the registry before repeating publication.
+The script cannot replace manual review for secrets embedded in permitted files.
 
 ## Development checks
 

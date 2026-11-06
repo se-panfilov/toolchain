@@ -1,6 +1,6 @@
 {
   "name": "tx-rehistory",
-  "version": "2.4.2",
+  "version": "2.5.0",
   "description": "Interactive normalization, audit and verifiable export of Git history",
   "private": false,
   "type": "module",
@@ -36,7 +36,9 @@
     "lint:fix": "eslint . --fix --max-warnings=0",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "check": "npm run format:check && npm run lint && npm test"
+    "check": "npm run format:check && npm run lint && npm test",
+    "release": "node scripts/release.mjs",
+    "release:dry-run": "node scripts/release.mjs --dry-run"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
