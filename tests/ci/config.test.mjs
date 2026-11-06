@@ -14,6 +14,7 @@ import {
   frontmatter,
   lockfileProblems,
   manifestProblems,
+  nvmrcProblems,
   requiredCompilerOptions,
   structureProblems,
   workflowRuleProblems
@@ -187,9 +188,21 @@ test('workflows pin actions, drop checkout credentials, and keep expressions out
   assert.match(workflowRuleProblems('demo.yml', goodWorkflow.replace(' # v7.1.0', '')).join(''), /комментарий с версией/);
 });
 
+test('workflows reject events that run with secrets for pull request or comment text', () => {
+  for (const event of ['workflow_run', 'issue_comment', 'pull_request_review', 'pull_request_review_comment']) {
+    assert.match(workflowRuleProblems('demo.yml', goodWorkflow.replace('  pull_request:\n', `  ${event}:\n`)).join('\n'), new RegExp(`событие ${event} запрещено`));
+  }
+  assert.match(workflowRuleProblems('demo.yml', goodWorkflow.replace(/^on:\n/m, 'on: [push, workflow_run]\n')).join('\n'), /событие workflow_run запрещено/);
+});
+
+test('.nvmrc must contain an exact Node.js version', () => {
+  assert.deepEqual(nvmrcProblems('26.12.1\n'), []);
+  for (const text of ['26\n', '26.12\n', 'lts/*\n', 'v26.12.1\n', undefined]) assert.equal(nvmrcProblems(text).length, 1);
+});
+
 test('the configuration check reads a copied repository', async (t) => {
   const base = temporary(t, 'toolchain-config-repo-');
-  for (const path of ['package.json', 'package-lock.json', 'configs', 'apps', '.github', '.agents', '.claude']) {
+  for (const path of ['.nvmrc', 'package.json', 'package-lock.json', 'configs', 'apps', '.github', '.agents', '.claude']) {
     cpSync(join(root, path), join(base, path), { recursive: true, verbatimSymlinks: true, filter: (source) => !/[\\/](node_modules|dist)([\\/]|$)/.test(source) });
   }
   // The copied Vite configurations import the installed development dependencies.

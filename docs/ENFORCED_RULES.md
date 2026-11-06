@@ -23,16 +23,17 @@ The shared [configuration](../configs/eslint.config.mjs) has these project rules
 
 `npm run check:config` runs [scripts/ci/config.mjs](../scripts/ci/config.mjs). The `repository` job in Tests runs it too.
 
-| Area                 | Check                                                                                                                                                                            |
-| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Base tsconfig        | The required compiler options are present with the documented values.                                                                                                            |
-| Application tsconfig | It extends the base. It sets only `rootDir: "."`, `outDir: "dist"`, and `paths`. The alias is `@<directory>/*` → `./src/*.ts`, with optional `@shared/*`.                        |
-| Aliases              | Vite and Vitest resolve `@<directory>` to the application `src/` directory.                                                                                                      |
-| Package metadata     | `description`, `license`, `type`, `engines`, a narrow `files` list, `exports`, `repository.directory`, required scripts, one bin entry, and the shebang.                         |
-| Dependencies         | Runtime dependencies are in `runtimeDependencyAllowlist`. Applications have no devDependencies. Root devDependencies use exact versions.                                         |
-| Lockfile             | The application version agrees with `package-lock.json`.                                                                                                                         |
-| Structure            | Uppercase rule file names, rule files only in the root, no tracked `dist/`, one lockfile, no shell scripts outside `shellScriptAllowlist`, and equal skill adapter descriptions. |
-| Workflows            | Top-level `permissions`, actions pinned to full SHAs with a version comment, `persist-credentials: false` for checkout, no `${{ }}` in `run`, and no `pull_request_target`.      |
+| Area                 | Check                                                                                                                                                                                                                                                                       |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Base tsconfig        | The required compiler options are present with the documented values.                                                                                                                                                                                                       |
+| Application tsconfig | It extends the base. It sets only `rootDir: "."`, `outDir: "dist"`, and `paths`. The alias is `@<directory>/*` → `./src/*.ts`, with optional `@shared/*`.                                                                                                                   |
+| Aliases              | Vite and Vitest resolve `@<directory>` to the application `src/` directory.                                                                                                                                                                                                 |
+| Package metadata     | `description`, `license`, `type`, `engines`, a narrow `files` list, `exports`, `repository.directory`, required scripts, one bin entry, and the shebang.                                                                                                                    |
+| Dependencies         | Runtime dependencies are in `runtimeDependencyAllowlist`. Applications have no devDependencies. Root devDependencies use exact versions.                                                                                                                                    |
+| Lockfile             | The application version agrees with `package-lock.json`.                                                                                                                                                                                                                    |
+| Structure            | Uppercase rule file names, rule files only in the root, no tracked `dist/`, one lockfile, no shell scripts outside `shellScriptAllowlist`, and equal skill adapter descriptions.                                                                                            |
+| Workflows            | Top-level `permissions`, actions pinned to full SHAs with a version comment, `persist-credentials: false` for checkout, no `${{ }}` in `run`, and no `pull_request_target`, `workflow_run`, `issue_comment`, `pull_request_review`, or `pull_request_review_comment` event. |
+| Node.js version      | `.nvmrc` contains an exact version `X.Y.Z`. The release jobs use this Node.js version and its npm.                                                                                                                                                                          |
 
 The workflow check reads the line structure of the workflow files. It is not a complete YAML parser.
 
@@ -50,8 +51,9 @@ Install the hooks with `npm run hooks:install`. See [Git hooks and secret checks
 
 ## Pull request rules
 
-The `pr-rules` job in [Tests](../.github/workflows/test.yml) runs [scripts/ci/pr-rules.mjs](../scripts/ci/pr-rules.mjs) on each pull request.
-It runs again when the title or description changes.
+The `pr-rules` job in the [PR rules workflow](../.github/workflows/pr-rules.yml) runs [scripts/ci/pr-rules.mjs](../scripts/ci/pr-rules.mjs) on each pull request.
+It runs again when the title or description changes. Tests do not run again for that change.
+The check is a separate workflow, so a change to the title or description does not make skipped `plan` or `repository` checks. A skipped check counts as successful and can hide a failed result.
 
 1. The branch name is `<type>/<short_description>`. The type is `feature`, `bugfix`, `docs`, `refactor`, `test`, or `chore`. The description has lowercase letters and digits, with `_` between words.
 2. The description starts with `## tl;dr`. HTML comments and one italic attribution line can come before it. The `## Changes` and `## Verification` sections are present.

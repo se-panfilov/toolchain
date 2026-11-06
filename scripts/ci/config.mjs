@@ -38,6 +38,8 @@ const ruleFileNames = new Set(['agents.md', 'skill.md', 'claude.md', 'gemini.md'
 const lockfiles = new Set(['package-lock.json', 'npm-shrinkwrap.json', 'yarn.lock', 'pnpm-lock.yaml', 'bun.lockb', 'bun.lock']);
 const vendoredSkills = /^\.(agents|claude|codex|gemini)\/skills\//;
 const fullSha = /^[^\s@]+@[0-9a-f]{40}$/;
+// Events that run with write access or secrets for code or text from pull requests and comments.
+export const forbiddenWorkflowEvents = ['pull_request_target', 'workflow_run', 'issue_comment', 'pull_request_review', 'pull_request_review_comment'];
 // Shell scripts that are permitted. Use TypeScript or Node.js unless a documented reason requires Bash.
 export const shellScriptAllowlist = [];
 // Runtime dependencies that a human approved for each application package. Add an entry only after a dependency review.
@@ -45,6 +47,12 @@ export const runtimeDependencyAllowlist = {};
 
 const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 const same = (left, right) => JSON.stringify(left) === JSON.stringify(right);
+
+// .nvmrc selects the Node.js and npm versions of the release jobs. An exact version prevents an unreviewed change of the publication tools.
+export function nvmrcProblems(text) {
+  if (text === undefined) return ['.nvmrc: файл не найден.'];
+  return /^\d+\.\d+\.\d+\r?\n?$/.test(text) ? [] : ['.nvmrc: укажите точную версию Node.js вида X.Y.Z.'];
+}
 
 // Base TypeScript configuration: required options must be present with the documented values.
 export function baseTsconfigProblems(config) {
@@ -232,7 +240,11 @@ export function workflowRuleProblems(file, text) {
   const lines = text.split(/\r?\n/);
   const problems = [];
   if (!lines.some((line) => /^permissions:/.test(line))) problems.push(`${file}: нет permissions на верхнем уровне.`);
-  if (lines.some((line) => /^\s*pull_request_target\s*:/.test(line) || /^on:.*\bpull_request_target\b/.test(line))) problems.push(`${file}: событие pull_request_target запрещено.`);
+  for (const event of forbiddenWorkflowEvents) {
+    const key = new RegExp(`^\\s*${event}\\s*:`);
+    const inline = new RegExp(`^on:.*\\b${event}\\b`);
+    if (lines.some((line) => key.test(line) || inline.test(line))) problems.push(`${file}: событие ${event} запрещено.`);
+  }
   lines.forEach((line, index) => {
     const number = index + 1;
     const uses = /^(\s*)(- )?uses:\s*(\S+)(\s+#\s*(\S+))?\s*$/.exec(line);
@@ -298,6 +310,7 @@ export async function configProblems(base = root, files = trackedFiles(base)) {
   problems.push(...baseTsconfigProblems(readJson(join(base, 'configs', 'tsconfig.base.json'))));
   const rootManifest = readJson(join(base, 'package.json'));
   problems.push(...exactVersionProblems('package.json', rootManifest));
+  problems.push(...nvmrcProblems(readRegularFile(join(base, '.nvmrc'))));
   const apps = listApps(base);
   for (const app of apps) {
     const appRoot = join(base, 'apps', app.dir);
