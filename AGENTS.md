@@ -92,7 +92,7 @@ If unclear, keep the safer state and ask.
 
 ## CLI behavior
 
-- Make normal operation interactive. Non-interactive modes require explicit inputs and safe handling of missing values.
+- Make normal operation interactive, unless the task explicitly requests a non-interactive CLI. Non-interactive operation requires explicit inputs and safe handling of missing values.
 - Write prompts, help, progress, and user errors in Russian. Keep text short and specific. Omit ordinary terminal-control instructions.
 - Use arrows and Space with radio buttons for single choice and checkboxes for multiple choice, not numbered answers. Preselect defaults and preserve single-choice or multiple-choice semantics.
 - Put editable defaults in input fields, not questions. Prefer useful defaults. Require deliberate confirmation for destructive writes and signature removal.
@@ -151,6 +151,7 @@ If unclear, keep the safer state and ask.
 - Apply ASD-STE100 to remaining PR text, titles, and commit messages.
 - Never link AI agent discussions in code, comments, documentation, commits, PRs, issues, or reviews, including trailers and attribution lines. Describe reasons in the text.
 - Update operating instructions and security notes when behavior changes.
+- Do not add dates or times unless the task requires them. This applies to code, comments, documentation, file names, commits, branch names, and PRs.
 
 ## reHistory and commands
 

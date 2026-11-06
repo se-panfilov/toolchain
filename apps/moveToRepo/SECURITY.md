@@ -1,0 +1,95 @@
+# moveToRepo security notes
+
+This document describes the inputs, writes, subprocesses, and limits of moveToRepo.
+It is a result of a static review and local tests. It is not a security certificate.
+
+## Threat model
+
+moveToRepo does not give the user new permissions. It uses the Git and `gh` authentication that the user already has.
+The main risks are a push of incorrect data, a push to an incorrect target, and code execution through inputs or configuration.
+
+| Protected item               | Risk                                                                 |
+| ---------------------------- | -------------------------------------------------------------------- |
+| Secrets on the local disk    | A key or a token goes into a repository. A push to GitHub is a leak. |
+| Write access to repositories | An incorrect repository or branch gets the change.                   |
+| The target branch            | A direct push or a forced push changes history without a review.     |
+| The local computer           | An argument or a repository setting starts a program.                |
+
+## Inputs
+
+| Input         | Source       | Control                                                                                                            |
+| ------------- | ------------ | ------------------------------------------------------------------------------------------------------------------ |
+| `--repo`      | Command line | Two strict patterns for github.com only. No user name, port, query, or other host. The clone URL is built again.   |
+| `--base`      | Command line | ASCII letters, digits, `. _ / -`. No `..`, empty segments, segments that start with `.` or `-`, or `.lock`.        |
+| `--dest`      | Command line | The same rules as file paths.                                                                                      |
+| File paths    | Command line | Relative ASCII paths. No `..`, no segments that start with a dot, no control or similar-looking characters.        |
+| File contents | Local files  | Size limits. A known private key or token format stops the run.                                                    |
+| Options       | Command line | Known names only. No repeats, no empty values, no values that start with `-`.                                      |
+| `gh` JSON     | `gh` output  | Parsed without trust. The repository name must match. Write permission is required. The default branch is checked. |
+
+The ASCII rule rejects letters from other scripts that look like Latin letters.
+It also rejects bidirectional control characters and Unicode normalization differences.
+A result is that file names in Cyrillic or other scripts are not supported.
+
+## Local files
+
+- Each path segment is checked with `lstat`. A symbolic link in any segment stops the run.
+- A file must be a regular file with one link. Hard links, directories, devices, and FIFOs stop the run.
+- The file opens with `O_NOFOLLOW`. The device and inode of the opened file must be the same as the checked file.
+  A link that replaces a directory after the check opens another inode, and the run stops.
+- The program reads the contents once. The same bytes go to the secret check and to Git.
+- The program does not write local files. It writes only to a private temporary directory, mode `0700`, which it removes at the end.
+
+## Secret checks
+
+- Names: extensions such as `.pem`, `.key`, `.p12`, `.pfx`, `.jks`, `.ppk`, `.asc`, `.gpg`, `.kdbx`, `.env`, `.tfstate`, and names such as `id_rsa`, `credentials`, and `credentials.json`.
+- All names that start with a dot, for example `.env`, `.npmrc`, `.netrc`, and `.git`.
+- Contents: private key headers and tokens of GitHub, GitLab, AWS, Slack, npm, and some API key formats.
+
+These checks find typical cases only. A secret in another format is not found.
+The user is responsible for the contents of the selected files.
+
+## Subprocesses
+
+- Git and `gh` start with argument arrays. No shell parses the arguments.
+- The program finds Git and `gh` in fixed directories and in absolute `PATH` entries. It never uses the current directory.
+- The environment has no `GIT_*` variables except `GIT_SSH`, `GIT_SSH_COMMAND`, and `GIT_SSH_VARIANT`.
+  `GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE`, and `GIT_CONFIG_PARAMETERS` cannot change the target.
+- The environment has no `GH_HOST`, `GH_REPO`, `GH_ENTERPRISE_TOKEN`, editor, browser, or pager variables.
+  Variable names are compared without letter case.
+- `gh` starts in the empty temporary directory, so a local repository cannot select the target. Each call has `--repo` or an explicit `OWNER/REPO`.
+- Git gets settings with priority over the user configuration:
+  - `core.hooksPath` points to an empty directory. No hook starts, including global hooks.
+  - `core.fsmonitor=false`. No fsmonitor program starts.
+  - `protocol.allow=never` with only `https` and `ssh` permitted. `file`, `ext`, and other transports are blocked, also through URL rewrite rules.
+  - The credential helper list is cleared. Then `gh auth git-credential` gives the token of the signed-in user.
+  - No submodules and no tags on push. No automatic maintenance.
+- `--` separates options from the URL and paths in `clone`, `ls-remote`, `ls-tree`, and `push`.
+- `GIT_LITERAL_PATHSPECS=1` makes Git read paths as literal names.
+
+## Repository writes
+
+- The clone has no work tree (`--no-checkout`). Repository files never go to the disk, so links in the repository cannot redirect writes.
+  No checkout filter starts.
+- Files go into the Git index with `hash-object --no-filters` and `update-index`. The commit is made with `commit-tree`, which starts no hooks.
+- A destination that is a directory, a symbolic link, or a submodule in the repository stops the run. A parent that is not a directory stops the run.
+- After the commit, the program compares the changed paths with the list. Another change stops the run before the push.
+- The push sends `<commit>:refs/heads/movetorepo/<random>`. There is no `--force`, no `--force-with-lease`, and no `+` refspec.
+  The program first checks that the branch does not exist on the server.
+- The target branch is changed only when a person merges the pull request.
+
+## Trust assumptions
+
+- The user trusts their own Git and `gh` configuration. URL rewrite rules, the SSH command, commit signing, and the user identity come from it.
+- The user trusts the installed Git and `gh` programs and the npm package.
+  A changed package can use the user's write access to all repositories. Run a fixed version, for example `npx tx-movetorepo@0.1.0`.
+- GitHub and `gh` give correct repository data.
+
+## Residual risks
+
+- Secrets in an unknown format are not found.
+- `--no-filters` stores files as they are. In a repository that keeps some files in Git LFS, a file for an LFS path goes in as a regular file.
+- Two directories with names that are different only in letter case can occur in the repository, for example `Docs` and `docs`.
+- A Ctrl+C during the push or the pull request step can leave a branch without a pull request. See the recovery section in the README.
+- Automatic tests use synthetic local repositories. A manual run used a local repository and a fake `gh`.
+  Real pushes to GitHub and real `gh` calls were not tested.
