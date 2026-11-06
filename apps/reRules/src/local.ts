@@ -1,4 +1,4 @@
-import { lstatSync, readFileSync, statSync } from 'node:fs';
+import { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, statSync } from 'node:fs';
 import { dirname, isAbsolute, join, parse, resolve } from 'node:path';
 
 import type { RepoRef } from '@reRules/github';
@@ -9,14 +9,23 @@ const maxDepth = 64;
 
 export type LocalRepo = { ref: RepoRef; remote: string };
 
-/** Read a small regular file. Return undefined for a missing file, a link, another file type, or a large file. */
+/**
+ * Read a small regular file. Return undefined for a missing file, a link, another file type, or a large file.
+ * The checks use the open descriptor, so a file that changes after the check is not read.
+ * O_NOFOLLOW refuses a final link where the platform supports it. O_NONBLOCK keeps a FIFO from blocking the open.
+ */
 function readSmallFile(path: string): string | undefined {
+  let fd: number | undefined;
   try {
-    const stat = lstatSync(path);
+    if (lstatSync(path).isSymbolicLink()) return undefined;
+    fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
+    const stat = fstatSync(fd);
     if (!stat.isFile() || stat.size > maxFileBytes) return undefined;
-    return readFileSync(path, 'utf8');
+    return readFileSync(fd, 'utf8');
   } catch {
     return undefined;
+  } finally {
+    if (fd !== undefined) closeSync(fd);
   }
 }
 
