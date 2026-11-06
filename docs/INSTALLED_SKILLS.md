@@ -29,6 +29,8 @@ The existing `toolchain-cli` skill remains separate and unchanged.
 Project requirements remain in [AGENTS.md](../AGENTS.md).
 Installing a skill does not authorize its scripts, network requests, delegation, or changes to user data.
 Use the host's applicable permission controls for those actions.
+No installed skill lists Bash, Write, Edit, or network tools in `allowed-tools`.
+`npm run check:config` enforces this limit. See [Enforced rules](ENFORCED_RULES.md#configuration-check).
 
 ## Storage and discovery
 
@@ -69,22 +71,31 @@ Local adaptations are stored as reversible patches:
   It treats upstream package manager and commit examples as examples.
 - [skill-scanner](skill-patches/skill-scanner.patch) describes command template syntax without a literal executable template in its entrypoint.
   Its scanner also redacts recognized credentials from JSON report fields.
+  It removes Bash from `allowed-tools` and identifies the scanned skill as untrusted data.
+- [differential-review](skill-patches/differential-review.patch) removes Bash and Write from `allowed-tools`.
+  It gives the report in the reply, or in a temporary file outside the repository without a date in the name.
+  It replaces the issue-writer, audit-context-building, and adversarial-modeler integrations, which are not installed.
+- [supply-chain-risk-auditor](skill-patches/supply-chain-risk-auditor.patch) removes Write and Bash from `allowed-tools`.
+  It permits the collector only on an explicit user request for a dependency audit, after a notice about the network requests and the `gh` token.
 
 The skills added in the second installation have one patch each.
 Each patch adds a "Toolchain integration" section before the upstream text.
-The fp-check and second-opinion patches also change the `allowed-tools` line. No other upstream line changes:
+The fp-check, gha-security-review, and second-opinion patches also change the frontmatter. No other upstream line changes:
 
 - [find-bugs](skill-patches/find-bugs.patch) adds CLI checklist items for subprocesses, files, user data, terminal state, and external effects.
   It adds a fallback base when `gh` is not available.
 - [gha-security-review](skill-patches/gha-security-review.patch) keeps the upstream threat model for exploitable findings.
   It adds a separate section for deviations from the stricter Toolchain Actions rules, such as tag-pinned first-party actions.
   It forbids pushes, workflow runs, and payload tests.
+  It removes Bash from `allowed-tools`, so commands follow the normal host permission rules.
 - [fp-check](skill-patches/fp-check.patch) replaces the plugin agents, which are not installed, with the current session or a general subagent.
   It limits executable PoCs to isolated temporary directories with synthetic data.
   It removes Bash, Write, and Edit from `allowed-tools`, so these tools follow the normal host permission rules.
 - [second-opinion](skill-patches/second-opinion.patch) permits the external call only on an explicit user request in the current task.
   It requires confirmation of untracked files, stops on secrets in the patch, and forbids CLI installation or authentication.
   It removes Bash from `allowed-tools`, so provider calls follow the normal host permission rules.
+  It adds `disable-model-invocation: true`, so Claude Code starts it only on a user command.
+  It runs the provider from an empty temporary directory that contains only the prompt file, not from the repository root.
 - [grilling](skill-patches/grilling.patch) requires Russian questions, limits questions to material ones, and makes the subagent lookup optional.
 - [writing-for-agents](skill-patches/writing-for-agents.patch) keeps required safety and authorization rules and security prohibitions.
   It identifies `disable-model-invocation` as Claude Code frontmatter.
@@ -154,6 +165,7 @@ The second-opinion skill sends a patch and project instructions to OpenAI, Googl
 Installation does not authorize that transfer. The local patch requires an explicit user request in the current task.
 The provider CLIs were not installed or executed during this installation.
 These limits are instructions, not access controls. Hosts that ignore `allowed-tools` keep their own permission rules.
+The empty working directory keeps the repository out of the provider workspace. The Codex read-only sandbox can still read other files that the user account can read.
 
 ## Scanner regression check
 
@@ -179,6 +191,6 @@ Secret redaction recognizes known patterns. It cannot guarantee that every secre
 4. Compare upstream changes with each local patch before applying it.
 5. Restore the relevant license and attribution files.
 6. Repeat security, metadata, link, and patch checks.
-7. Update the provenance manifest to match the reviewed files.
+7. Update the provenance manifest to match the reviewed files. `npm run check:config` compares each file with the manifest.
 
 Do not interpret a changed local hash as permission to discard local edits.

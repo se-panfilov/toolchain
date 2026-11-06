@@ -1,10 +1,24 @@
 ---
 name: supply-chain-risk-auditor
 description: "Audits a project's dependencies for supply-chain risk: version-matched advisories for direct dependencies and the full lockfile tree, abandoned or archived upstreams, npm publisher concentration, and install-time script execution. Use when asked to audit dependencies, assess supply-chain or third-party package risk, or review a dependency tree before an engagement."
-allowed-tools: Read Write Bash Glob Grep
+allowed-tools: Read Glob Grep
 ---
 
+<!-- Adapted for Toolchain from trailofbits/skills at 2be6433b39e009cd2b6fd3be1895f6b1faa5af9a. -->
+
 # Supply Chain Risk Auditor
+
+## Toolchain integration
+
+Read [AGENTS.md](../../../AGENTS.md) before applying the upstream workflow below.
+Write and Bash are removed from `allowed-tools`. Commands and file writes then follow the normal permission rules of the host.
+Run the collector only when the user explicitly asks for a dependency audit in the current task. A code review or a dependency change does not authorize it.
+Before the run, tell the user that the collector sends dependency names to public registries, advisory databases, and the GitHub API, and reads the `gh` token.
+Do not install `uv`, Python packages, or other tools. Report the missing setup.
+Write outputs only in a temporary directory outside the repository.
+Write the report in Russian. A human decides how to handle each finding.
+
+## Upstream workflow
 
 Generates a supply-chain risk report for a project's direct dependencies (npm, PyPI,
 Go), plus an advisory sweep of everything its lockfile resolves. Two deterministic

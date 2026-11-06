@@ -1,10 +1,23 @@
 ---
 name: differential-review
 description: "Performs security-focused differential review of code changes. Adapts analysis depth to codebase size, uses git blame for context, calculates blast radius by counting callers, checks test coverage of modified code, and generates a markdown report. Use when reviewing a PR, commit, or diff for security vulnerabilities, checking whether a change re-introduces a previously fixed bug, asking what else a change could break, or finding which modified code has no test covering it."
-allowed-tools: Read Write Grep Glob Bash
+allowed-tools: Read Grep Glob
 ---
 
+<!-- Adapted for Toolchain from trailofbits/skills at 2be6433b39e009cd2b6fd3be1895f6b1faa5af9a. -->
+
 # Differential Security Review
+
+## Toolchain integration
+
+Read [AGENTS.md](../../../AGENTS.md) before applying the upstream workflow below.
+Bash and Write are removed from `allowed-tools`. Commands and file writes then follow the normal permission rules of the host.
+This skill is read-only for the repository. Do not write the report into the repository, the Desktop, or the home directory.
+Give the report in the reply. If the user asks for a file, write it in a temporary directory outside the repository. Do not put a date in the file name.
+The issue-writer and audit-context-building skills and the adversarial-modeler agent are not installed. Do those phases in the current session, or skip them and say so.
+Write the report in Russian. A human decides how to handle each finding.
+
+## Upstream workflow
 
 Security-focused code review for PRs, commits, and diffs.
 

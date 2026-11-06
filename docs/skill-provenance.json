@@ -78,12 +78,14 @@
       "sourcePath": "plugins/differential-review/skills/differential-review/SKILL.md",
       "upstreamInstallerHash": "3c330b7d8e2a7a6bba9ff9c7f9971d3b6c17fef84b9382efdd325abdd481371c",
       "license": "CC-BY-SA-4.0",
-      "changedUpstreamFiles": [],
+      "changedUpstreamFiles": [
+        "SKILL.md"
+      ],
       "addedFiles": [
         "LICENSE",
         "UPSTREAM.md"
       ],
-      "patch": null,
+      "patch": "skill-patches/differential-review.patch",
       "files": [
         {
           "path": "LICENSE",
@@ -91,11 +93,11 @@
         },
         {
           "path": "SKILL.md",
-          "sha256": "f9af6a8193fc1a9f8ca3c54bb8d19095a5f20c9472ca6d014488bbde50b67da0"
+          "sha256": "2e86a4c1b767614d41439138a8baaef1f92f5de2ad20fd7e251dc3694e7bf13a"
         },
         {
           "path": "UPSTREAM.md",
-          "sha256": "e2e443a0f06d49734d452d91a5302c812ece29135db5894e1ebaec554df925d7"
+          "sha256": "43244c8d8d8347a4270609d179c6f9ee3782157006cdcd83af8c8ade051346dc"
         },
         {
           "path": "adversarial.md",
@@ -261,7 +263,7 @@
         },
         {
           "path": "SKILL.md",
-          "sha256": "24959a57422dbc2cefb58766da249abfbcf4bf2cf9f248442478a19eac51eb82"
+          "sha256": "5ae539b67987c643cf20068c7869697fd25b913c7b8c6d9426ba88d084a57e1d"
         },
         {
           "path": "UPSTREAM.md",
@@ -418,7 +420,7 @@
         },
         {
           "path": "SKILL.md",
-          "sha256": "c4fc78b7548e9e5508f5cbe8b132f5e5e893cc52d0bbe8ae7e6bdbf15e2aaef2"
+          "sha256": "0e8cd18dcb9f69f83ab128936593913aa51f2d1296d0f04275943eb8a6462bb2"
         },
         {
           "path": "UPSTREAM.md",
@@ -575,7 +577,7 @@
         },
         {
           "path": "SKILL.md",
-          "sha256": "637a9a536de8831883b27cffe302526dbc5e2bbd4e6a3212d879d28deebe4e6c"
+          "sha256": "4f55a2f562dffd80ac1c949ee56c3506fd9e6fda0eb24ae709be1b9acaa8f44b"
         },
         {
           "path": "UPSTREAM.md",
@@ -605,12 +607,14 @@
       "sourcePath": "plugins/supply-chain-risk-auditor/skills/supply-chain-risk-auditor/SKILL.md",
       "upstreamInstallerHash": "1c8dc1f5f5e4321e26fe0d9f3eb123b915efe924f192716e7fe4781a66a4500f",
       "license": "CC-BY-SA-4.0",
-      "changedUpstreamFiles": [],
+      "changedUpstreamFiles": [
+        "SKILL.md"
+      ],
       "addedFiles": [
         "LICENSE",
         "UPSTREAM.md"
       ],
-      "patch": null,
+      "patch": "skill-patches/supply-chain-risk-auditor.patch",
       "files": [
         {
           "path": "LICENSE",
@@ -618,11 +622,11 @@
         },
         {
           "path": "SKILL.md",
-          "sha256": "a1254b7f8d3a1731a9a7e1f9cd6c67b59cf84ed6ef7c7fb455db9a14c528ceb4"
+          "sha256": "a727ac90a93b7b748be8ce51b6fc53ea4e8d17e63f4ef93adb11d1abb3d157e5"
         },
         {
           "path": "UPSTREAM.md",
-          "sha256": "5d49fdf3c69dcc0bffc440cc7aacb037069f88a5a95c57f561bb8456559a070c"
+          "sha256": "20727a1051abb0ab043d590b8731d4343ddae19ce5c448d3c28f7cfb616a5c9d"
         },
         {
           "path": "agents/openai.yaml",

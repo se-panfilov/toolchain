@@ -26,7 +26,7 @@ You did not write the change. Examine it as an independent reviewer.
 3. Read the full changed functions, not only the diff lines. Include error paths, cleanup, and the callers.
 4. Trace each input to each write, subprocess call, network call, and terminal output.
 5. Examine each boundary in the toolchain-cli table: input, subprocess, file system, terminal, network, recovery, and distribution.
-6. Use the installed `differential-review` and `sharp-edges` skills when they apply. Use `supply-chain-risk-auditor` for dependency changes.
+6. Use the installed `differential-review` and `sharp-edges` skills when they apply. For dependency changes, examine the lockfile diff and the `pr-rules` result, which contains `npm audit`. Do not run `npm audit` or `supply-chain-risk-auditor` yourself, because they use the network. Recommend a dependency audit to the caller when it is necessary.
 7. Check that runtime validation of untrusted data stays in place. Static types do not prove that a value is valid at run time.
 8. Check that tests cover each fixed security defect. Look for removed or weakened security tests.
 9. When a finding needs proof, write a short experiment in a temporary directory. Do not change the repository to prove it.
