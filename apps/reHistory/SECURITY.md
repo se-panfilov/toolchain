@@ -4,6 +4,18 @@ Document date: 2026-10-29.
 This document gives the security controls and specified limits of reHistory.
 It is not a security certificate from another organization.
 
+## Workspace tooling
+
+Shared development dependencies and the single lockfile live at the private Toolchain root.
+Shared settings live in configs and are excluded from the application archive.
+The installed CLI uses only compiled runtime modules and requires none of those source configuration files.
+Installation at the root uses `npm ci --ignore-scripts`.
+The existing save-exact, min-release-age, and Git-tag settings remain in the root npm configuration.
+Release-age support depends on the installed npm version. Older versions can ignore that setting.
+The checked installation uses exact versions and integrity values from the root lockfile.
+Build output checks and isolated test fixtures remain active.
+Root formatting and lint ignore vendored skills and generated output.
+
 ## Conditions for use
 
 **CAUTION: Use tools and files that you trust.**
@@ -262,7 +274,8 @@ Examine the recorded process and recovery file before removing that lock manuall
 
 ## Release command
 
-The release npm script runs the complete check, npm pack, and npm publish in sequence.
+The release npm script runs npm pack and npm publish in sequence.
+Run the separate root check before release.
 Shell `&&` stops later steps when a command fails.
 The complete check retains the mandatory TypeScript check, build, and application security regressions.
 Pack and publish use `--ignore-scripts` to avoid repeated builds and publication lifecycle hooks.
@@ -527,7 +540,7 @@ The watch command runs source-only unit and terminal tests.
 The complete test command builds first and also checks compiled subprocess behavior.
 
 Vite 8.3.5 and Vitest 5.0.5 are pinned development dependencies.
-The updated lockfile contains platform-specific optional packages and native build-tool bindings.
+The root lockfile contains platform-specific optional packages and native build-tool bindings.
 The optional fsevents package declares an installation script.
 Installation scripts were disabled during dependency installation.
 These build and test dependencies do not enter the npm archive.

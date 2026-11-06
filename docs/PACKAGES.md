@@ -13,7 +13,10 @@ npm does not require a source directory named `lib`.
 | `scripts/` | Build and maintenance tools.                       |
 | `dist/`    | Vite output for local execution and npm packaging. |
 
-Keep package metadata, tsconfig.json, package-lock.json, README.md, and LICENSE at the application root.
+Keep package metadata, tsconfig.json, README.md, and LICENSE at the application root.
+Keep one package-lock.json at the repository root.
+Install dependencies from the repository root.
+Do not add application lockfiles or application-local copies of shared development tools.
 Keep security documentation there when the application changes user data.
 Do not maintain a second runtime build in `lib/`.
 The output directory can preserve `src/` when the Vite configuration preserves runtime modules.
@@ -29,7 +32,8 @@ Exclude tests and build scripts from publication.
 - For a CLI without a public import API, use an empty exports object.
 - Add declarations and a `types` entry only when the package supports a public TypeScript API.
 - Record the actual repository URL and application directory when known. Do not invent author data or service URLs.
-- Separate runtime dependencies from build and test dependencies.
+- Keep runtime dependencies in the application that uses them.
+- Keep shared build and test dependencies in the private root package.
 - Keep dependencies small and justify each addition. Pin development dependencies and track the lockfile.
 - Provide build, typecheck, test, and start scripts. Build before packaging with prepack.
 - Stop startup after build failure. Do not depend on installation hooks for runtime readiness.
@@ -57,16 +61,18 @@ A directory move does not require a major increment when the installed CLI contr
 Do not repeat a bump already completed by the user for the same iteration.
 Use prerelease identifiers only when the release channel requires them.
 
-Before changing a version, inspect package scripts and current metadata.
-Run this command in the application directory:
+Before changing a version, inspect root scripts, application scripts, and current metadata.
+Run this command from the repository root:
 
 ```sh
-npm version patch --no-git-tag-version --ignore-scripts
+npm version patch --workspace tx-rehistory --no-git-tag-version --ignore-scripts
 ```
 
+Replace `tx-rehistory` with the changed workspace name.
 Replace `patch` with `minor` or `major` when required.
 Never edit version strings directly in package.json or lockfiles.
-The command must update package.json and the tracked npm lockfile together.
+The command must update the application manifest and its entry in the root npm lockfile together.
+The private root package has an independent version and is not published.
 The flags prevent Git commits, Git tags, and version lifecycle scripts.
 Do not use `--force` to bypass version checks.
 Verify the resulting version and lockfile consistency.
@@ -100,7 +106,11 @@ The generated modules must work in local builds and installed packages.
 
 ## Build and verification
 
-Provide Prettier configuration and an ESLint flat configuration in every application.
+Maintain shared Prettier, ESLint, TypeScript, Vite, and Vitest settings in `configs/`.
+Use root discovery files to expose the shared ESLint, Prettier, and Vitest configuration.
+Keep application wrappers small and limited to local roots, aliases, entries, and documented exceptions.
+Extend the shared TypeScript base from each application tsconfig.json.
+Set rootDir, outDir, include, exclude, and alias paths locally because they are relative to their config file.
 Use recommended JavaScript and TypeScript ESLint rules.
 Use eslint-config-prettier to disable conflicting formatting rules. Keep Prettier separate from ESLint.
 Provide format, format:check, lint, and check commands.
@@ -133,9 +143,9 @@ Run security review after each stage and separately after implementation.
 
 ## References
 
+- [npm workspaces](https://docs.npmjs.com/cli/v11/using-npm/workspaces/).
 - [Semantic Versioning 2.0.0](https://semver.org/).
 - [npm version and Git tag controls](https://docs.npmjs.com/cli/v11/commands/npm-version/).
-
 - [npm package metadata, bin, files, and repository directory](https://docs.npmjs.com/cli/v11/configuring-npm/package-json/).
 - [Vite TypeScript transforms and type checking](https://vite.dev/guide/features.html#typescript).
 - [Vite build configuration](https://vite.dev/config/build-options.html).

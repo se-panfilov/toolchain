@@ -11,7 +11,7 @@ This skill does not grant permission to publish, push, or change real user data.
 
 ## Establish the change
 
-1. Read the selected utility's source, README, security notes, and package scripts.
+1. Read the selected utility's source, README, security notes, and root and workspace package scripts.
 2. Identify the affected behavior and the user's expected result.
 3. Identify target data, input sources, writes, subprocesses, and network effects.
 4. Resolve material ambiguities before dependent work. Continue independent authorized work.
@@ -20,6 +20,9 @@ This skill does not grant permission to publish, push, or change real user data.
 For a new utility, use a separate directory under `apps/`.
 Check the npm package name and CLI command against the naming rule in AGENTS.md.
 Inspect tsconfig.json and package scripts against the compilation requirements in AGENTS.md.
+Install dependencies once from the private repository root with npm ci --ignore-scripts.
+Use the root lockfile and shared development tools. Do not add per-application lockfiles.
+Keep common settings in configs and application wrappers limited to paths, aliases, and entry points.
 Check the Vite build, separate TypeScript check, and Vitest test commands.
 Check structure, metadata, TypeScript options, and package-local aliases against [the package requirements](../../../docs/PACKAGES.md).
 Verify that local startup and npm bin entries use the same compiled entry point in `dist/`.
@@ -65,6 +68,8 @@ Check references and authorization boundaries. Do not run destructive examples t
 ## Prepare npm distribution when requested
 
 Read the relevant release guide and package lifecycle scripts first.
+Select the application explicitly with --workspace when packing from the root.
+Do not pack or publish the private root package as an application.
 Type-check with tsconfig.json, then build with Vite.
 Run Vitest unit and integration tests. Check the built application separately.
 Verify that a compilation error prevents local startup.
@@ -84,11 +89,12 @@ Leave publication and real network operations outside this workflow unless the u
 ## Deliver
 
 Apply the SemVer policy in docs/PACKAGES.md once for each changed application.
-Use `npm version` with `--no-git-tag-version --ignore-scripts`, then check package and lockfile versions.
+Run npm version from the root with --workspace <name> --no-git-tag-version --ignore-scripts.
+Check the application manifest and its version in the root lockfile.
 Do not replace user version changes or repeat a completed iteration bump.
 
 Run Prettier on changed maintained files with the existing configuration.
-Run format:check and ESLint for the affected application. Fix errors before completion.
+Run root format:check and ESLint, then the affected workspace tests. Fix errors before completion.
 Keep generated output and vendored skills outside formatting changes.
 Update the utility's operating instructions and security notes as necessary.
 Report the result, executed checks, fixed defects, and remaining limits in Russian.

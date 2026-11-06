@@ -46,9 +46,12 @@ Keep utility-specific requirements in the relevant utility documentation.
 - Keep shared code small. Do not add a framework or workspace manager without a concrete need.
 - Prefer Node.js built-ins. Evaluate the need and security impact of each added dependency.
 - Follow `.editorconfig`. Edit source files instead of generated build output.
-- Do not assume that the repository root has npm scripts. Read the relevant utility's `package.json`.
+- Install dependencies once at the repository root with `npm ci --ignore-scripts`. Use the root lockfile.
+- Keep shared development dependencies in the private root package and shared settings in `configs/`.
+- Keep workspace-specific metadata, runtime dependencies, aliases, and entry points in each application.
+- Read root and application scripts before execution. Use `--workspace <name>` to select one application.
 - Update each changed application's version once per iteration according to [the SemVer policy](docs/PACKAGES.md#version-policy).
-- Use `npm version patch --no-git-tag-version --ignore-scripts` (or `minor`/`major`) in the application directory. Never edit version strings directly.
+- Run `npm version patch --workspace <name> --no-git-tag-version --ignore-scripts` (or `minor`/`major`) from the root. Never edit version strings directly.
 - Preserve user version changes. Do not repeat an iteration's completed bump or create Git commits or tags through npm.
 
 ## CLI behavior
@@ -124,16 +127,22 @@ Its README describes local npm archive preparation. Publication requires separat
 Run these commands from the repository root when relevant:
 
 ```sh
-npm --prefix apps/reHistory test
-npm --prefix apps/reHistory run format
-npm --prefix apps/reHistory run format:check
-npm --prefix apps/reHistory run lint
-npm --prefix apps/reHistory run typecheck
-npm --prefix apps/reHistory run build
+npm ci --ignore-scripts
+npm run format
+npm run format:check
+npm run lint
+npm run typecheck
+npm run build
+npm test
+npm run check
+npm test --workspace tx-rehistory
+npm run build --workspace tx-rehistory
 node apps/reHistory/dist/src/cli.js --help
 ```
 
-reHistory checks types with tsconfig.json, builds with Vite, and tests with Vitest.
-Its development dependencies are locked.
-Its local start script builds first, then runs the same dist/src/cli.js entry point as the npm bin.
-There is no repository-wide test, lint, or type-check command at present.
+The root scripts aggregate workspace builds, tests, and type checks.
+Root formatting and lint cover maintained project files and exclude vendored skills and generated output.
+Shared ESLint, Prettier, TypeScript, Vite, and Vitest settings live in `configs/`.
+Application config files contain only local paths, aliases, and entry points.
+The root package is private. Publish only an explicitly selected application workspace.
+reHistory's local start script builds first and uses the same dist/src/cli.js entry point as its npm bin.

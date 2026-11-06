@@ -6,15 +6,15 @@ Agent behavior also depends on the host, version, trust settings, and higher-pri
 
 ## Files
 
-| File | Purpose |
-| --- | --- |
-| [AGENTS.md](../AGENTS.md) | Requirements for the complete Toolchain repository. |
+| File                                                        | Purpose                                                          |
+| ----------------------------------------------------------- | ---------------------------------------------------------------- |
+| [AGENTS.md](../AGENTS.md)                                   | Requirements for the complete Toolchain repository.              |
 | [Shared SKILL.md](../.agents/skills/toolchain-cli/SKILL.md) | Development, security review, and archive verification workflow. |
-| [CLAUDE.md](../CLAUDE.md) | Imports AGENTS.md through Claude's native import syntax. |
-| [Claude SKILL.md](../.claude/skills/toolchain-cli/SKILL.md) | Makes the shared workflow discoverable in Claude Code. |
-| [GEMINI.md](../GEMINI.md) | Imports AGENTS.md through Gemini CLI's native import syntax. |
-| [Copilot instructions](../.github/copilot-instructions.md) | Directs Copilot to the common files. |
-| [Writing rules](WRITING.md) | English documentation rules based on ASD-STE100 Issue 9. |
+| [CLAUDE.md](../CLAUDE.md)                                   | Imports AGENTS.md through Claude's native import syntax.         |
+| [Claude SKILL.md](../.claude/skills/toolchain-cli/SKILL.md) | Makes the shared workflow discoverable in Claude Code.           |
+| [GEMINI.md](../GEMINI.md)                                   | Imports AGENTS.md through Gemini CLI's native import syntax.     |
+| [Copilot instructions](../.github/copilot-instructions.md)  | Directs Copilot to the common files.                             |
+| [Writing rules](WRITING.md)                                 | English documentation rules based on ASD-STE100 Issue 9.         |
 
 Use the exact uppercase filenames `AGENTS.md` and `SKILL.md`.
 Do not add lowercase copies or separate copies of the project rules.

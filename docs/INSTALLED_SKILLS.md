@@ -8,16 +8,16 @@ Its user-level bookkeeping used temporary storage outside the repository.
 
 ## Inventory
 
-| Skill | Source | Purpose |
-| --- | --- | --- |
-| property-based-testing | trailofbits/skills | Test invariants and generated input cases. |
-| sharp-edges | trailofbits/skills | Find unsafe interfaces and configuration defaults. |
-| differential-review | trailofbits/skills | Review changes for security regressions. |
-| supply-chain-risk-auditor | trailofbits/skills | Examine dependency metadata and advisories when requested. |
-| agents-md | getsentry/skills | Maintain concise project instruction files. |
-| skill-scanner | getsentry/skills | Examine skill instructions and scripts before adoption. |
-| code-simplifier | getsentry/skills | Improve CLI code readability while preserving behavior and security. |
-| doc-coauthoring | anthropics/skills | Develop substantial documents and examine reader understanding. |
+| Skill                     | Source             | Purpose                                                              |
+| ------------------------- | ------------------ | -------------------------------------------------------------------- |
+| property-based-testing    | trailofbits/skills | Test invariants and generated input cases.                           |
+| sharp-edges               | trailofbits/skills | Find unsafe interfaces and configuration defaults.                   |
+| differential-review       | trailofbits/skills | Review changes for security regressions.                             |
+| supply-chain-risk-auditor | trailofbits/skills | Examine dependency metadata and advisories when requested.           |
+| agents-md                 | getsentry/skills   | Maintain concise project instruction files.                          |
+| skill-scanner             | getsentry/skills   | Examine skill instructions and scripts before adoption.              |
+| code-simplifier           | getsentry/skills   | Improve CLI code readability while preserving behavior and security. |
+| doc-coauthoring           | anthropics/skills  | Develop substantial documents and examine reader understanding.      |
 
 The existing `toolchain-cli` skill remains separate and unchanged.
 Project requirements remain in [AGENTS.md](../AGENTS.md).
@@ -47,11 +47,11 @@ Do not replace the existing root CLAUDE.md import.
 [The provenance manifest](skill-provenance.json) records installer integrity, license identifiers, and local file hashes.
 The lockfile describes upstream versions. It does not preserve local adaptations or added license files by itself.
 
-| Source | Git revision |
-| --- | --- |
+| Source             | Git revision                               |
+| ------------------ | ------------------------------------------ |
 | trailofbits/skills | `2be6433b39e009cd2b6fd3be1895f6b1faa5af9a` |
-| getsentry/skills | `d12f250460ffd961f549dbebf7eeb0cf4afd4c2e` |
-| anthropics/skills | `ca45fc496a3436251f191354091d557da31c15b5` |
+| getsentry/skills   | `d12f250460ffd961f549dbebf7eeb0cf4afd4c2e` |
+| anthropics/skills  | `ca45fc496a3436251f191354091d557da31c15b5` |
 
 Local adaptations are stored as reversible patches:
 

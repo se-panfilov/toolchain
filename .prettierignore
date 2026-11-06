@@ -1,0 +1,12 @@
+**/node_modules/**
+**/dist/**
+**/coverage/**
+**/reports/**
+**/package-lock.json
+skills-lock.json
+.agents/**
+.claude/skills/**
+.codex/skills/**
+.gemini/skills/**
+*.tgz
+docs/skill-provenance.json
