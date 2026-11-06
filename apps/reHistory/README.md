@@ -683,6 +683,12 @@ npx --offline --yes --package /path/to/PACKAGE.tgz tx-rehistory --help
 
 ### Publish the current version
 
+The recommended release path is the GitHub Actions Release workflow with `app=reHistory`.
+Increase the version and merge the change to `master` first.
+Start the workflow with `dry_run=true`, then start it again with `dry_run=false`.
+See the [GitHub Actions guide](../../docs/GITHUB_ACTIONS.md#release).
+
+The manual procedure follows.
 Run these release commands from the application directory after installing dependencies at the Toolchain root.
 Run `npm run check` from the root before release.
 Configure npm authentication separately with `npm login`.

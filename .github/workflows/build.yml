@@ -1,0 +1,96 @@
+# Build, pack, and check application archives.
+# When you add, remove, or rename an application in apps/, update the `app` options in test.yml, build.yml, and release.yml.
+# `npm run check:workflows` and the `plan` job stop when the lists differ from apps/.
+
+name: Build
+run-name: Build (app=${{ inputs.app }}, dry_run=${{ inputs.dry_run }})
+
+on:
+  workflow_dispatch:
+    inputs:
+      app:
+        description: Application directory in apps/, or all
+        type: choice
+        required: true
+        default: all
+        options:
+          - all
+          - reHistory
+      dry_run:
+        description: Build and check the archives. Do not upload artifacts.
+        type: boolean
+        required: true
+        default: false
+  workflow_call:
+    inputs:
+      app:
+        type: string
+        required: true
+      dry_run:
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      apps: ${{ steps.select.outputs.apps }}
+      dry_run: ${{ steps.select.outputs.dry_run }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - id: select
+        name: Select applications
+        env:
+          APP: ${{ inputs.app }}
+          DRY_RUN: ${{ inputs.dry_run == true }}
+        run: node scripts/ci/apps.mjs select
+
+  build:
+    needs: plan
+    name: build (${{ matrix.app.dir }})
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJSON(needs.plan.outputs.apps) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      APP: ${{ matrix.app.dir }}
+      WORKSPACE: ${{ matrix.app.name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - run: node --version && npm --version
+      - run: npm ci --ignore-scripts
+      - name: Check types
+        run: npm run typecheck --workspace "$WORKSPACE"
+      - name: Build
+        run: npm run build --workspace "$WORKSPACE"
+      - name: Pack and check the archive
+        env:
+          OUT_DIR: ${{ runner.temp }}/package-${{ matrix.app.dir }}
+        run: node scripts/ci/package.mjs
+      - name: Upload the archive
+        if: needs.plan.outputs.dry_run != 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: package-${{ matrix.app.dir }}
+          path: ${{ runner.temp }}/package-${{ matrix.app.dir }}
+          if-no-files-found: error
+          retention-days: 7

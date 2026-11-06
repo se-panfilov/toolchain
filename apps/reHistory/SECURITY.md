@@ -48,6 +48,8 @@ It contains no user input.
 
 The program removes inherited `GIT_*` variables before a Git call.
 It does not read system or global Git config.
+It sets the system and global config paths to the null device: `/dev/null` on macOS and Linux, and `nul` on Windows.
+Git for Windows rejects the `\\.\nul` path from `os.devNull`.
 It reads local source config.
 Before status, rewrite and export reject configured clean, process, and smudge filters.
 The read-only audit does not call status or run these filters.

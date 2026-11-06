@@ -63,13 +63,27 @@ Shared source configurations and development tools are unnecessary for its insta
 7. Declare application runtime dependencies in that application.
 8. Add shared development tools at the root only when needed.
 9. Run `npm install --ignore-scripts` from the root to update its lockfile and workspace links.
-10. Run the relevant checks and inspect the application's actual archive.
+10. Add the directory name to the `app` options in the three [GitHub Actions workflows](GITHUB_ACTIONS.md#add-remove-or-rename-an-application).
+11. Run `npm run check:workflows`.
+12. Run the relevant checks and inspect the application's actual archive.
+13. Before the first Release workflow run, publish the package manually and add its npm trusted publisher.
 
 Do not create an application lockfile.
 Do not add another application's source as a TypeScript alias.
 Use declared package dependencies and supported exports when applications share a published package.
 Do not bypass application build-path checks through the shared Vite preset.
 A successful TypeScript check must precede publication of compiled output.
+
+## Remove or rename an application
+
+1. Remove or rename the directory in `apps/`.
+2. Remove or replace its directory name in the `app` options of the three [GitHub Actions workflows](GITHUB_ACTIONS.md#add-remove-or-rename-an-application).
+3. For a rename, change the package and command names to the new `tx-<directory-name-in-lowercase>` value.
+4. Run `npm install --ignore-scripts` from the root to update the lockfile and workspace links.
+5. Run `npm run check:workflows` and the relevant checks.
+
+A rename makes a new npm package. Add a trusted publisher for it on npmjs.com.
+The earlier package stays in the registry. Deprecate it separately when necessary.
 
 ## Migration verification
 

@@ -7,9 +7,11 @@ import { fileURLToPath } from 'node:url';
 
 import { getFileInfo } from 'prettier';
 
-const root = realpathSync(fileURLToPath(new URL('../', import.meta.url)));
+const root = realpathSync.native(fileURLToPath(new URL('../', import.meta.url)));
 const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.toUpperCase().startsWith('GIT_')));
-Object.assign(env, { GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_SYSTEM: devNull, GIT_CONFIG_GLOBAL: devNull, GIT_OPTIONAL_LOCKS: '0', NO_COLOR: '1', FORCE_COLOR: '0' });
+// Git for Windows rejects os.devNull (\\.\nul) as a config path. The reserved name nul always selects the null device.
+const gitNullConfig = process.platform === 'win32' ? 'nul' : devNull;
+Object.assign(env, { GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_SYSTEM: gitNullConfig, GIT_CONFIG_GLOBAL: gitNullConfig, GIT_OPTIONAL_LOCKS: '0', NO_COLOR: '1', FORCE_COLOR: '0' });
 const safe = (value) => String(value).replace(/[\p{Cc}\p{Cf}]/gu, (character) => (character === '\n' ? character : '?'));
 
 function run(program, args) {
@@ -35,14 +37,14 @@ function changed(args) {
 
 function fileState(path, name) {
   const stat = lstatSync(path);
-  if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1 || realpathSync(path) !== path) throw new Error(`Нужен обычный файл без ссылок: ${JSON.stringify(name)}.`);
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1 || realpathSync.native(path) !== path) throw new Error(`Нужен обычный файл без ссылок: ${JSON.stringify(name)}.`);
   return JSON.stringify([stat.dev, stat.ino, stat.nlink, stat.mode, stat.size, stat.mtimeMs, stat.ctimeMs]);
 }
 
 async function main() {
   const args = process.argv.slice(2);
   if (new Set(args).size !== args.length || args.some((arg) => !['--staged', '--check'].includes(arg))) throw new Error('Допустимы параметры --staged и --check без повторов.');
-  if (realpathSync(git(['rev-parse', '--show-toplevel']).trim()) !== root) throw new Error('Каталог скрипта должен быть корнем репозитория.');
+  if (realpathSync.native(git(['rev-parse', '--show-toplevel']).trim()) !== root) throw new Error('Каталог скрипта должен быть корнем репозитория.');
   const configKeys = git(['config', '--null', '--name-only', '--list']).split('\0');
   if (configKeys.some((key) => /^filter\.[\s\S]*\.(?:clean|smudge|process)$/i.test(key)))
     throw new Error('Git-фильтры не поддерживаются. Используйте отдельную копию без filter.*.clean/process/smudge.');

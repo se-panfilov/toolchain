@@ -27,6 +27,10 @@ Check the Vite build, separate TypeScript check, and Vitest test commands.
 Check structure, metadata, TypeScript options, and package-local aliases against [the package requirements](../../../docs/PACKAGES.md).
 Verify that local startup and npm bin entries use the same compiled entry point in `dist/`.
 Do not copy reHistory-specific Git restrictions into an unrelated utility.
+Add the new directory name to the `app` options in the three GitHub Actions workflows.
+Remove or replace the name there when you remove or rename a utility directory.
+Run `npm run check:workflows` to compare the workflow lists with `apps/`.
+See [the GitHub Actions guide](../../../docs/GITHUB_ACTIONS.md).
 
 ## Implement in stages
 
@@ -61,6 +65,7 @@ Fix confirmed defects within the task scope.
 Add meaningful regression checks for security defects.
 Repeat affected checks after each fix.
 Report unresolved findings with impact, conditions, evidence, and a recommended action.
+A human makes the final decision on each security finding that is not fixed. Do not accept or postpone a risk yourself.
 
 For a documentation-only change, examine instruction accuracy and unsafe example commands.
 Check references and authorization boundaries. Do not run destructive examples to validate their wording.
@@ -85,6 +90,7 @@ Check runtime dependency and installation hook changes when present.
 Keep the tested archive integrity value with the verification result.
 Metadata or included-file changes require a new archive and repeated artifact checks.
 Leave publication and real network operations outside this workflow unless the user explicitly authorized them.
+Do not start the Release workflow with `dry_run=false` without that authorization.
 
 ## Deliver
 
@@ -98,4 +104,5 @@ Run root format:check and ESLint, then the affected workspace tests. Fix errors 
 Keep generated output and vendored skills outside formatting changes.
 Update the utility's operating instructions and security notes as necessary.
 Report the result, executed checks, fixed defects, and remaining limits in Russian.
+Never merge the pull request. A human reviews and merges it.
 Do not present static review as native platform testing or a formal security certificate.
