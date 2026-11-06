@@ -3,6 +3,8 @@
 Toolchain has three GitHub Actions workflows for tests, builds, and npm releases.
 Each workflow can use all applications or one application from `apps/`.
 Each workflow has a dry-run mode.
+The separate [Secrets workflow](../.github/workflows/secrets.yml) scans all local history and working files without an application selection.
+See [Git hooks and secret checks](GIT_HOOKS.md) for its configuration, setup, and limits.
 
 | Workflow                                    | Start                                                            | Result                                                                      |
 | ------------------------------------------- | ---------------------------------------------------------------- | --------------------------------------------------------------------------- |
