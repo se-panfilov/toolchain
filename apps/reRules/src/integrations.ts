@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { askConflict, askTransfer, pick } from '@reRules/flow';
 import { repoPath } from '@reRules/github';
 import { category, type Context, type PlanItem, Stage } from '@reRules/plan';
@@ -7,12 +9,18 @@ import { plain, yesNo } from '@reRules/ui';
 export type Webhook = { id: number | undefined; url: string; contentType: string; insecureSsl: string; hasSecret: boolean; events: string[]; active: boolean };
 export type WebhooksData = { source: Read<Webhook[]>; target: Read<Webhook[]>; skipped: string[] };
 
-/** Show a webhook address without user data and query values. They can contain credentials. */
+/**
+ * Show a webhook address without parts that can contain credentials: user data, query values, and the path after its first segment.
+ * Many services put a token in the path. A short hash of the full address tells webhooks with the same host apart.
+ */
 export function maskUrl(value: string): string {
   try {
     const url = new URL(value);
     const query = [...url.searchParams.keys()].map((key) => `${key}=***`).join('&');
-    return `${url.protocol}//${url.username || url.password ? '***@' : ''}${url.host}${url.pathname}${query ? `?${query}` : ''}`;
+    const segments = url.pathname.split('/').filter(Boolean);
+    const path = segments.length === 0 ? '' : segments.length === 1 ? '/…' : `/${segments[0] ?? ''}/…`;
+    const tag = createHash('sha256').update(value).digest('hex').slice(0, 8);
+    return `${url.protocol}//${url.username || url.password ? '***@' : ''}${url.host}${path}${query ? `?${query}` : ''} [#${tag}]`;
   } catch {
     return '(некорректный адрес)';
   }
@@ -108,6 +116,14 @@ export const webhooksCategory = category<WebhooksData>({
         if (secret) config.secret = secret;
         else details.push('Без секрета: получатель не сможет проверить подпись.');
       } else if (hook.hasSecret) details.push('В пробном запуске секрет не запрашивается.');
+      // The replacement config has no secret. GitHub then removes the target secret, and the receiver loses signature checks.
+      if (existing?.hasSecret && config.secret === undefined) {
+        if (!(await ctx.ask.confirm(`У вебхука ${label} в цели есть секрет. Замена удалит его. Продолжить?`, false))) {
+          items.push({ category: title, kind: 'keep', title: `${label}: оставлен как в цели (секрет сохранён)`, stage });
+          continue;
+        }
+        details.push('Секрет вебхука в цели будет удалён.');
+      }
       const body = { name: 'web', active: hook.active, events: hook.events, config };
       const existingId = existing?.id;
       items.push({
@@ -115,7 +131,7 @@ export const webhooksCategory = category<WebhooksData>({
         kind: existing ? 'update' : 'create',
         title: `${existing ? 'Заменить' : 'Создать'} вебхук ${label}`,
         details,
-        risk: existing ? 'замена вебхука' : 'отправка событий цели на внешний адрес',
+        risk: existing ? (existing.hasSecret && config.secret === undefined ? 'замена вебхука с удалением секрета' : 'замена вебхука') : 'отправка событий цели на внешний адрес',
         stage,
         apply: async (client) => {
           if (existing) {

@@ -2,9 +2,10 @@ import { accessCategory, discoverAccess } from '@reRules/access';
 import { sealSecret } from '@reRules/crypto';
 import { discoverEnvironments, environmentsCategory } from '@reRules/environments';
 import { labelsCategory } from '@reRules/extras';
-import { maskUrl } from '@reRules/integrations';
+import { maskUrl, webhooksCategory } from '@reRules/integrations';
 import { discoverSecrets, secretsCategory, writeSecret } from '@reRules/secrets';
 import { discoverSecurity, securityCategory } from '@reRules/security';
+import { settingsCategory } from '@reRules/settings';
 import { discoverVariables, variablesCategory } from '@reRules/variables';
 import sodium from 'libsodium-wrappers';
 import { describe, expect, test } from 'vitest';
@@ -352,8 +353,55 @@ describe('labels and webhooks', () => {
     expect(items.some((item) => item.kind === 'delete')).toBe(false);
   });
 
-  test('webhook addresses hide user data and query values', () => {
-    expect(maskUrl('https://user:pass@hooks.example/path?token=abc&x=1')).toBe('https://***@hooks.example/path?token=***&x=***');
+  test('webhook addresses hide user data, query values, and path tokens', () => {
+    expect(maskUrl('https://user:pass@hooks.example/path?token=abc&x=1')).toMatch(/^https:\/\/\*\*\*@hooks\.example\/…\?token=\*\*\*&x=\*\*\* \[#[0-9a-f]{8}\]$/);
+    const slack = maskUrl('https://hooks.slack.example/services/T000/B000/secretpathtoken');
+    expect(slack).toMatch(/^https:\/\/hooks\.slack\.example\/services\/… \[#[0-9a-f]{8}\]$/);
+    expect(slack).not.toContain('secretpathtoken');
+    expect(maskUrl('https://hooks.slack.example/services/T000/B000/other')).not.toBe(slack);
     expect(maskUrl('not a url')).toBe('(некорректный адрес)');
+  });
+
+  const hook = (secret: boolean, events: string[]): unknown => ({
+    id: 7,
+    name: 'web',
+    active: true,
+    events,
+    config: { url: 'https://hooks.example/in', content_type: 'json', insecure_ssl: '0', ...(secret ? { secret: '********' } : {}) }
+  });
+
+  test('a webhook replacement that removes the target secret needs its own confirmation', async () => {
+    const api = new FakeApi()
+      .on('GET', '/repos/me/template/hooks', { status: 200, body: [hook(false, ['push', 'release'])] })
+      .on('GET', '/repos/me/project/hooks', { status: 200, body: [hook(true, ['push'])] });
+    const declined = context(api, ['Да, всё', 'Заменить настройки вебхука', false]);
+    const kept = await webhooksCategory.plan(await webhooksCategory.discover(declined), declined);
+    expect(kept.map((item) => item.kind)).toEqual(['keep']);
+    expect(declined.ask.questions.at(-1)).toContain('Замена удалит его');
+
+    const accepted = context(api, ['Да, всё', 'Заменить настройки вебхука', true]);
+    const items = await webhooksCategory.plan(await webhooksCategory.discover(accepted), accepted);
+    expect(items[0]?.kind).toBe('update');
+    expect(items[0]?.risk).toBe('замена вебхука с удалением секрета');
+  });
+
+  test('a webhook replacement with a new secret asks no secret-removal question', async () => {
+    const api = new FakeApi()
+      .on('GET', '/repos/me/template/hooks', { status: 200, body: [hook(true, ['push', 'release'])] })
+      .on('GET', '/repos/me/project/hooks', { status: 200, body: [hook(true, ['push'])] });
+    const ctx = context(api, ['Да, всё', 'Заменить настройки вебхука', 'new-webhook-secret']);
+    const items = await webhooksCategory.plan(await webhooksCategory.discover(ctx), ctx);
+    expect(items[0]?.risk).toBe('замена вебхука');
+    expect(ctx.ask.remaining).toBe(0);
+  });
+});
+
+describe('topics', () => {
+  test('unknown target topics are not replaced', async () => {
+    const source = repo('me', 'template', { raw: { topics: ['cli'] } });
+    const target = repo('me', 'project', { raw: {} });
+    const ctx = context(new FakeApi(), ['Да, всё'], { source, target });
+    const items = await settingsCategory.plan(await settingsCategory.discover(ctx), ctx);
+    expect(items.filter((item) => item.kind !== 'warn' || item.title.startsWith('Темы')).map((item) => [item.kind, item.title])).toEqual([['warn', 'Темы (topics) цели неизвестны: не меняются']]);
   });
 });
