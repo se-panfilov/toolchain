@@ -68,6 +68,47 @@ export function selectApps(value, apps) {
   return [app];
 }
 
+// Find the applications that a lockfile change affects. A version step changes only the `apps/<directory>` entry.
+// Return undefined when the change can affect other applications, such as a change to a hoisted dependency.
+export function lockfileApps(baseLock, headLock, apps) {
+  if (!isObject(baseLock) || !isObject(headLock) || !isObject(baseLock.packages) || !isObject(headLock.packages)) return undefined;
+  const same = (left, right) => JSON.stringify(left) === JSON.stringify(right);
+  for (const key of new Set([...Object.keys(baseLock), ...Object.keys(headLock)])) {
+    if (key !== 'packages' && !same(baseLock[key], headLock[key])) return undefined;
+  }
+  const dirs = new Set();
+  for (const key of new Set([...Object.keys(baseLock.packages), ...Object.keys(headLock.packages)])) {
+    if (same(baseLock.packages[key], headLock.packages[key])) continue;
+    const match = /^apps\/([^/]+)(\/node_modules\/.+)?$/.exec(key);
+    if (!match || !apps.some((app) => app.dir === match[1])) return undefined;
+    dirs.add(match[1]);
+  }
+  return [...dirs];
+}
+
+function isObject(value) {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+// Select the applications that a pull request changes. A file in `apps/<directory>/` selects that application.
+// A lockfile change selects the applications from `lockfile`, the result of lockfileApps.
+// Any other file, an unknown application directory, or an empty list selects all applications, because shared files can change every test result.
+export function changedApps(files, apps, lockfile = undefined) {
+  const selected = new Set();
+  for (const file of files) {
+    if (file === 'package-lock.json' && lockfile) {
+      for (const dir of lockfile) selected.add(dir);
+      continue;
+    }
+    const match = /^apps\/([^/]+)\/./.exec(file);
+    const app = match && apps.find((item) => item.dir === match[1]);
+    if (!app) return { apps, shared: files.length ? file : undefined };
+    selected.add(app.dir);
+  }
+  if (selected.size === 0) return { apps, shared: undefined };
+  return { apps: apps.filter((app) => selected.has(app.dir)), shared: undefined };
+}
+
 // Read the options of the `app` input under `on.workflow_dispatch.inputs`. The parser expects block-style YAML lists.
 export function workflowChoices(text) {
   const lines = text.split(/\r?\n/);
