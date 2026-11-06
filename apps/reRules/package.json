@@ -1,6 +1,6 @@
 {
   "name": "tx-rerules",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Copy selected GitHub repository settings from a source repository to a target repository, with a preview and a confirmation",
   "private": false,
   "type": "module",
@@ -24,6 +24,7 @@
     "dist/src/flow.js",
     "dist/src/github.js",
     "dist/src/integrations.js",
+    "dist/src/local.js",
     "dist/src/plan.js",
     "dist/src/prompts.js",
     "dist/src/protection.js",

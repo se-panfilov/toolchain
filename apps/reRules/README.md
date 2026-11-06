@@ -44,6 +44,10 @@ The start script builds `dist/` first. A build failure stops the start.
 
 If you do not give `--source` or `--target`, the program asks for them.
 
+When you start the program in a local copy of a GitHub repository, the target question has a default value: that repository.
+The program uses the `origin` remote. Without `origin`, it uses the only remote on github.com. You can edit or remove the value.
+The program reads `.git/config` and does not start Git. If the local repository is the source, there is no default value.
+
 ## Authentication
 
 The program looks for a token in this order:
@@ -157,13 +161,14 @@ Other settings that the program does not transfer: issues, pull requests, commit
 
 ### Category details
 
-- **Repository settings.** The program offers only values that differ. Paired commit title and message settings go together, because GitHub checks the pair. "Allow forking" applies only to organization repositories. The default branch changes only when the branch exists in the target.
+- **Repository settings.** The program offers only values that differ. Paired commit title and message settings go together, because GitHub checks the pair. "Allow forking" applies only to organization repositories. The default branch changes only when the branch exists in the target. Topics do not change when the target topics are unknown.
 - **Rulesets.** The program reads the full ruleset, not only the list item. It removes server data such as `id`, `source`, and dates. It removes bypass actors that cannot exist in the target: teams and organization roles in a personal or another organization repository, and apps of another owner. A removed bypass makes the ruleset stricter. A rule that refers to a missing environment or to a workflow file of the source repository is invalid. The program shows it and asks whether to copy the ruleset without it. The default answer is "Нет". An equal target ruleset is kept. A different one with the same name and target type is updated in place, not duplicated.
 - **Branch protection.** The program shows each protected branch. For an existing target protection, "merge" keeps the stricter value of each selected field. A merge keeps an existing target app binding for a required status check. An unbound check can acquire the source app binding. Fields that you do not select keep the target value. A replace that weakens a field, including a removed or changed app binding, is a high-risk operation. Personal repositories cannot have push restrictions or review actor lists. Another organization gets empty actor lists, so only administrators can pass.
 - **CODEOWNERS.** The program finds the file that GitHub uses. An equal file needs no write. A replace writes the exact bytes to the effective target path. The write includes the old file `sha`, so GitHub refuses the write if the file changed after discovery. The program checks owners: users must be collaborators, and teams must belong to the target organization and have access.
 - **Actions.** An organization policy can override repository values. Then GitHub refuses the change with HTTP 409, and the report shows it.
 - **Security.** The program enables features that are on in the source. It never treats an unavailable value as "off". To disable a feature that is on in the target, you must select it and confirm it again. Advanced Security, Code Security, and code scanning can cost money or Actions minutes. These are high-risk operations.
 - **Environments.** The program checks each required reviewer in the target. If a reviewer or a protection rule cannot be reproduced, it asks before it creates a weaker environment. The default answer is "Нет". Existing branch policies of the target stay.
+- **Webhooks.** Addresses show only the host, the first path segment, and a short hash, because many services put a token in the path. If a replacement removes a target webhook secret, the program asks a separate question. The default answer is "Нет".
 - **Variables and secrets.** Variable values show in the terminal. An overwrite needs an answer. For secrets, the program shows names only. You can enter new values. Input is hidden. The program encrypts each value with the target public key (libsodium sealed box) and sends only the encrypted value.
 - **Access.** Each new grant needs its own confirmation. Outside collaborators and users with unknown organization membership are never selected automatically. The confirmation question identifies unknown membership. An unreadable target team list blocks team changes. Matching custom roles stay unchanged. Changes between incomparable custom and standard roles are skipped with a warning. Personal repositories have one collaborator role with write access. The program never removes or lowers known access. GitHub sends an invitation to a new user.
 - **Labels, milestones, autolinks.** The program creates missing objects. It updates an existing object only after a question. It never deletes.

@@ -4,9 +4,10 @@ import { stdin, stdout } from 'node:process';
 import { pathToFileURL } from 'node:url';
 
 import { authGuide, sourceLabel, type Token, tokenFromEnv, tokenFromGh, validToken, verifyToken } from '@reRules/auth';
-import { describeError, GitHubClient } from '@reRules/github';
+import { describeError, GitHubClient, type RepoRef } from '@reRules/github';
+import { type LocalRepo, localRepo } from '@reRules/local';
 import { type Asker, PromptCancelled, TerminalPrompts } from '@reRules/prompts';
-import { checkPair, loadRepo, parseRepo } from '@reRules/repo';
+import { checkPair, loadRepo, parseRepo, sameRef } from '@reRules/repo';
 import { collectPlan, confirmAndApply } from '@reRules/run';
 import { Ui } from '@reRules/ui';
 
@@ -68,8 +69,12 @@ function safeArg(value: string): string {
   return value.replace(/[\p{Cc}\p{Cf}]/gu, '?').slice(0, 100);
 }
 
-async function askRepo(ask: Asker, ui: Ui, question: string, initial: string | undefined): Promise<string> {
-  let value = initial;
+/**
+ * Return `given` when it is valid. Otherwise ask, with `suggested` as the editable default in the input field.
+ * The suggestion is never accepted without the user's Enter.
+ */
+export async function askRepo(ask: Asker, ui: Ui, question: string, given: string | undefined, suggested = ''): Promise<string> {
+  let value = given;
   for (;;) {
     if (value !== undefined) {
       try {
@@ -79,8 +84,14 @@ async function askRepo(ask: Asker, ui: Ui, question: string, initial: string | u
         ui.error(error instanceof Error ? error.message : String(error));
       }
     }
-    value = await ask.text(question, value ?? '');
+    value = await ask.text(question, value ?? suggested);
   }
+}
+
+/** The target suggestion: the GitHub repository of the local Git copy, unless it is the source. */
+export function targetSuggestion(source: RepoRef, local: LocalRepo | undefined): string {
+  if (!local || sameRef(local.ref, source)) return '';
+  return `${local.ref.owner}/${local.ref.name}`;
 }
 
 async function obtainToken(ask: Asker, ui: Ui): Promise<Token> {
@@ -139,7 +150,9 @@ export async function main(args: readonly string[]): Promise<number> {
     const identity = await verifyToken(client);
     ui.rows([['Пользователь GitHub', `${identity.login} (${sourceLabel(token.source)})`]], 0);
     const sourceRef = parseRepo(await askRepo(prompts, ui, 'Репозиторий-источник (owner/repo)', parsed.source));
-    const targetRef = parseRepo(await askRepo(prompts, ui, 'Целевой репозиторий (owner/repo)', parsed.target));
+    const suggestion = parsed.target === undefined ? targetSuggestion(sourceRef, localRepo()) : '';
+    if (suggestion) ui.info(`По умолчанию — текущий репозиторий: ${suggestion}`);
+    const targetRef = parseRepo(await askRepo(prompts, ui, 'Целевой репозиторий (owner/repo)', parsed.target, suggestion));
     const source = await loadRepo(client, sourceRef);
     const target = await loadRepo(client, targetRef);
     const warnings = checkPair(source, target);

@@ -141,7 +141,11 @@ export const settingsCategory = category<SettingsData>({
         }
       });
     }
-    if (topicsDiffer && chosen.has('topics') && data.topics.source) items.push(...(await planTopics(ctx, data.topics.source, data.topics.target ?? [])));
+    if (topicsDiffer && chosen.has('topics') && data.topics.source) {
+      // Unknown target topics are not an empty list: a PUT would replace topics that the program could not read.
+      if (data.topics.target === undefined) items.push({ category: title, kind: 'warn', title: 'Темы (topics) цели неизвестны: не меняются', stage: Stage.settings });
+      else items.push(...(await planTopics(ctx, data.topics.source, data.topics.target)));
+    }
     if (branchChange && chosen.has('default_branch')) {
       items.push({
         category: title,

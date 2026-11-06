@@ -15,6 +15,7 @@ export const modules = [
   'flow',
   'github',
   'integrations',
+  'local',
   'plan',
   'prompts',
   'protection',
