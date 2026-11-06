@@ -22,7 +22,7 @@ on:
           - moveToRepo
           - reCast
           - reHistory
-          - repoRules
+          - reRules
       dry_run:
         description: Show the plan only. Do not install or run tests.
         type: boolean
