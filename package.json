@@ -12,7 +12,7 @@
   "scripts": {
     "build": "npm run build --workspaces",
     "check": "npm run format:check && npm run lint && npm test",
-    "clean:reinstall": "npm run clean:all && npm install && npm run clean:all:restore",
+    "clean:reinstall": "npm ci --ignore-scripts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint . --max-warnings=0",
