@@ -11,7 +11,7 @@ A public Git repository is not necessary for npm publication.
 Node.js, npm, and Git are still necessary.
 
 This procedure uses a package in your personal npm scope.
-The example package name is `@NPM_USER/rehistory`.
+The example package name is `@se-panfilov/rehistory`.
 The bin name stays `rehistory`.
 An organization scope is an alternative if you have publication permission for that organization.
 
@@ -46,7 +46,7 @@ Put paths that contain spaces in quotes.
 
 | Placeholder | Required value |
 | --- | --- |
-| `NPM_USER` | Your npm account name from `npm whoami`. |
+| `se-panfilov` | Your npm account name from `npm whoami`. |
 | `VERSION` | The exact release version in `package.json`. |
 | `ARCHIVE_PATH` | The absolute path of the archive printed by `npm pack`. |
 | `/path/to/toolchain/reHistory` | The source package directory. |
@@ -119,7 +119,7 @@ Read the [npm 2FA instructions](https://docs.npmjs.com/configuring-two-factor-au
    npm whoami --registry=https://registry.npmjs.org/
    ```
 
-4. Write this account name as your `NPM_USER` value.
+4. Write this account name as your `se-panfilov` value.
 
 If the displayed account is incorrect, stop.
 Do not put account passwords or access tokens in the project or release archive.
@@ -131,7 +131,7 @@ The browser procedure follows the [npm CLI authentication instructions](https://
 1. Read the registry entry for your selected name.
 
    ```sh
-   npm view "@NPM_USER/rehistory" name version maintainers --json --registry=https://registry.npmjs.org/
+   npm view "@se-panfilov/rehistory" name version maintainers --json --registry=https://registry.npmjs.org/
    ```
 
 2. Examine any package that the registry returns.
@@ -156,7 +156,7 @@ The local `private` guard is different from npm registry access.
 2. Set the scoped package name.
 
    ```sh
-   npm pkg set "name=@NPM_USER/rehistory"
+   npm pkg set "name=@se-panfilov/rehistory"
    ```
 
 3. Set public access for publication.
@@ -210,7 +210,7 @@ For the metadata command syntax, refer to [npm pkg](https://docs.npmjs.com/cli/v
 2. Read the published versions for your package name.
 
    ```sh
-   npm view "@NPM_USER/rehistory" versions --json --registry=https://registry.npmjs.org/
+   npm view "@se-panfilov/rehistory" versions --json --registry=https://registry.npmjs.org/
    ```
 
 3. Select a version that has not been published under this package name.
@@ -405,7 +405,7 @@ It does not pin a version for a later npx invocation.
 1. Read the exact published version.
 
    ```sh
-   npm view "@NPM_USER/rehistory@VERSION" name version bin engines dist.integrity --json --registry=https://registry.npmjs.org/
+   npm view "@se-panfilov/rehistory@VERSION" name version bin engines dist.integrity --json --registry=https://registry.npmjs.org/
    ```
 
 2. Compare `dist.integrity` with the `integrity` value from section 8.
@@ -426,7 +426,7 @@ It does not pin a version for a later npx invocation.
 7. Start the exact registry version with a new cache.
 
    ```sh
-   npx --yes --registry=https://registry.npmjs.org/ --cache=/path/to/rehistory-release/registry-cache --package="@NPM_USER/rehistory@VERSION" rehistory --help
+   npx --yes --registry=https://registry.npmjs.org/ --cache=/path/to/rehistory-release/registry-cache --package="@se-panfilov/rehistory@VERSION" rehistory --help
    ```
 
 8. Make sure that the help text appears without the Toolchain checkout as the current directory.
@@ -445,7 +445,7 @@ An exact version gives a repeatable package selection.
 ### Read-only audit
 
 ```sh
-npx --package="@NPM_USER/rehistory@VERSION" rehistory --audit --repo "/path/to/project"
+npx --package="@se-panfilov/rehistory@VERSION" rehistory --audit --repo "/path/to/project"
 ```
 
 ### History change dry-run
@@ -453,7 +453,7 @@ npx --package="@NPM_USER/rehistory@VERSION" rehistory --audit --repo "/path/to/p
 An interactive terminal is also necessary for this dry-run.
 
 ```sh
-npx --package="@NPM_USER/rehistory@VERSION" rehistory --dry-run --repo "/path/to/project"
+npx --package="@se-panfilov/rehistory@VERSION" rehistory --dry-run --repo "/path/to/project"
 ```
 
 ### History change
@@ -462,13 +462,13 @@ npx --package="@NPM_USER/rehistory@VERSION" rehistory --dry-run --repo "/path/to
 Use an interactive terminal.
 
 ```sh
-npx --package="@NPM_USER/rehistory@VERSION" rehistory --repo "/path/to/project"
+npx --package="@se-panfilov/rehistory@VERSION" rehistory --repo "/path/to/project"
 ```
 
 ### Export
 
 ```sh
-npx --package="@NPM_USER/rehistory@VERSION" rehistory --repo "/path/to/project" --export "/path/to/new-export.git"
+npx --package="@se-panfilov/rehistory@VERSION" rehistory --repo "/path/to/project" --export "/path/to/new-export.git"
 ```
 
 ### Short command
@@ -477,7 +477,7 @@ The package has one bin entry.
 For that package, npm can select the bin without an explicit `--package` option.
 
 ```sh
-npx "@NPM_USER/rehistory@VERSION" --help
+npx "@se-panfilov/rehistory@VERSION" --help
 ```
 
 Put npx options before the package or bin name.
