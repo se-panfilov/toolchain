@@ -182,7 +182,7 @@ test.skipIf(process.platform === 'win32')('SIGINT родителя во врем
     };
     const before = process.listenerCount('SIGINT');
     const result = applyPlan(plan);
-    setImmediate(() => console.log(JSON.stringify({ interrupted: result.interrupted, lock: existsSync(join(repo.common, 'rehistory.lock')), handlersRestored: before === process.listenerCount('SIGINT') })));
+    setImmediate(() => setImmediate(() => console.log(JSON.stringify({ interrupted: result.interrupted, lock: existsSync(join(repo.common, 'rehistory.lock')), handlersRestored: before === process.listenerCount('SIGINT') }))));
   `
   );
   const result = spawnSync(process.execPath, [script], { encoding: 'utf8', timeout: 30000 });
@@ -265,16 +265,17 @@ test('многострочные значения config не подменяют
   assert.throws(() => makePlan(repo, settings), /Git-фильтры/);
 });
 
-test.skipIf(process.platform === 'win32')('CLI после SIGINT во время JS завершает применение с кодом 130 без предложения push', (t) => {
-  const { repo, root } = fixture(t);
-  const previous = repo.text(['rev-parse', 'HEAD']);
-  const preload = join(root, 'interrupt-cli.mjs');
-  const marker = join(root, 'push-offered');
-  const engine = new URL('../dist/src/engine.js', import.meta.url).href;
-  const prompts = new URL('../dist/src/prompts.js', import.meta.url).href;
-  writeFileSync(
-    preload,
-    `
+for (const completion of ['microtask', 'stdin']) {
+  test.skipIf(process.platform === 'win32')(`CLI после SIGINT во время JS: подтверждение через ${completion}, код 130 без push`, (t) => {
+    const { repo, root } = fixture(t);
+    const previous = repo.text(['rev-parse', 'HEAD']);
+    const preload = join(root, 'interrupt-cli.mjs');
+    const marker = join(root, 'push-offered');
+    const engine = new URL('../dist/src/engine.js', import.meta.url).href;
+    const prompts = new URL('../dist/src/prompts.js', import.meta.url).href;
+    writeFileSync(
+      preload,
+      `
     import { Repository } from ${JSON.stringify(engine)};
     import { TerminalPrompts } from ${JSON.stringify(prompts)};
     import { writeFileSync } from 'node:fs';
@@ -282,6 +283,12 @@ test.skipIf(process.platform === 'win32')('CLI после SIGINT во время
     Object.defineProperty(process.stdout, 'isTTY', { value: true });
     TerminalPrompts.prototype.text = async (_question, initial) => initial;
     TerminalPrompts.prototype.confirm = async question => {
+      if (question === 'Применить изменения?' && ${JSON.stringify(completion)} === 'stdin') {
+        await new Promise(resolve => {
+          process.stdin.once('data', () => { process.stdin.pause(); resolve(); });
+          process.stdin.resume();
+        });
+      }
       if (question === 'Сделать push?') writeFileSync(${JSON.stringify(marker)}, 'offered');
       return question === 'Применить изменения?' || question === 'Нормализовать даты тегов?';
     };
@@ -296,24 +303,32 @@ test.skipIf(process.platform === 'win32')('CLI после SIGINT во время
       return result;
     };
   `
-  );
-  const result = spawnSync(process.execPath, ['--import', preload, cli, '--repo', repo.path], { encoding: 'utf8', env: { ...process.env, TERM: 'xterm-256color' }, timeout: 30000 });
-  assert.equal(result.status, 130, result.stdout + result.stderr);
-  assert(result.stdout.includes('Локальная история сохранена'));
-  assert(!result.stdout.includes('Сделать push?'));
-  assert.equal(existsSync(marker), false);
-  assert.equal(existsSync(join(repo.common, 'rehistory.lock')), false);
-  assert.notEqual(repo.text(['rev-parse', 'HEAD']), previous);
-});
+    );
+    const result = spawnSync(process.execPath, ['--import', preload, cli, '--repo', repo.path], {
+      input: 'confirm\n',
+      encoding: 'utf8',
+      env: { ...process.env, TERM: 'xterm-256color' },
+      timeout: 30000
+    });
+    assert.equal(result.status, 130, result.stdout + result.stderr);
+    assert(result.stdout.includes('Локальная история сохранена'));
+    assert(!result.stdout.includes('Сделать push?'));
+    assert.equal(existsSync(marker), false);
+    assert.equal(existsSync(join(repo.common, 'rehistory.lock')), false);
+    assert.notEqual(repo.text(['rev-parse', 'HEAD']), previous);
+  });
+}
 
 test('несколько синхронных применений используют один SIGINT-обработчик и очищают его после turn', async (t) => {
   const { repo } = fixture(t);
+  await nextTurn();
   await nextTurn();
   const before = process.listenerCount('SIGINT');
   for (let index = 0; index < 12; index++) {
     applyPlan(makePlan(repo, { ...settings, start: settings.start + index }));
     assert.equal(process.listenerCount('SIGINT'), before + 1);
   }
+  await nextTurn();
   await nextTurn();
   assert.equal(process.listenerCount('SIGINT'), before);
 });

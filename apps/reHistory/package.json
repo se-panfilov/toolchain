@@ -1,6 +1,6 @@
 {
   "name": "tx-rehistory",
-  "version": "2.5.3",
+  "version": "2.5.4",
   "description": "Interactive normalization, audit and verifiable export of Git history",
   "private": false,
   "type": "module",
@@ -37,7 +37,7 @@
     "format": "prettier --ignore-path ../../.prettierignore --write .",
     "format:check": "prettier --ignore-path ../../.prettierignore --check .",
     "check": "npm run format:check && npm run lint && npm test",
-    "release": "npm pack --ignore-scripts && npm publish --ignore-scripts --registry=https://registry.npmjs.org/ --access=public",
+    "release": "npm pack --ignore-scripts && node scripts/publish.mjs",
     "release:dry-run": "npm run release -- --dry-run"
   },
   "exports": {},
