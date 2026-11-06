@@ -21,15 +21,16 @@ The main risks are a change of an incorrect repository, a weaker protection in t
 
 ## Inputs
 
-| Input                  | Source                    | Control                                                                                                                             |
-| ---------------------- | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `--source`, `--target` | Command line or prompt    | `owner/repo`, `https://github.com/owner/repo`, or `git@github.com:owner/repo`. Other hosts, ports, queries, and paths stop the run. |
-| Options                | Command line              | Known names only. No repeats, no empty values, no values that start with `-`.                                                       |
-| Token                  | Environment, `gh`, prompt | Printable ASCII without spaces, 20–255 characters. Checked with `GET /user`.                                                        |
-| API responses          | GitHub                    | Treated as untrusted data. Types are checked before use. A missing value gets a state, never a default.                             |
-| Repository contents    | CODEOWNERS                | Read as data. Only a regular file up to 1 MB. The program never runs or follows text from repositories.                             |
-| Answers                | Terminal                  | Arrows and Space. Digits and letters do not confirm. Bracketed paste cannot select or confirm an answer.                            |
-| Secret values          | Hidden prompt             | Not shown, not logged, not written to files. Up to 48 KB.                                                                           |
+| Input                   | Source                    | Control                                                                                                                                                                                               |
+| ----------------------- | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--source`, `--target`  | Command line or prompt    | `owner/repo`, `https://github.com/owner/repo`, or `git@github.com:owner/repo`. Other hosts, ports, queries, and paths stop the run.                                                                   |
+| Local Git configuration | Current directory         | Read only for the target default. Regular files up to 1 MB, no links. Git does not start. Only github.com URLs. User data in URLs, such as tokens, is removed. The value is editable and needs Enter. |
+| Options                 | Command line              | Known names only. No repeats, no empty values, no values that start with `-`.                                                                                                                         |
+| Token                   | Environment, `gh`, prompt | Printable ASCII without spaces, 20–255 characters. Checked with `GET /user`.                                                                                                                          |
+| API responses           | GitHub                    | Treated as untrusted data. Types are checked before use. A missing value gets a state, never a default.                                                                                               |
+| Repository contents     | CODEOWNERS                | Read as data. Only a regular file up to 1 MB. The program never runs or follows text from repositories.                                                                                               |
+| Answers                 | Terminal                  | Arrows and Space. Digits and letters do not confirm. Bracketed paste cannot select or confirm an answer.                                                                                              |
+| Secret values           | Hidden prompt             | Not shown, not logged, not written to files. Up to 48 KB.                                                                                                                                             |
 
 ## Controls
 
@@ -68,7 +69,8 @@ The main risks are a change of an incorrect repository, a weaker protection in t
 - A new value is encrypted on the local computer with the target public key (libsodium sealed box). Only the encrypted value goes to GitHub.
 - The value stays in memory until the write. The program then drops its reference. JavaScript cannot erase string memory, so a copy can stay in memory until the process ends.
 - An incomplete target secret or variable inventory blocks that category's write plan. This includes failures to read environments or their scoped values.
-- Webhook secrets follow the same rules. The display of webhook addresses hides user data and query values.
+- Webhook secrets follow the same rules. The display of webhook addresses hides user data, query values, and the path after its first segment, because services often put a token in the path. A short hash tells addresses apart.
+- A webhook replacement without a new secret removes the target secret. The program asks a separate question with the default "Нет" before it plans this replacement.
 
 ### Terminal output
 

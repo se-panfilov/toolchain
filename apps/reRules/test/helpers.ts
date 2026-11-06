@@ -65,7 +65,10 @@ export class ScriptedAsker implements Asker {
   confirm(question: string): Promise<boolean> {
     return Promise.resolve(this.next(question) === true);
   }
-  text(question: string): Promise<string> {
+  /** The editable default of each text question. */
+  readonly initials: string[] = [];
+  text(question: string, initial = ''): Promise<string> {
+    this.initials.push(initial);
     return Promise.resolve(String(this.next(question)));
   }
   secret(question: string): Promise<string> {
