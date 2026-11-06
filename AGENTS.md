@@ -32,6 +32,8 @@ Keep utility-specific requirements in the relevant utility documentation.
 - Read package engine requirements before execution. The current reHistory minimum is Node.js 24.12.0.
 - Use syntax supported by native Node.js type stripping. Keep runtime imports explicit.
 - Put all applications in `packages/`. Give each utility its own directory, documentation, and necessary package metadata.
+- Name each application's npm package and CLI command `tx-` followed by its directory name in lowercase.
+- For example, `packages/reHistory` uses `tx-rehistory`. Keep the directory name unchanged.
 - Keep shared code small. Do not add a framework or workspace manager without a concrete need.
 - Prefer Node.js built-ins. Evaluate the need and security impact of each added dependency.
 - Follow `.editorconfig`. Edit source files instead of generated build output.
