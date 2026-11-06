@@ -222,7 +222,7 @@ Do different tests for authentication and hosting behavior with a specified empt
 Signature tests used synthetic blocks, not complete cryptographic signature generation.
 
 Linux, Windows, and npm publication have no different test results.
-The npm package is private.
+The initial source package has the publication guard `private: true`.
 The build does not do a TypeScript type check.
 
 ## Documentation change controls
@@ -250,3 +250,26 @@ The package inventory includes the terminology document.
 
 The full implementation test suite was not repeated for comment and documentation changes.
 The previous result of 46 tests is the implementation baseline.
+
+
+## npx publication procedure checks
+
+The publication guide gives manual steps in NPX_RELEASE.md.
+It does not publish a package automatically.
+The working package keeps its initial name, version, and private guard.
+
+The guide uses a scoped name and the public npm registry.
+It uses browser authentication with 2FA instead of a publication token.
+It publishes the same archive that passed local npx checks.
+It compares archive integrity with the published registry value.
+The version command disables npm Git commits and tags.
+
+The local procedure check used a temporary package copy and empty npm config files.
+Network access was disabled for all npm checks.
+The checks covered scoped metadata, private guard deletion, a version change, the archive, and the executable bin.
+A different directory started the bin through offline npm exec.
+The Russian help and a read-only audit completed correctly.
+
+The synthetic repository did not change during the audit.
+The offline publication dry-run completed without a registry write.
+The checks did not use account login or public publication.
