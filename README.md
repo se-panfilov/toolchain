@@ -70,7 +70,7 @@ npm run start --workspace tx-rehistory -- --help
 npm pack --workspace tx-rehistory
 npm run start --workspace tx-recast -- --help
 npm run start --workspace tx-movetorepo -- --help
-npm run start --workspace tx-reporules -- --help
+npm run start --workspace tx-rerules -- --help
 ```
 
 Run npm ci once at the root, not inside applications.
@@ -85,7 +85,7 @@ The CLI interface uses Russian.
 - [moveToRepo](apps/moveToRepo/README.md) copies local files into a GitHub repository through a new branch and a pull request.
 - [reCast](apps/reCast/README.md) converts a video file into an MP4 file for Chromecast and other streaming devices on macOS.
 - [reHistory](apps/reHistory/README.md) changes Git commit dates, authors, or messages, one flow per run, and makes a verifiable export.
-- [repoRules](apps/repoRules/README.md) copies selected GitHub repository settings from a source repository to a target repository after a preview and a confirmation.
+- [reRules](apps/reRules/README.md) copies selected GitHub repository settings from a source repository to a target repository after a preview and a confirmation.
 - [Agent instructions](AGENTS.md) define development and authorization rules.
 - [Workspace guide](docs/WORKSPACES.md) describes shared configuration and adding an application.
 - [Package requirements](docs/PACKAGES.md) define workspace layout, versions, TypeScript, and distribution.
