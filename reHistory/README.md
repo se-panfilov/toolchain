@@ -515,7 +515,7 @@ npx --offline --yes --package /path/to/PACKAGE.tgz rehistory --help
 Before publication, select an available package name.
 Select a release version.
 Prepare npm authentication independently.
-Remove `private` only when publication is necessary.
+Check the package name, version, and publication settings before publication.
 The program does not publish itself.
 
 ## Development checks
