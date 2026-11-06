@@ -106,6 +106,11 @@ describe('destinations', () => {
     expect(() => checkEntries([])).toThrow(/Не указаны файлы/);
   });
 
+  test('the operation log cannot be a source', () => {
+    expect(() => checkEntries([{ source: 'a/__movetorepo-log.md', target: 'd/__movetorepo-log.md' }])).toThrow(/Журнал/);
+    expect(() => checkEntries([{ source: '__MoveToRepo-Log.md', target: 'd/__MoveToRepo-Log.md' }])).toThrow(/Журнал/);
+  });
+
   test('all extensions of a name are checked', () => {
     expect(secretName('terraform.tfstate.backup')).toBe('расширение .tfstate');
     expect(secretName('server.key.old')).toBe('расширение .key');

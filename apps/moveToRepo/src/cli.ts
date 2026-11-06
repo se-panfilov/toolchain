@@ -7,7 +7,8 @@ import { pathToFileURL } from 'node:url';
 
 import { type Entry, readSources, targetPath } from '@moveToRepo/files';
 import { type Change, Clone, pullRequestBody, pullRequestTitle } from '@moveToRepo/git';
-import { checkBranch, cloneUrl, compareUrl, GitHub, parseRepository, type Repository } from '@moveToRepo/github';
+import { checkBranch, checkOwner, cloneUrl, compareUrl, GitHub, parseRepository, type Repository } from '@moveToRepo/github';
+import { checkLog, logName, OperationLog, resultLine, startEntry } from '@moveToRepo/log';
 import { findExecutable, Interrupted, safe } from '@moveToRepo/tools';
 
 function help(): string {
@@ -28,7 +29,9 @@ macOS и Linux, Node.js 24.12+, Git, GitHub CLI (gh) с выполненным g
     --dest to-A from-A/some1.txt from-A/some2.txt --dest to-B from-B/some4.txt
 
 Файлы копируются в новую ветку, затем открывается pull request в целевую ветку.
+Только репозитории текущего пользователя GitHub (gh auth). Репозитории организаций и других людей запрещены.
 Целевая ветка не изменяется. Force push не выполняется. Существующие файлы заменяются в pull request.
+Каждая отправка записывается в журнал ${logName} в текущем каталоге: дата и время, файлы, репозиторий.
 Запрещены: имена с точкой в начале, запуск из такого каталога, выход из каталога, символические и жёсткие ссылки, файлы секретов.
 Сообщения выводятся в stderr, адрес pull request — в stdout.
 Подробности: README.md пакета.`;
@@ -115,7 +118,9 @@ async function main(): Promise<void> {
   const options = parseArguments(args);
   checkRuntime();
   // Read and check all local files before any network access.
-  const files = readSources(process.cwd(), options.entries);
+  const directory = process.cwd();
+  const files = readSources(directory, options.entries);
+  if (!options.dryRun) checkLog(directory);
   const git = findExecutable('git');
   const gh = findExecutable('gh');
   const work = mkdtempSync(join(tmpdir(), 'tx-movetorepo-'));
@@ -136,9 +141,11 @@ async function main(): Promise<void> {
     await checkpoint();
     const github = new GitHub(gh, work);
     const info = github.repository(options.repo);
+    const user = github.currentUser();
+    checkOwner(info, user);
     const base = options.base ?? info.defaultBranch;
     if (!base) throw new Error('У репозитория нет ветки по умолчанию. Укажите --base.');
-    say(`Репозиторий: ${info.fullName}`);
+    say(`Репозиторий: ${info.fullName} (владелец — текущий пользователь ${user})`);
     say(`Целевая ветка: ${base}`);
 
     const url = cloneUrl(options.repo);
@@ -167,17 +174,48 @@ async function main(): Promise<void> {
     if (!branch) throw new Error('Не удалось выбрать свободное имя ветки.');
     say(`Новая ветка: ${branch}`);
     await checkpoint();
-    clone.push(url, commit, branch);
-    let pr: string;
+    // Write the log entry before the push. A log that cannot be written stops the run before any transfer.
+    const log = OperationLog.open(directory);
     try {
-      pr = github.createPullRequest(info, base, branch, pullRequestTitle(changed), pullRequestBody(changed));
-    } catch (error) {
-      say(`Ветка ${branch} отправлена, но pull request не создан.`);
-      say(`Откройте его вручную: ${compareUrl(info, base, branch)}`);
-      throw error;
+      log.write(
+        startEntry({
+          time: new Date(),
+          directory,
+          repository: info.fullName,
+          base,
+          branch,
+          commit,
+          files: changed.map(({ source, target, state }) => ({ source, target, state: state === 'add' ? 'add' : 'replace' }))
+        })
+      );
+      say(`Журнал: ${logName}`);
+      let pushed = false;
+      try {
+        clone.push(url, commit, branch);
+        pushed = true;
+        let pr: string;
+        try {
+          pr = github.createPullRequest(info, base, branch, pullRequestTitle(changed), pullRequestBody(changed));
+        } catch (error) {
+          say(`Ветка ${branch} отправлена, но pull request не создан.`);
+          say(`Откройте его вручную: ${compareUrl(info, base, branch)}`);
+          throw error;
+        }
+        log.write(resultLine(new Date(), `pull request ${pr}`));
+        say('✓ Pull request создан');
+        process.stdout.write(`${safe(pr)}\n`);
+      } catch (error) {
+        const reason = error instanceof Interrupted ? 'прервано' : `ошибка: ${error instanceof Error ? error.message : String(error)}`;
+        try {
+          log.write(resultLine(new Date(), pushed ? `ветка отправлена, pull request не создан, ${reason}` : reason));
+        } catch {
+          say(`Не удалось записать результат в журнал ${logName}.`);
+        }
+        throw error;
+      }
+    } finally {
+      log.close();
     }
-    say('✓ Pull request создан');
-    process.stdout.write(`${safe(pr)}\n`);
   } finally {
     for (const signal of signals) process.off(signal, interrupt);
     rmSync(work, { recursive: true, force: true });

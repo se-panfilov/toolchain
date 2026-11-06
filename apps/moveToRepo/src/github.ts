@@ -61,6 +61,31 @@ export function parseRepositoryInfo(json: string, repo: Repository): RepositoryI
   return { fullName: actual, defaultBranch: typeof defaultBranch === 'string' ? checkBranch(defaultBranch, 'Ветка по умолчанию') : '' };
 }
 
+/** Parse `gh api user` JSON and return the login of the signed-in GitHub user. */
+export function parseUser(json: string): string {
+  let data: Record<string, unknown>;
+  try {
+    data = record(JSON.parse(json));
+  } catch {
+    throw new Error('gh вернул некорректный ответ.');
+  }
+  const login = typeof data.login === 'string' ? data.login : '';
+  if (!new RegExp(`^${owner}$`).test(login)) throw new Error('gh вернул некорректное имя пользователя.');
+  return login;
+}
+
+/**
+ * Permit only a repository of the signed-in GitHub user. Organization repositories and repositories of other users
+ * stop the run, also with write access. This prevents a transfer of files to a repository that another person controls.
+ * GitHub logins are not case sensitive.
+ */
+export function checkOwner(info: RepositoryInfo, login: string): void {
+  const repoOwner = info.fullName.split('/')[0] ?? '';
+  if (repoOwner.toLowerCase() !== login.toLowerCase()) {
+    throw new Error(`Репозиторий ${info.fullName} принадлежит ${repoOwner}, а не текущему пользователю GitHub ${login}. Копировать можно только в свои репозитории.`);
+  }
+}
+
 export class GitHub {
   constructor(
     readonly gh: string,
@@ -71,6 +96,11 @@ export class GitHub {
   repository(repo: Repository): RepositoryInfo {
     const json = runTool(this.gh, ['repo', 'view', `${repo.owner}/${repo.name}`, '--json', 'nameWithOwner,viewerPermission,isArchived,defaultBranchRef'], { cwd: this.cwd, timeout: 60000 }, 'gh');
     return parseRepositoryInfo(json.toString('utf8'), repo);
+  }
+
+  /** The login of the GitHub user that gh uses. The push uses the same account through `gh auth git-credential`. */
+  currentUser(): string {
+    return parseUser(runTool(this.gh, ['api', 'user'], { cwd: this.cwd, timeout: 60000 }, 'gh').toString('utf8'));
   }
 
   /** Open a pull request from a branch in the same repository. The body goes through stdin. Return the PR URL. */

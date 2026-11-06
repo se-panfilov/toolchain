@@ -1,6 +1,6 @@
 {
   "name": "tx-movetorepo",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Copy local files into a GitHub repository through a new branch and a pull request",
   "private": false,
   "type": "module",
@@ -16,6 +16,7 @@
     "dist/src/files.js",
     "dist/src/git.js",
     "dist/src/github.js",
+    "dist/src/log.js",
     "dist/src/tools.js",
     "README.md",
     "SECURITY.md",

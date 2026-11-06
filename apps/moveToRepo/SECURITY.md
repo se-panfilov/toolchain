@@ -12,6 +12,7 @@ The main risks are a push of incorrect data, a push to an incorrect target, and 
 | ---------------------------- | -------------------------------------------------------------------- |
 | Secrets on the local disk    | A key or a token goes into a repository. A push to GitHub is a leak. |
 | Write access to repositories | An incorrect repository or branch gets the change.                   |
+| Local files                  | Files go to a repository that another person controls.               |
 | The target branch            | A direct push or a forced push changes history without a review.     |
 | The local computer           | An argument or a repository setting starts a program.                |
 
@@ -46,7 +47,8 @@ A result is that file names in Cyrillic or other scripts are not supported.
 - The file opens relative to the entered directory with `O_NOFOLLOW`. A link as the file name stops the run.
   The type, link count, and size checks use the opened descriptor, so they cannot go stale.
 - The program reads the contents once. The same bytes go to the secret check and to Git.
-- The program does not write local files. It writes only to a private temporary directory, mode `0700`, which it removes at the end.
+- The program writes one local file: the operation log `__movetorepo-log.md` in the current directory. See [Operation log](#operation-log).
+  Other writes go only to a private temporary directory, mode `0700`, which it removes at the end.
 
 ## Secret checks
 
@@ -87,16 +89,36 @@ The user is responsible for the contents of the selected files.
   The program first checks that the branch does not exist on the server.
 - The target branch is changed only when a person merges the pull request.
 
+## Repository owner
+
+- The program reads the signed-in user with `gh api user` and the repository with `gh repo view`.
+- The repository owner must be the same login, without letter case. Organization repositories and repositories of other users stop the run,
+  also when the user has write access. This prevents a transfer of local files to a repository that another person controls.
+- The check runs before the clone and also in a dry-run. The push uses the same `gh` account through `gh auth git-credential`.
+- A user can still transfer the repository to another owner later, or add collaborators. The check applies only at the time of the run.
+
+## Operation log
+
+- Path: `__movetorepo-log.md` in the current directory. A source file with this name is rejected.
+- Before network access, the program checks the path with `lstat`: a missing file, or a regular file of the current user with one link.
+- Before the push, the file opens with `O_WRONLY | O_APPEND | O_CREAT | O_NOFOLLOW`, mode `0600` for a new file.
+  The type, link count, and owner checks use the opened descriptor. A link, also a dangling link, stops the run before the push.
+- Each part of an entry is one append write. The file is never truncated or replaced.
+- Paths and errors in the log have control characters replaced. Paths are in Markdown inline code with a safe fence.
+- The log contains local paths and repository names. It contains no file contents and no tokens.
+
 ## Trust assumptions
 
 - The user trusts their own Git and `gh` configuration. URL rewrite rules, the SSH command, commit signing, and the user identity come from it.
 - The user trusts the installed Git and `gh` programs and the npm package.
-  A changed package can use the user's write access to all repositories. Run a fixed version, for example `npx tx-movetorepo@0.1.0`.
+  A changed package can use the user's write access to all repositories. Run a fixed version, for example `npx tx-movetorepo@0.2.0`.
 - GitHub and `gh` give correct repository data.
 
 ## Residual risks
 
 - Secrets in an unknown format are not found.
+- The owner check trusts the user's Git configuration. A URL rewrite rule in it can send the push to another address.
+- A process of the same user can change or delete the log. The log is a record for the user, not a tamper-proof audit trail.
 - `--no-filters` stores files as they are. In a repository that keeps some files in Git LFS, a file for an LFS path goes in as a regular file.
 - Two directories with names that are different only in letter case can occur in the repository, for example `Docs` and `docs`.
 - A Ctrl+C during the push or the pull request step can leave a branch without a pull request. See the recovery section in the README.
