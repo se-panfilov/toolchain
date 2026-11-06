@@ -3,7 +3,7 @@ import { pick } from '@reRules/flow';
 import { type GitHubClient, repoPath } from '@reRules/github';
 import { category, type Context, type PlanItem, Stage } from '@reRules/plan';
 import type { RepoInfo } from '@reRules/repo';
-import { attempt, type Read, rec, str } from '@reRules/state';
+import { attempt, missing, type Read, rec, str } from '@reRules/state';
 
 const title = 'Секреты Actions';
 const maxSecretBytes = 48 * 1024;
@@ -42,8 +42,13 @@ async function readAll(client: GitHubClient, repo: RepoInfo, failed: string[]): 
 export async function discoverSecrets(ctx: Context): Promise<SecretsData> {
   const failedScopes: string[] = [];
   const source = await attempt(() => readAll(ctx.client, ctx.source, failedScopes));
-  const target = await attempt(() => readAll(ctx.client, ctx.target, failedScopes));
-  return { source, target, failedScopes };
+  const targetFailures: string[] = [];
+  const target = await attempt(() => readAll(ctx.client, ctx.target, targetFailures));
+  return {
+    source,
+    target: target.ok && targetFailures.length ? missing('unknown', targetFailures.join('; ')) : target,
+    failedScopes: [...failedScopes, ...targetFailures]
+  };
 }
 
 function label(secret: Pick<SecretName, 'scope' | 'name'>): string {
@@ -79,8 +84,9 @@ export const secretsCategory = category<SecretsData>({
   },
   async plan(data, ctx) {
     if (!data.source.ok) return [{ category: title, kind: 'warn', title: `Секреты не прочитаны: ${data.source.detail}`, stage: Stage.variables }];
+    if (!data.target.ok) return [{ category: title, kind: 'warn', title: `Секреты цели не прочитаны: ${data.target.detail}`, stage: Stage.variables }];
     const items: PlanItem[] = [];
-    const targetNames = new Set(data.target.ok ? data.target.value.map((secret) => label(secret).toUpperCase()) : []);
+    const targetNames = new Set(data.target.value.map((secret) => label(secret).toUpperCase()));
     const candidates = data.source.value.filter((secret) => {
       if (!validSecretName(secret.name)) {
         items.push({ category: title, kind: 'warn', title: `${label(secret)}: недопустимое имя`, stage: Stage.variables });

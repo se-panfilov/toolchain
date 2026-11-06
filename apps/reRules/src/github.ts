@@ -1,3 +1,4 @@
+import type { ReadableStreamReadResult } from 'node:stream/web';
 import { setTimeout as delay } from 'node:timers/promises';
 
 /** Only github.com is supported. The address is fixed and never comes from the environment or from arguments. */
@@ -67,10 +68,30 @@ export const fetchTransport: Transport = async (request) => {
     header: (name) => response.headers.get(name),
     text: async () => {
       const length = Number(response.headers.get('content-length') ?? '0');
-      if (length > maxBodyBytes) throw new ApiError('invalid-response', response.status, 'Слишком большой ответ API.');
-      const text = await response.text();
-      if (text.length > maxBodyBytes) throw new ApiError('invalid-response', response.status, 'Слишком большой ответ API.');
-      return text;
+      if (length > maxBodyBytes) {
+        await response.body?.cancel().catch(() => {});
+        throw new ApiError('invalid-response', response.status, 'Слишком большой ответ API.');
+      }
+      if (!response.body) return '';
+      const reader = response.body.getReader();
+      const chunks: Uint8Array[] = [];
+      let size = 0;
+      try {
+        for (;;) {
+          const result: ReadableStreamReadResult<unknown> = await reader.read();
+          if (result.done) return Buffer.concat(chunks, size).toString('utf8');
+          const value = result.value;
+          if (!(value instanceof Uint8Array)) throw new ApiError('invalid-response', response.status, 'Некорректные байты ответа API.');
+          size += value.byteLength;
+          if (size > maxBodyBytes) throw new ApiError('invalid-response', response.status, 'Слишком большой ответ API.');
+          chunks.push(value);
+        }
+      } catch (error) {
+        await reader.cancel().catch(() => {});
+        throw error;
+      } finally {
+        reader.releaseLock();
+      }
     }
   };
 };

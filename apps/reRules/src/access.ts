@@ -97,35 +97,43 @@ export const accessCategory = category<AccessData>({
     const existingUsers = data.targetUsers.value;
     for (const grant of data.users.ok ? data.users.value : []) {
       const existing = existingUsers.find((item) => item.name.toLowerCase() === grant.name.toLowerCase());
-      if (existing && (ctx.target.ownerType === 'User' || roleRank(existing.role) >= roleRank(grant.role))) {
+      if (existing && (ctx.target.ownerType === 'User' || existing.role === grant.role || (roleRank(grant.role) >= 0 && roleRank(existing.role) >= roleRank(grant.role)))) {
         items.push({ category: title, kind: 'keep', title: `${grant.name}: доступ уже есть (${existing.role})`, stage: Stage.access });
-      } else if (roleRank(grant.role) < 0 && ctx.target.ownerType === 'User') {
-        items.push({ category: title, kind: 'warn', title: `${grant.name}: роль ${grant.role} недоступна в личном репозитории`, stage: Stage.access });
+      } else if (roleRank(grant.role) < 0 || (existing && roleRank(existing.role) < 0)) {
+        items.push({ category: title, kind: 'warn', title: `${grant.name}: права пользовательской роли нельзя сравнить, доступ не меняется`, stage: Stage.access });
       } else candidates.push(grant);
     }
     const sameOrg = ctx.target.ownerType === 'Organization' && ctx.source.owner.toLowerCase() === ctx.target.owner.toLowerCase();
     for (const grant of data.teams?.ok ? data.teams.value : []) {
       const existing = data.targetTeams?.ok ? data.targetTeams.value.find((item) => item.name === grant.name) : undefined;
       if (!sameOrg) items.push({ category: title, kind: 'warn', title: `Команда ${grant.name}: команды переносятся только внутри той же организации`, stage: Stage.access });
-      else if (existing && roleRank(existing.role) >= roleRank(grant.role)) items.push({ category: title, kind: 'keep', title: `Команда ${grant.name}: доступ уже есть`, stage: Stage.access });
+      else if (!data.targetTeams?.ok) items.push({ category: title, kind: 'warn', title: `Команда ${grant.name}: права команд в цели не прочитаны, доступ не меняется`, stage: Stage.access });
+      else if (existing && (existing.role === grant.role || (roleRank(grant.role) >= 0 && roleRank(existing.role) >= roleRank(grant.role))))
+        items.push({ category: title, kind: 'keep', title: `Команда ${grant.name}: доступ уже есть`, stage: Stage.access });
+      else if (roleRank(grant.role) < 0 || (existing && roleRank(existing.role) < 0))
+        items.push({ category: title, kind: 'warn', title: `Команда ${grant.name}: права пользовательской роли нельзя сравнить, доступ не меняется`, stage: Stage.access });
       else candidates.push(grant);
     }
     if (!candidates.length) return items;
-    const external = (grant: Grant): boolean => {
-      if (grant.kind !== 'user' || ctx.target.ownerType !== 'Organization') return false;
+    const manualReason = (grant: Grant): string | undefined => {
+      if (grant.kind !== 'user' || ctx.target.ownerType !== 'Organization') return undefined;
       const member = data.members.get(grant.name.toLowerCase());
-      return member?.ok === true && !member.value;
+      if (!member?.ok) return 'членство в организации неизвестно';
+      return member.value ? undefined : 'внешний соавтор';
     };
-    const describe = (grant: Grant): string =>
-      `${grant.kind === 'team' ? 'Команда ' : ''}${grant.name} — ${ctx.target.ownerType === 'User' ? 'запись' : grant.role}${external(grant) ? ' (внешний соавтор)' : ''}`;
+    const describe = (grant: Grant): string => {
+      const reason = manualReason(grant);
+      return `${grant.kind === 'team' ? 'Команда ' : ''}${grant.name} — ${ctx.target.ownerType === 'User' ? 'запись' : grant.role}${reason ? ` (${reason})` : ''}`;
+    };
     const mode = await askTransfer(ctx, 'Выдать доступ в цели?', { defaultSkip: true });
     if (mode === 'skip') return [...items, { category: title, kind: 'skip', title: 'Доступ не переносится', stage: Stage.access }];
-    // External collaborators are never selected automatically.
+    // Only confirmed organization members can be selected automatically.
     let chosen: Grant[];
     if (mode === 'all') {
-      chosen = candidates.filter((grant) => !external(grant));
-      for (const grant of candidates.filter(external)) items.push({ category: title, kind: 'skip', title: `${grant.name}: внешний соавтор, выберите вручную`, stage: Stage.access });
-    } else chosen = await pick(ctx, 'select', 'Кому выдать доступ?', candidates, describe, (grant) => !external(grant));
+      chosen = candidates.filter((grant) => !manualReason(grant));
+      for (const grant of candidates.filter((grant) => manualReason(grant)))
+        items.push({ category: title, kind: 'skip', title: `${grant.name}: ${manualReason(grant) ?? ''}, выберите вручную`, stage: Stage.access });
+    } else chosen = await pick(ctx, 'select', 'Кому выдать доступ?', candidates, describe, (grant) => !manualReason(grant));
     for (const grant of chosen) {
       if (!(await ctx.ask.confirm(`Выдать доступ: ${describe(grant)} к ${ctx.target.fullName}?`, false))) {
         items.push({ category: title, kind: 'skip', title: `${grant.name}: доступ не выдаётся`, stage: Stage.access });

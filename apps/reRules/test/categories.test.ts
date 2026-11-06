@@ -40,6 +40,33 @@ describe('security settings', () => {
 });
 
 describe('secrets', () => {
+  test('an unreadable target secret list cannot produce a write plan or request values', async () => {
+    const api = new FakeApi()
+      .on('GET', '/repos/me/template/actions/secrets', { status: 200, body: { secrets: [{ name: 'API_KEY' }] } })
+      .on('GET', '/repos/me/template/environments', { status: 200, body: { environments: [] } })
+      .on('GET', '/repos/me/project/actions/secrets', { status: 403 });
+    const ctx = context(api, [true, [0], 'replacement-value']);
+    const items = await secretsCategory.plan(await discoverSecrets(ctx), ctx);
+    expect(items.every((item) => item.kind === 'warn' && !item.apply)).toBe(true);
+    expect(ctx.ask.questions).toEqual([]);
+    expect(api.mutations).toEqual([]);
+  });
+
+  test.each(['environments', 'environments/prod/secrets'])('a failed target %s read blocks secret writes', async (path) => {
+    const api = new FakeApi()
+      .on('GET', '/repos/me/template/actions/secrets', { status: 200, body: { secrets: [] } })
+      .on('GET', '/repos/me/template/environments', { status: 200, body: { environments: [{ name: 'prod' }] } })
+      .on('GET', '/repos/me/template/environments/prod/secrets', { status: 200, body: { secrets: [{ name: 'API_KEY' }] } })
+      .on('GET', '/repos/me/project/actions/secrets', { status: 200, body: { secrets: [] } })
+      .on('GET', '/repos/me/project/environments', { status: 200, body: { environments: [{ name: 'prod' }] } })
+      .on('GET', `/repos/me/project/${path}`, { status: 403 });
+    const ctx = context(api, [true, [0], 'replacement-value']);
+    ctx.targetEnvironments.add('prod');
+    const items = await secretsCategory.plan(await discoverSecrets(ctx), ctx);
+    expect(items.every((item) => item.kind === 'warn' && !item.apply)).toBe(true);
+    expect(ctx.ask.questions).toEqual([]);
+  });
+
   test('a sealed value opens with the matching private key and differs from the plain text', async () => {
     await sodium.ready;
     const keys = sodium.crypto_box_keypair();
@@ -67,15 +94,43 @@ describe('secrets', () => {
   test('dry-run does not ask for secret values', async () => {
     const api = new FakeApi()
       .on('GET', '/repos/me/template/actions/secrets', { status: 200, body: { total_count: 1, secrets: [{ name: 'API_KEY', updated_at: 'x' }] } })
-      .on('GET', '/repos/me/project/actions/secrets', { status: 200, body: { total_count: 0, secrets: [] } });
+      .on('GET', '/repos/me/project/actions/secrets', { status: 200, body: { total_count: 0, secrets: [] } })
+      .on('GET', '/repos/me/template/environments', { status: 200, body: { environments: [] } })
+      .on('GET', '/repos/me/project/environments', { status: 200, body: { environments: [] } });
     const ctx = context(api, [true, [0]], { dryRun: true });
     const items = await secretsCategory.plan(await discoverSecrets(ctx), ctx);
     expect(items).toEqual([expect.objectContaining({ kind: 'create', title: 'Создать секрет API_KEY' })]);
     expect(ctx.ask.remaining).toBe(0);
   });
+
+  test('a known target secret is an overwrite that needs the additional risk confirmation', async () => {
+    const api = new FakeApi()
+      .on('GET', '/repos/me/template/actions/secrets', { status: 200, body: { secrets: [{ name: 'API_KEY' }] } })
+      .on('GET', '/repos/me/project/actions/secrets', { status: 200, body: { secrets: [{ name: 'api_key' }] } })
+      .on('GET', '/repos/me/template/environments', { status: 200, body: { environments: [] } })
+      .on('GET', '/repos/me/project/environments', { status: 200, body: { environments: [] } });
+    const ctx = context(api, [true, [0]], { dryRun: true });
+    const items = await secretsCategory.plan(await discoverSecrets(ctx), ctx);
+    expect(items).toEqual([expect.objectContaining({ kind: 'update', risk: 'перезапись секрета' })]);
+  });
 });
 
 describe('variables', () => {
+  test.each(['environments', 'environments/prod/variables'])('a failed target %s read blocks variable writes', async (path) => {
+    const api = new FakeApi()
+      .on('GET', '/repos/me/template/actions/variables', { status: 200, body: { variables: [] } })
+      .on('GET', '/repos/me/template/environments', { status: 200, body: { environments: [{ name: 'prod' }] } })
+      .on('GET', '/repos/me/template/environments/prod/variables', { status: 200, body: { variables: [{ name: 'URL', value: 'new' }] } })
+      .on('GET', '/repos/me/project/actions/variables', { status: 200, body: { variables: [] } })
+      .on('GET', '/repos/me/project/environments', { status: 200, body: { environments: [{ name: 'prod' }] } })
+      .on('GET', `/repos/me/project/${path}`, { status: 403 });
+    const ctx = context(api, ['Да, всё']);
+    ctx.targetEnvironments.add('prod');
+    const items = await variablesCategory.plan(await discoverVariables(ctx), ctx);
+    expect(items.every((item) => item.kind === 'warn' && !item.apply)).toBe(true);
+    expect(ctx.ask.questions).toEqual([]);
+  });
+
   const api = (): FakeApi =>
     new FakeApi()
       .on('GET', '/repos/me/template/actions/variables', {
@@ -176,6 +231,75 @@ describe('environments', () => {
 });
 
 describe('access', () => {
+  const organization = repo('acme', 'project', { ownerType: 'Organization' });
+  const membershipApi = (): FakeApi =>
+    new FakeApi()
+      .on('GET', '/repos/me/template/collaborators', { status: 200, body: [{ login: 'alice', role_name: 'write' }] })
+      .on('GET', '/repos/acme/project/collaborators', { status: 200, body: [] })
+      .on('GET', '/repos/acme/project/invitations', { status: 200, body: [] })
+      .on('GET', '/repos/acme/project/teams', { status: 200, body: [] })
+      .on('GET', '/orgs/acme/members/alice', { status: 403 });
+
+  test('unknown membership is unchecked in manual selection', async () => {
+    const ctx = context(membershipApi(), ['Выбрать отдельные', 'defaults'], { target: organization });
+    const items = await accessCategory.plan(await discoverAccess(ctx), ctx);
+    expect(items.some((item) => item.apply)).toBe(false);
+    expect(ctx.ask.remaining).toBe(0);
+  });
+
+  test('an explicitly selected unknown member has a warning in the grant question', async () => {
+    const api = membershipApi().on('PUT', '/repos/acme/project/collaborators/alice', { status: 201 });
+    const ctx = context(api, ['Выбрать отдельные', [0], true], { target: organization });
+    const items = await accessCategory.plan(await discoverAccess(ctx), ctx);
+    expect(ctx.ask.questions.at(-1)).toContain('членство в организации неизвестно');
+    ctx.client.allowWrites(ctx.target);
+    await items.find((item) => item.apply)?.apply?.(ctx.client);
+    expect(body(api.mutations[0])).toEqual({ permission: 'push' });
+  });
+
+  test('unknown organization membership is not selected automatically', async () => {
+    const api = new FakeApi()
+      .on('GET', '/repos/me/template/collaborators', { status: 200, body: [{ login: 'alice', role_name: 'write' }] })
+      .on('GET', '/repos/acme/project/collaborators', { status: 200, body: [] })
+      .on('GET', '/repos/acme/project/invitations', { status: 200, body: [] })
+      .on('GET', '/repos/acme/project/teams', { status: 200, body: [] })
+      .on('GET', '/orgs/acme/members/alice', { status: 403 });
+    const ctx = context(api, ['Да, всё', true], { target: repo('acme', 'project', { ownerType: 'Organization' }) });
+    const items = await accessCategory.plan(await discoverAccess(ctx), ctx);
+    expect(items.some((item) => item.apply)).toBe(false);
+    expect(ctx.ask.remaining).toBe(1);
+  });
+
+  test('an unreadable target team list cannot produce a team grant', async () => {
+    const api = new FakeApi()
+      .on('GET', '/repos/acme/template/collaborators', { status: 200, body: [] })
+      .on('GET', '/repos/acme/template/teams', { status: 200, body: [{ slug: 'devs', permission: 'push' }] })
+      .on('GET', '/repos/acme/project/collaborators', { status: 200, body: [] })
+      .on('GET', '/repos/acme/project/invitations', { status: 200, body: [] })
+      .on('GET', '/repos/acme/project/teams', { status: 403 });
+    const ctx = context(api, ['Да, всё', true], {
+      source: repo('acme', 'template', { ownerType: 'Organization' }),
+      target: repo('acme', 'project', { ownerType: 'Organization' })
+    });
+    const items = await accessCategory.plan(await discoverAccess(ctx), ctx);
+    expect(items.some((item) => item.apply)).toBe(false);
+    expect(items.some((item) => item.kind === 'warn')).toBe(true);
+    expect(ctx.ask.questions).toEqual([]);
+  });
+
+  test('an existing custom role is not replaced with an incomparable standard role', async () => {
+    const api = new FakeApi()
+      .on('GET', '/repos/me/template/collaborators', { status: 200, body: [{ login: 'alice', role_name: 'write' }] })
+      .on('GET', '/repos/acme/project/collaborators', { status: 200, body: [{ login: 'alice', role_name: 'custom-security-role' }] })
+      .on('GET', '/repos/acme/project/invitations', { status: 200, body: [] })
+      .on('GET', '/repos/acme/project/teams', { status: 200, body: [] })
+      .on('GET', '/orgs/acme/members/alice', { status: 204 });
+    const ctx = context(api, ['Да, всё', true], { target: repo('acme', 'project', { ownerType: 'Organization' }) });
+    const items = await accessCategory.plan(await discoverAccess(ctx), ctx);
+    expect(items.some((item) => item.apply)).toBe(false);
+    expect(items.some((item) => item.kind === 'warn')).toBe(true);
+  });
+
   test('each access grant needs its own confirmation, and outside collaborators are not preselected', async () => {
     const target = repo('acme', 'project', { ownerType: 'Organization' });
     const api = new FakeApi()
