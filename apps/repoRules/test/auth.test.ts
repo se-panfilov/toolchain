@@ -56,10 +56,15 @@ describe('token sources', () => {
 
   test('a relative PATH entry is never searched', async () => {
     let started = false;
-    const result = await tokenFromGh({ PATH: '.:bin' }, () => {
-      started = true;
-      return Promise.resolve(token);
-    });
+    // Use Linux rules: on macOS, the fixed Homebrew directories can contain a real gh.
+    const result = await tokenFromGh(
+      { PATH: '.:bin' },
+      () => {
+        started = true;
+        return Promise.resolve(token);
+      },
+      'linux'
+    );
     expect(result).toBeUndefined();
     expect(started).toBe(false);
   });
