@@ -46,7 +46,7 @@ export class Repository {
     if (/^(remote\..*\.promisor(?:=|$)|extensions\.partialclone(?:=|$))/mi.test(config)) throw new Error('Partial clone не поддерживается: нужен полный локальный репозиторий.');
     const refs = this.refs();
     if (refs.some(r => r.symbolic && /^refs\/(heads|tags)\//.test(r.name))) throw new Error('Символические ссылки внутри локальных веток/тегов не поддерживаются.');
-    const unsupported = refs.filter(r => !/^refs\/(heads|tags|remotes|rehistory)\//.test(r.name));
+    const unsupported = refs.filter(r => !/^refs\/(heads|tags|remotes|rehistory|codex)\//.test(r.name));
     if (unsupported.length) throw new Error(`Неподдерживаемые ссылки (stash/notes/replace и др.): ${unsupported.map(r => r.name).join(', ')}. Сначала сохраните их отдельно и уберите из рабочей копии.`);
     if (existsSync(join(this.common, 'info', 'grafts'))) throw new Error('Обнаружен info/grafts: переписывание остановлено.');
     if (this.text(['worktree', 'list', '--porcelain']).split('\n').filter(x => x.startsWith('worktree ')).length > 1) throw new Error('Обнаружены дополнительные worktree. Используйте отдельный полный клон.');

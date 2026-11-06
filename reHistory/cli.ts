@@ -106,6 +106,7 @@ async function main(): Promise<void> {
   const state = repo.inspect();
   if (mode.destination) exportDestination(repo, mode.destination);
   print(`Репозиторий: ${repo.path}\nВетка: ${state.head.slice(11)}\nРежим: ${mode.destination ? 'экспорт в новый bare-репозиторий' : 'переписывание на месте'}${mode.dryRun ? ' / DRY-RUN' : ''}`);
+  if (state.refs.some(r => r.name.startsWith('refs/codex/'))) print('Служебные refs/codex/* сохраняются без изменений и могут удерживать исходную историю. В экспорт они не входят.');
   print('На время работы закройте Git-интеграцию IDE и не запускайте другие операции Git.');
   const rl = createInterface({ input: stdin, output: stdout });
   rl.on('SIGINT', () => { rl.close(); });
