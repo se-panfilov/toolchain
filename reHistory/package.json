@@ -1,0 +1,7 @@
+{
+  "name": "toolchain-rehistory",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=24" },
+  "scripts": { "test": "node --test engine.test.ts", "start": "node cli.ts" }
+}
