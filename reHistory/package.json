@@ -1,6 +1,6 @@
 {
   "name": "toolchain-rehistory",
-  "version": "2.3.1",
+  "version": "2.3.2",
   "description": "Интерактивная нормализация, аудит и проверяемый экспорт истории Git",
   "private": true,
   "type": "module",

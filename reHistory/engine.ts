@@ -13,7 +13,11 @@ export type Plan = { repo: Repository; options: Options; refs: Ref[]; selected: 
 
 // Call Git without a shell. Remove inherited Git routing variables.
 // This makes --repo select the specified repository.
-const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')));
+export function withoutGitEnvironment(source: Record<string, string | undefined>): Record<string, string | undefined> {
+  // Windows environment variable names are case-insensitive.
+  return Object.fromEntries(Object.entries(source).filter(([key]) => !key.toUpperCase().startsWith('GIT_')));
+}
+const env = withoutGitEnvironment(process.env);
 Object.assign(env, { GIT_NO_REPLACE_OBJECTS: '1', GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0', GIT_NO_LAZY_FETCH: '1', LC_ALL: 'C', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_SYSTEM: devNull, GIT_CONFIG_GLOBAL: devNull });
 export function runGit(path: string, args: string[], input?: Buffer | string, extraEnv: Record<string, string> = {}): Buffer {
   const result = spawnSync('git', ['--no-pager', '-c', 'core.hooksPath=', '-c', 'core.fsmonitor=false', '-c', 'gc.auto=0', '-c', 'maintenance.auto=false', '-c', 'commit.gpgSign=false', '-c', 'tag.gpgSign=false', '-c', 'protocol.allow=never', '-c', 'protocol.file.allow=never', '-c', 'protocol.https.allow=never', '-c', 'protocol.ssh.allow=never', '-c', 'protocol.http.allow=never', '-c', 'protocol.ext.allow=never', '-C', path, ...args], {
@@ -150,7 +154,15 @@ export function makePlan(repo: Repository, options: Options): Plan {
     const rewritten = rewriteTag(target);
     let body = message;
     const marker = /(?:^|\n)-----BEGIN (?:PGP SIGNATURE|SSH SIGNATURE|SIGNED MESSAGE)-----/m.exec(message.toString('latin1'));
-    if (marker) { body = message.subarray(0, marker.index + (message[marker.index] === 10 ? 1 : 0)); stripped++; }
+    if (marker) {
+      const offset = marker.index + (message[marker.index] === 10 ? 1 : 0);
+      const block = message.subarray(offset).toString('latin1');
+      // Reject ambiguous markers. Never discard text after an incomplete signature.
+      if (!/^-----BEGIN (PGP SIGNATURE|SSH SIGNATURE)-----\r?\n[\s\S]*\r?\n-----END \1-----[\r\n]*$/.test(block)) {
+        throw new Error('Неоднозначная подпись тега: незакрытый блок или текст после подписи. История не изменена.');
+      }
+      body = message.subarray(0, offset); stripped++;
+    }
     const date = dates.get(target);
     if (date === undefined) throw new Error('Не удалось определить дату конечного коммита тега.');
     if (!headers.some(h => field(h) === 'tagger')) throw new Error('Annotated-тег без tagger: обработка остановлена.');
