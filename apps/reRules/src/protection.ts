@@ -135,7 +135,12 @@ function stricter<K extends ProtectionKey>(key: K, a: Protection[K], b: Protecti
     const x = a as Protection['checks'];
     const y = b as Protection['checks'];
     if (!x || !y) return a;
-    const contexts = new Map([...x.checks, ...y.checks].map((check) => [check.context, check]));
+    const contexts = new Map(x.checks.map((check) => [check.context, check]));
+    for (const check of y.checks) {
+      const current = contexts.get(check.context);
+      // Keep the target's trusted producer. An unbound check can acquire the source binding.
+      if (!current || current.app_id === null || current.app_id === -1) contexts.set(check.context, check);
+    }
     return { strict: x.strict || y.strict, checks: [...contexts.values()] } as Protection[K];
   }
   if (key === 'reviews') {
@@ -170,7 +175,10 @@ export function weakenedFields(current: Protection, next: Protection): Protectio
       if (key === 'checks') {
         const x = a as NonNullable<Protection['checks']>;
         const y = b as NonNullable<Protection['checks']>;
-        return (x.strict && !y.strict) || x.checks.some((check) => !y.checks.some((other) => other.context === check.context));
+        return (
+          (x.strict && !y.strict) ||
+          x.checks.some((check) => !y.checks.some((other) => other.context === check.context && (check.app_id === null || check.app_id === -1 || other.app_id === check.app_id)))
+        );
       }
       if (key === 'reviews') {
         const x = a as Reviews;

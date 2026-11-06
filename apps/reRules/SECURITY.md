@@ -52,11 +52,14 @@ The main risks are a change of an incorrect repository, a weaker protection in t
 
 - A missing or unavailable source value never disables or deletes a target setting.
 - Branch protection "merge" keeps the stricter value. Fields that you do not select keep the target value. The program lists each weakened field.
+- A merge keeps the target app binding for each required status check. A removed or changed binding in replace mode needs the additional risk confirmation.
 - An invalid ruleset rule or an unreproducible environment rule needs a separate answer. The default is "Нет".
 - Bypass actors that cannot exist in the target are removed. A removed bypass makes the rule stricter.
 - To disable a security feature, you must select it and confirm it again.
 - These operations need one more confirmation after the plan, with the default "Нет": weaker branch protection, replaced rulesets and environments, disabled security features, paid security features, access grants, new or replaced webhooks, new Pages sites, Actions permission changes, CODEOWNERS writes, overwritten variables and secrets, and a default branch change.
 - Each access grant needs its own confirmation. Outside collaborators are not selected automatically.
+- Unknown organization membership also requires manual selection. The grant question identifies the unknown membership.
+- An unreadable target team list blocks team changes. Matching custom roles stay unchanged. Incomparable custom roles are not replaced.
 - If the source is private and the target is public, the program asks before discovery. The default is "Нет".
 
 ### Secrets
@@ -64,6 +67,7 @@ The main risks are a change of an incorrect repository, a weaker protection in t
 - GitHub never returns secret values. The program does not claim to copy them.
 - A new value is encrypted on the local computer with the target public key (libsodium sealed box). Only the encrypted value goes to GitHub.
 - The value stays in memory until the write. The program then drops its reference. JavaScript cannot erase string memory, so a copy can stay in memory until the process ends.
+- An incomplete target secret or variable inventory blocks that category's write plan. This includes failures to read environments or their scoped values.
 - Webhook secrets follow the same rules. The display of webhook addresses hides user data and query values.
 
 ### Terminal output
@@ -97,7 +101,8 @@ HTTP requests use the Node.js `fetch` function. Prompts use the Node.js `readlin
 - GitHub can change the API, the permission model, or plan limits. Unknown answers show as errors or unknown states.
 - The program cannot check that an app in a ruleset bypass list or a status check is installed in the target. It shows a warning. GitHub refuses an invalid app.
 - The program cannot fully check e-mail owners in CODEOWNERS.
-- The response size check runs after the body is read. A very large response can use memory up to the limit.
+- API responses are limited to 16 MiB of body bytes during stream reads. A larger response cancels the reader.
+  Transport buffers, an incoming chunk, and JSON parsing need additional memory. Pagination permits up to 100 pages per list.
 - Variable values show in the terminal, as the task requires. Do not run the program while another person can see the screen.
 - The token has the permissions that the user gave it. Use a fine-grained token for the two repositories.
 - A CODEOWNERS write is a direct commit to the default branch of the target. Rules of the target can refuse it.
