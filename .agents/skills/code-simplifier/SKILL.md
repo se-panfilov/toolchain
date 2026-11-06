@@ -32,8 +32,8 @@ Do not modify unrelated user changes or generated build output.
 
 Keep public APIs, return values, exit codes, file contents, and ordering intact.
 Keep Russian prompts, help, errors, and confirmation defaults intact unless the task requests a text change.
-Keep TypeScript directly executable on the package's supported Node.js versions.
-Preserve explicit runtime import extensions and the separate JavaScript distribution build.
+Keep the compiled application compatible with the package's supported Node.js versions.
+Preserve explicit runtime import extensions and the shared dist build for local execution and npm distribution.
 
 Preserve these safety properties when present:
 

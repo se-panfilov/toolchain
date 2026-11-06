@@ -19,6 +19,8 @@ This skill does not grant permission to publish, push, or change real user data.
 
 For a new utility, use a separate directory under `packages/`.
 Check the npm package name and CLI command against the naming rule in AGENTS.md.
+Inspect tsconfig.json and package scripts against the compilation requirements in AGENTS.md.
+Verify that local startup and npm bin entries use the same compiled entry point in `dist/`.
 Do not copy reHistory-specific Git restrictions into an unrelated utility.
 
 ## Implement in stages
@@ -61,7 +63,9 @@ Check references and authorization boundaries. Do not run destructive examples t
 ## Prepare npm distribution when requested
 
 Read the relevant release guide and package lifecycle scripts first.
-Build JavaScript from the local TypeScript source when the package needs it.
+Compile and type-check the TypeScript source with the application's tsconfig.json.
+Verify that a compilation error prevents local startup.
+Use the same compiled output for local checks and the package archive.
 Make the archive in a separate temporary release directory.
 Use a dedicated npm cache and avoid account credentials for local checks.
 

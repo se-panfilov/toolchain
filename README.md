@@ -1,7 +1,9 @@
 # Toolchain
 
 Toolchain is a set of CLI utilities for local work.
-Use TypeScript with direct Node.js execution for new utilities.
+Develop applications in TypeScript with an application-specific `tsconfig.json`.
+Compile to JavaScript before execution.
+Use the same `dist/` output for local execution and npx.
 Keep all applications in separate directories under `packages/`.
 Use `tx-` followed by the directory name in lowercase for npm packages and CLI commands.
 
