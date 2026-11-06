@@ -49,6 +49,13 @@ export function aiLinkProblems(text, label) {
   return problems;
 }
 
+// Dependabot cannot change its `dependabot/` branch prefix or use the description template.
+// GitHub sets the author login, and a person cannot use it. The branch prefix alone is not sufficient.
+export const dependabotLogin = 'dependabot[bot]';
+export function isDependabotPullRequest(author, branch) {
+  return author === dependabotLogin && branch.startsWith('dependabot/');
+}
+
 export function branchProblems(name) {
   if (protectedBranches.includes(name)) return [`Ветка ${name} защищена. Создайте ветку задачи <type>/<short_description>.`];
   if (!branchPattern.test(name))

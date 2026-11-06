@@ -7,7 +7,7 @@ import { test } from 'node:test';
 
 import { readRegularFile } from '../../scripts/ci/files.mjs';
 import { root } from '../../scripts/ci/lib.mjs';
-import { aiLinkProblems, branchProblems, changesApplication, lockfileChanges, pullRequestBodyProblems, versionProblems, versionStep } from '../../scripts/ci/rules.mjs';
+import { aiLinkProblems, branchProblems, changesApplication, isDependabotPullRequest, lockfileChanges, pullRequestBodyProblems, versionProblems, versionStep } from '../../scripts/ci/rules.mjs';
 import { commitMessageProblems, pushProblems } from '../../scripts/git-rules.mjs';
 
 const script = join(root, 'scripts', 'git-rules.mjs');
@@ -27,6 +27,20 @@ test('branch names follow <type>/<short_description>', () => {
   for (const name of ['feature/add_export', 'bugfix/fix_archive_paths', 'docs/update_readme', 'chore/enforce_documented_rules', 'test/x1']) assert.deepEqual(branchProblems(name), [], name);
   for (const name of ['master', 'main', 'claude/project-thread-abc', 'feature/Add_Export', 'feature/add-export', 'feature/', 'feature/add__export', 'fix/x', 'feature/a/b'])
     assert.equal(branchProblems(name).length, 1, name);
+});
+
+test('only the Dependabot account with a dependabot/ branch skips the branch and description checks', () => {
+  assert.ok(isDependabotPullRequest('dependabot[bot]', 'dependabot/npm_and_yarn/vite-8.3.6'));
+  assert.ok(isDependabotPullRequest('dependabot[bot]', 'dependabot/github_actions/github-actions-abc123'));
+  for (const [author, branch] of [
+    ['se-panfilov', 'dependabot/npm_and_yarn/vite-8.3.6'],
+    ['dependabot', 'dependabot/npm_and_yarn/vite-8.3.6'],
+    ['Dependabot[bot]', 'dependabot/npm_and_yarn/vite-8.3.6'],
+    ['dependabot[bot]', 'feature/x'],
+    ['dependabot[bot]', 'xdependabot/npm_and_yarn/vite'],
+    ['', '']
+  ])
+    assert.equal(isDependabotPullRequest(author, branch), false, `${author} ${branch}`);
 });
 
 test('agent session links and trailers are rejected, product links are not', () => {
