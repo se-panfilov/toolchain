@@ -70,9 +70,16 @@ export function pullRequestBody(changes: Change[]): string {
   return `${changes.map((change) => `- \`${change.target}\``).join('\n')}\n`;
 }
 
-/** Push the commit to a new branch. No force and no `+` refspec: the server rejects a push that replaces other commits. */
+/** The only branch names that the program pushes. The target branch of the pull request can never match. */
+export const pushBranchPattern = /^movetorepo\/[0-9a-f]{8}$/;
+
+/**
+ * Push the commit to a new branch. No force and no `+` refspec: the server rejects a push that replaces other commits.
+ * Only a `movetorepo/<random>` branch is accepted, so the push cannot change the target branch.
+ */
 export function pushArguments(url: string, commit: string, branch: string): string[] {
   if (!/^[0-9a-f]{40,64}$/.test(commit)) throw new Error('Некорректный ID коммита.');
+  if (!pushBranchPattern.test(branch)) throw new Error(`Отправка разрешена только в новую ветку movetorepo/<hex>: ${branch}`);
   return ['push', '--quiet', '--no-verify', '--', url, `${commit}:refs/heads/${branch}`];
 }
 

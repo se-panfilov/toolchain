@@ -93,6 +93,19 @@ The user is responsible for the contents of the selected files.
   The program first checks that the branch does not exist on the server.
 - The target branch is changed only when a person merges the pull request.
 
+## No merge by the program
+
+- The program opens a pull request and stops. It never merges, approves, or enables automatic merge.
+- `gh` can start only three commands: `repo view` with `--json`, `api user` without other arguments,
+  and `pr create` with only `--repo`, `--base`, `--head`, `--title`, and `--body-file`. Other commands and options stop the run before `gh` starts.
+- `git push` accepts only a branch name `movetorepo/<8 hex digits>`, so the push cannot change the target branch.
+- A test checks that the source and the build contain no merge, approval, or automatic merge command.
+- Settings and workflows in the target repository are outside the program. For example, a GitHub Actions workflow
+  in the repository can merge pull requests. The program does not check or change such workflows.
+- The program does not require a review. The pull request author is the repository owner, and GitHub does not let
+  an author approve their own pull request. A required review would block the owner's own pull requests,
+  and a change of branch protection is a change of repository settings that the program does not make.
+
 ## Repository owner
 
 - The program reads the signed-in user with `gh api user` and the repository with `gh repo view`.
@@ -125,7 +138,7 @@ The user is responsible for the contents of the selected files.
 
 - The user trusts their own Git and `gh` configuration. URL rewrite rules, the SSH command, commit signing, and the user identity come from it.
 - The user trusts the installed Git and `gh` programs and the npm package.
-  A changed package can use the user's write access to all repositories. Run a fixed version, for example `npx tx-movetorepo@0.3.0`.
+  A changed package can use the user's write access to all repositories. Run a fixed version, for example `npx tx-movetorepo@0.3.1`.
 - GitHub and `gh` give correct repository data.
 
 ## Residual risks
