@@ -98,8 +98,11 @@ const transport: PushTransport = {
   }
 };
 export type PushRef = { local: string; destination: string; oid: string; expected: string };
-/** `shared`: another branch contains the initial tag target. `new`: the server does not have the tag. */
-export type OptionalTagReason = 'shared' | 'new';
+/**
+ * `shared`: another branch contains the initial tag target. `new`: the server does not have the tag.
+ * `unverified`: the local repository does not have the tip of another server branch, so `shared` is unknown.
+ */
+export type OptionalTagReason = 'shared' | 'new' | 'unverified';
 export type PushPlan = {
   rewrite: Plan;
   remote: string;
@@ -122,14 +125,16 @@ function checkLocal(rewrite: Plan): void {
 /**
  * Find initial tag targets that other branches also contain, for example tags of the default branch.
  * The current branch, its remote-tracking refs and the push destination do not count.
+ * `tips` adds commits of other server branches that the local repository has.
  */
-export function sharedTags(rewrite: Plan, push?: { remote: string; destination: string }): Set<string> {
+export function sharedTags(rewrite: Plan, push?: { remote: string; destination: string; tips?: string[] }): Set<string> {
   const { repo } = rewrite;
   const branch = rewrite.head.slice(11);
   const own = new Set([rewrite.head]);
   if (push) own.add(`refs/remotes/${push.remote}/${push.destination.slice(11)}`);
   for (const name of repo.text(['remote']).split('\n').filter(Boolean)) own.add(`refs/remotes/${name}/${branch}`);
   const tips = rewrite.refs.filter((ref) => !ref.symbolic && ref.oid && /^refs\/(heads|remotes)\//.test(ref.name) && !own.has(ref.name)).map((ref) => ref.oid);
+  tips.push(...(push?.tips ?? []));
   const shared = new Set<string>();
   if (!tips.length) return shared;
   const reachable = new Set(repo.text(['rev-list', '--stdin'], tips.join('\n') + '\n').split('\n'));
@@ -167,7 +172,14 @@ export function preparePush(rewrite: Plan, remote: string, connection: PushTrans
   }
   const newCommits = new Set(rewrite.objects.filter((object) => object.type === 'commit').map((object) => object.oid));
   const oldCommits = new Set([...rewrite.mapping].filter(([, oid]) => newCommits.has(oid)).map(([oid]) => oid));
-  const shared = sharedTags(rewrite, { remote, destination });
+  // Local refs can omit other server branches, for example in a single-branch clone.
+  // Compare tags with each other server branch. Never fetch: a missing tip makes every tag need a separate choice.
+  const others = [...server].filter(([name]) => name.startsWith('refs/heads/') && name !== destination).map(([, oid]) => oid);
+  const types = others.length ? repo.text(['cat-file', '--batch-check=%(objectname) %(objecttype)'], others.join('\n') + '\n').split('\n') : [];
+  if (types.length !== others.length) throw new Error('Некорректный ответ cat-file. Push отменён.');
+  const tips = others.filter((oid, index) => types[index] === `${oid} commit`);
+  const unverified = tips.length !== others.length;
+  const shared = sharedTags(rewrite, { remote, destination, tips });
   const refs: PushPlan['refs'] = [];
   const optional: PushPlan['optional'] = [];
   for (const ref of rewrite.selected) {
@@ -181,6 +193,7 @@ export function preparePush(rewrite: Plan, remote: string, connection: PushTrans
     const reasons: OptionalTagReason[] = [];
     if (ref.name !== rewrite.head) {
       if (shared.has(ref.name)) reasons.push('shared');
+      else if (unverified) reasons.push('unverified');
       if (!expected) reasons.push('new');
     }
     if (reasons.length) optional.push({ ...item, reasons });

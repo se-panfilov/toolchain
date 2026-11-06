@@ -76,10 +76,13 @@ The final push is disabled by default and exists only after a successful local r
 It has separate permission for server inspection and server writes.
 It sends only the rewritten branch and selected tags.
 It does not send backup refs or use automatic tag discovery.
-Two groups of tags need a separate permission. The initial answer is No.
-The first group contains tags whose initial target is also in another local branch or remote-tracking ref.
+Three groups of tags need a separate permission. The initial answer is No.
+The first group contains tags whose initial target is also in another branch.
+The comparison uses local branches, remote-tracking refs, and the server branches from the server read.
 The current branch, its remote-tracking refs, and the push destination are excluded from this comparison.
-The second group contains tags that the server does not have.
+The second group applies when the local repository does not have the commit of another server branch.
+The program does not fetch that commit, so it cannot examine that branch. All tags of the push go to this group.
+The third group contains tags that the server does not have.
 Without the separate permission, these tags are not in the push arguments.
 
 Every ref has an explicit expected server object ID.
@@ -364,6 +367,29 @@ Temporary packs use private directories outside the source repository.
 A normal return or handled error removes them.
 An abrupt process termination can leave those private files.
 
+## Server branch comparison security audit: 2026-10-30
+
+An independent audit of the complete repository examined the tag push fix of the previous audit.
+A test with synthetic repositories confirmed one defect.
+
+| Defect                       | Condition                                                                                                   | Effect before the fix                                                                        |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Server branches not examined | The local repository has no ref of another branch, for example a single-branch clone or a deleted `master`. | The push moved release tags of `master` after one confirmation, without a separate decision. |
+
+The push now also uses the server branches from the server read, except the push destination.
+If the local repository has the commit of such a branch, the comparison examines that branch.
+If the local repository does not have the commit, the program does not fetch it.
+Then every tag of the push needs a separate permission with the reason `другие ветки сервера не проверены`.
+The planning is unchanged. The local plan still shows only the tags that local branches contain.
+
+These limits remain. A human decides whether to accept them:
+
+- Local tags of other branches are rewritten, so they no longer agree with those branches.
+- The server read occurs before the push. A server branch that someone adds after that read is not examined.
+- The remote copy check accepts commits in the remote-tracking refs of any remote, not only the push remote.
+
+Regression tests: [push](test/remote.test.ts).
+
 ## Tag push security audit: 2026-10-29
 
 An independent audit after the flow split examined all source files, the push procedure, and the GitHub Actions workflows.
@@ -381,7 +407,7 @@ The plan shows the number of tags that other branches contain.
 These limits remain. A human decides whether to accept them:
 
 - Local tags of other branches are rewritten, so they no longer agree with those branches.
-- The comparison uses local refs. A branch that exists only on the server is not examined.
+- The comparison used local refs only. A branch that existed only on the server was not examined. The 2026-10-30 audit removed this limit.
 - The remote copy check accepts commits in the remote-tracking refs of any remote, not only the push remote.
 
 Regression tests: [push](test/remote.test.ts).
