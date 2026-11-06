@@ -222,7 +222,7 @@ Do different tests for authentication and hosting behavior with a specified empt
 Signature tests used synthetic blocks, not complete cryptographic signature generation.
 
 Linux, Windows, and npm publication have no different test results.
-The build does not do a TypeScript type check.
+The earlier build did not do a TypeScript type check.
 
 ## Documentation change controls
 
@@ -338,3 +338,36 @@ The complete suite passed all 55 tests on Node.js 24.12.0 and 26.5.1 on macOS.
 The tests used synthetic repositories, including the isolated demo transport adapter.
 Gitleaks found no secrets in the utility files and generated JavaScript.
 This scan does not prove that all sensitive data is absent.
+
+## Compiled runtime migration
+
+Local startup and the npm bin now use the same `dist/cli.js` entry point.
+The local start command builds before it starts the application.
+A compiler error stops startup instead of executing stale output.
+Direct `node dist/cli.js` execution uses the last successful build.
+Rebuild after source changes.
+
+The build uses strict TypeScript checks with noEmitOnError and NodeNext module resolution.
+It compiles into a new temporary directory before updating `dist/`.
+The temporary directory is removed after success or failure.
+Output checks reject symbolic links, hard links, and special files at expected output paths.
+The checks run before and after compilation.
+Exclusive filesystem access remains necessary during output writes.
+A filesystem error during publication of compiled files can leave a partial build.
+The start command stops on this failure. Rebuild successfully before direct execution.
+
+TypeScript 5.9.3 and Node.js types 24.10.1 are exact development dependencies.
+The lockfile also pins undici-types 7.16.0 and records archive integrity values.
+These three packages have no installation hooks.
+They are not runtime dependencies and do not enter the publication allowlist.
+The dependency audit reported no known vulnerabilities for this locked tree.
+This result does not prove the absence of dependency defects.
+
+The build regression tests use isolated copies.
+They check that a type error preserves stale output and prevents its execution through npm start.
+They also check output directory links, output file links, and hard links.
+
+All 57 tests passed on Node.js 24.12.0 on macOS after this migration.
+The two build regression tests also passed on Node.js 26.5.1.
+A clean offline npm ci completed with installation scripts disabled.
+Its compiled runtime files matched the local build byte-for-byte.
