@@ -477,7 +477,14 @@ export function makePlan(repo: Repository, options: Options): Plan {
   return { repo, options, refs, selected, objects, mapping, commits: commits.length, stripped, head, headOid, commitOrder: commits.map((old) => mapping.get(old)!) };
 }
 
-export function applyPlan(plan: Plan): { recovery: string; backupPrefix?: string } {
+// Multiple synchronous applications can finish before queued signals are delivered.
+// Share one listener until every pending application has passed the event-loop boundary.
+const pendingInterruptions = new Set<{ interrupted: boolean }>();
+function recordInterrupt(): void {
+  for (const state of pendingInterruptions) state.interrupted = true;
+}
+
+export function applyPlan(plan: Plan): { recovery: string; backupPrefix?: string; readonly interrupted: boolean } {
   const { repo, options } = plan;
   const lock = join(repo.common, 'rehistory.lock');
   let fd: number;
@@ -504,9 +511,10 @@ export function applyPlan(plan: Plan): { recovery: string; backupPrefix?: string
     }
     throw new Error(`reHistory заблокирован. PID: ${owner}. Проверьте процесс и файл ${lock}. Удаляйте lock только после остановки процесса и проверки восстановления.`, { cause: error });
   }
-  // Defer Ctrl+C until synchronous writes return and the finally block removes our lock.
-  const deferInterrupt = () => {};
-  process.on('SIGINT', deferInterrupt);
+  // Keep the handler through the next event-loop turn so queued signals are observed.
+  const interruption = { interrupted: false };
+  if (!pendingInterruptions.size) process.on('SIGINT', recordInterrupt);
+  pendingInterruptions.add(interruption);
   let recovery = '';
   try {
     writeFileSync(fd, `${process.pid}\n`);
@@ -549,7 +557,13 @@ export function applyPlan(plan: Plan): { recovery: string; backupPrefix?: string
     if (JSON.stringify(final) !== JSON.stringify(snapshot)) throw new Error('Состояние Git изменилось во время записи объектов. Ссылки не обновлены.');
     commands.push('prepare', 'commit', '');
     repo.git(['update-ref', '-m', 'reHistory: переписывание истории', '--stdin'], commands.join('\n'));
-    return { recovery, backupPrefix };
+    return {
+      recovery,
+      backupPrefix,
+      get interrupted() {
+        return interruption.interrupted;
+      }
+    };
   } catch (error) {
     throw new Error(`${error instanceof Error ? error.message : error}${recovery ? `\nПлан восстановления: ${recovery}` : ''}`, { cause: error });
   } finally {
@@ -557,7 +571,10 @@ export function applyPlan(plan: Plan): { recovery: string; backupPrefix?: string
       closeSync(fd);
       unlinkSync(lock);
     } finally {
-      process.removeListener('SIGINT', deferInterrupt);
+      setImmediate(() => {
+        pendingInterruptions.delete(interruption);
+        if (!pendingInterruptions.size) process.removeListener('SIGINT', recordInterrupt);
+      });
     }
   }
 }

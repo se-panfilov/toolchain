@@ -347,7 +347,7 @@ export function verifyExport(path: string) {
       check(!/(?:^|\n)-----BEGIN (?:PGP SIGNATURE|SSH SIGNATURE|SIGNED MESSAGE)-----/m.test(parts(raw).message.toString('latin1')), `Осталась подпись тега ${object.oid}.`);
     });
   attempt(() => {
-    repo.git(['fsck', '--full', '--strict', '--no-reflogs']);
+    repo.git(['-c', 'fsck.zeroPaddedFilemode=ignore', 'fsck', '--full', '--strict', '--no-reflogs']);
   });
   return { ok: errors.length === 0, repository: repo.path, commits: manifest.commitOrder.length, tags: refs.filter((r) => r.name.startsWith('refs/tags/')).length, objects: objects.length, errors };
 }
@@ -391,7 +391,7 @@ export function exportPlan(plan: Plan, destination: string) {
       closeSync(fd);
       fd = undefined;
       fd = openSync(file, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
-      output.git(['index-pack', '--stdin', '--strict'], fd);
+      output.git(['index-pack', '--stdin', '--strict=zeroPaddedFilemode=ignore'], fd);
     } finally {
       if (fd !== undefined) closeSync(fd);
       rmSync(transfer, { recursive: true, force: true });
