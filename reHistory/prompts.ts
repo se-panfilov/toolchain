@@ -8,18 +8,26 @@ export class PromptCancelled extends Error {
 type Key = { name?: string; ctrl?: boolean; meta?: boolean; sequence?: string };
 function safe(value: string): string { return value.replace(/[\p{Cc}\p{Cf}]/gu, '?'); }
 
+// ANSI добавляется только после очистки текста; отчёты в pipe остаются plain text.
+export function terminalStyle(output: Pick<WriteStream, 'isTTY'> = stdout) {
+  const enabled = Boolean(output.isTTY) && process.env.TERM !== 'dumb' && !('NO_COLOR' in process.env) && process.env.FORCE_COLOR !== '0';
+  const color = (code: number) => (text: string) => enabled ? `\x1b[${code}m${text}\x1b[0m` : text;
+  return { plain: (text: string) => text, accent: color(36), muted: color(2), strong: color(1), success: color(32), warning: color(33), error: color(31) };
+}
+
 /** Каждый вопрос владеет своими обработчиками и восстанавливает состояние TTY. */
 export class TerminalPrompts {
   input: ReadStream;
   output: WriteStream;
+  private style: ReturnType<typeof terminalStyle>;
   private active?: () => void;
   private closed = false;
-  constructor(input = stdin, output = stdout) { this.input = input; this.output = output; }
+  constructor(input = stdin, output = stdout) { this.input = input; this.output = output; this.style = terminalStyle(output); }
   close(): void { this.closed = true; this.active?.(); }
   private check(): void {
     if (this.closed) throw new PromptCancelled();
-    if (!this.input.isTTY || !this.output.isTTY) throw new Error('Для интерактивного выбора нужен терминал (TTY).');
-    if (process.env.TERM === 'dumb') throw new Error('TERM=dumb не поддерживает интерактивное редактирование. Запустите CLI в терминале с поддержкой ANSI.');
+    if (!this.input.isTTY || !this.output.isTTY) throw new Error('Нужен интерактивный терминал (TTY).');
+    if (process.env.TERM === 'dumb') throw new Error('TERM=dumb не поддерживается. Нужен ANSI-терминал.');
   }
 
   async text(question: string, initial = ''): Promise<string> {
@@ -41,7 +49,7 @@ export class TerminalPrompts {
         rl.on('close', cancel);
         process.once('SIGINT', cancel);
         process.once('SIGTERM', cancel);
-        rl.question(`${safe(question)}: `, value => {
+        rl.question(`${this.style.accent('◆')} ${this.style.strong(safe(question))}: `, value => {
           if (settled) return;
           settled = true;
           resolve(value.trim());
@@ -76,7 +84,12 @@ export class TerminalPrompts {
     let keypress = (_text: string | undefined, _key: Key) => {};
     const render = () => {
       if (drawn) { moveCursor(this.output, 0, -2); cursorTo(this.output, 0); clearScreenDown(this.output); }
-      this.output.write(['Да', 'Нет'].map((label, index) => `${focused === index ? '›' : ' '} [${selected === index ? 'x' : ' '}] ${label}\n`).join(''));
+      this.output.write(['Да', 'Нет'].map((label, index) => {
+        const cursor = focused === index ? this.style.accent('›') : ' ';
+        const mark = selected === index ? this.style.success('☑') : this.style.muted('☐');
+        const text = focused === index ? this.style.accent(label) : this.style.muted(label);
+        return `  ${cursor} ${mark} ${text}\n`;
+      }).join(''));
       drawn = true;
     };
     try {
@@ -107,7 +120,7 @@ export class TerminalPrompts {
         this.input.setRawMode(true);
         this.input.resume();
         // Вставка текста в bracketed paste не должна выбирать и подтверждать ответ.
-        this.output.write(`\x1b[?2004h${safe(question)}\n↑/↓ — фокус, пробел — выбрать, Enter — подтвердить, Esc — отменить\n`);
+        this.output.write(`\x1b[?2004h${this.style.accent('◆')} ${this.style.strong(safe(question))}\n`);
         render();
       });
     } finally {
