@@ -15,9 +15,13 @@ Keep utility-specific requirements in the relevant utility documentation.
 
 ## Authorization and Git
 
-- Do not create Toolchain commits, branches, tags, or pull requests. The user manages them.
-- Do not stage, reset, discard, or stash user changes.
-- Do not push, publish, or change external services without explicit task authorization.
+- Do all work on a task branch. Do not work directly on `master` or `main`.
+- Before changes, create a task branch or use an existing branch for the task. Use the `codex/` prefix for new agent branches.
+- You may stage and commit your task changes and push the task branch to the repository remote.
+- When GitHub access is available, open a pull request for the task branch.
+- Do not stage unrelated user changes. Do not reset, discard, or stash user changes.
+- Do not push directly to `master` or `main`. Do not force-push, merge pull requests, or create tags without explicit task authorization.
+- Do not publish packages or change other external services without explicit task authorization.
 - Preparation for npx use does not authorize npm publication or removal of a publication guard.
 - Synthetic commits and branches are permitted inside isolated test fixtures when tests require them.
 - Do not use Toolchain or personal repositories as destructive test fixtures.
@@ -113,6 +117,9 @@ Keep utility-specific requirements in the relevant utility documentation.
 
 - Write documentation and code comments in English.
 - Apply [the project writing rules](docs/WRITING.md), based on ASD-STE100 Issue 9.
+- Start every pull request description with a `tl;dr` section. Use short, plain language for readers with little subject knowledge.
+- Keep `tl;dr` as short as possible, with a maximum of two paragraphs.
+- Apply ASD-STE100 to all other pull request text, including the title, and to commit messages. See [the writing rules](docs/WRITING.md#commits-and-pull-requests).
 - Keep commands, identifiers, Russian interface strings, and license text exact.
 - Update operating instructions and security notes when behavior changes.
 - Keep these rules in this file. Vendor adapters must refer to it instead of copying the rules.
