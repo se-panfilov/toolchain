@@ -274,6 +274,7 @@ npm run check:workflows
 APP=reHistory OUT_DIR="$PWD/../release-check" node scripts/ci/package.mjs
 ```
 
-The second command needs a completed build. It packs the application, checks the archive, and runs its bin from the archive.
+The second command needs a completed build and `npm ci`. It packs the application and checks the archive.
+Then it packs the runtime dependencies from the installed lockfile tree, installs everything offline without scripts in a temporary directory, and runs the bin.
 `OUT_DIR` must be an absolute path that does not exist.
 Do not run `scripts/ci/release.mjs` locally without `DRY_RUN=true`.
