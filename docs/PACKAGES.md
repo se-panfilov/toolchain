@@ -41,7 +41,7 @@ Exclude tests and build scripts from publication.
 - Provide build, typecheck, test, and start scripts. Build before packaging with prepack.
 - Stop startup after build failure. Do not depend on installation hooks for runtime readiness.
 - Check the actual archive inventory, permissions, metadata, and secrets before release.
-- Exercise the archive through offline npm exec outside the source directory.
+- Install the archive offline outside the source directory, without scripts, and run its bin. Runtime dependencies come from local archives of the lockfile versions that `npm ci` installed.
 - Verify an archive integrity value before publication. Any included-file change requires another check.
 
 An exports map defines the supported import API. It is not an access control boundary.
