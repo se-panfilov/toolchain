@@ -64,7 +64,7 @@ function plan(input: string, output: string, id: string, tools: Tools): Plan {
   const mode = modes.find((item) => item.id === id);
   if (!mode) throw new Error(`unknown mode ${id}`);
   const media = probe(tools, input);
-  return { input, output, mode, media, audio: media.audio[0], start: 2, length: mode.sample ? 3 : media.duration };
+  return { input, output, mode, media, audio: media.audio[0], subtitle: undefined, start: 2, length: mode.sample ? 3 : media.duration };
 }
 
 test.skipIf(!tools)('remux makes an MP4 with copied video and AAC audio and leaves no temporary files', async (t) => {
@@ -126,9 +126,9 @@ test.skipIf(process.platform === 'win32')('an interruption stops FFmpeg and remo
   writeFileSync(input, '');
   const mode = modes.find((item) => item.id === 'remux');
   if (!mode) throw new Error('remux mode is missing');
-  const media = { duration: 60, size: 1, container: 'matroska', video: { index: 0, codec: 'h264', width: 1, height: 1, pixelFormat: '', transfer: '', hdr: false }, audio: [], subtitles: 0 };
+  const media = { duration: 60, size: 1, container: 'matroska', video: { index: 0, codec: 'h264', width: 1, height: 1, pixelFormat: '', transfer: '', hdr: false }, audio: [], subtitles: [] };
   const output = join(directory, 'result.mp4');
-  const running = convert({ ffmpeg: fake, ffprobe: fake }, { input, output, mode, media, audio: undefined, start: 0, length: 60 }, () => undefined);
+  const running = convert({ ffmpeg: fake, ffprobe: fake }, { input, output, mode, media, audio: undefined, subtitle: undefined, start: 0, length: 60 }, () => undefined);
   const deadline = Date.now() + 10000;
   while (!existsSync(marker) && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 50));
   expect(readdirSync(directory).some((name) => name.startsWith('.recast-'))).toBe(true);
@@ -150,8 +150,34 @@ test.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('a read-on
   });
   const mode = modes.find((item) => item.id === 'remux');
   if (!mode) throw new Error('remux mode is missing');
-  const media = { duration: 60, size: 1, container: 'matroska', video: { index: 0, codec: 'h264', width: 1, height: 1, pixelFormat: '', transfer: '', hdr: false }, audio: [], subtitles: 0 };
-  const running = convert({ ffmpeg: fake, ffprobe: fake }, { input: fake, output: join(locked, 'out.mp4'), mode, media, audio: undefined, start: 0, length: 60 }, () => undefined);
+  const media = { duration: 60, size: 1, container: 'matroska', video: { index: 0, codec: 'h264', width: 1, height: 1, pixelFormat: '', transfer: '', hdr: false }, audio: [], subtitles: [] };
+  const running = convert({ ffmpeg: fake, ffprobe: fake }, { input: fake, output: join(locked, 'out.mp4'), mode, media, audio: undefined, subtitle: undefined, start: 0, length: 60 }, () => undefined);
   await expect(running).rejects.toThrow(/Нет доступа на запись/);
   expect(existsSync(marker)).toBe(false);
+});
+
+test.skipIf(!tools)('a WebVTT subtitle is written next to the MP4 file with the same name', async (t) => {
+  if (!tools) return;
+  const directory = workspace(t);
+  const srt = join(directory, 'source.srt');
+  writeFileSync(srt, '1\n00:00:01,000 --> 00:00:02,000\nFirst\n\n2\n00:00:05,000 --> 00:00:06,500\nSecond\n');
+  const input = join(directory, 'film.mkv');
+  const made = spawnSync(
+    tools.ffmpeg,
+    ['-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=160x120:rate=25', '-i', srt, '-t', '8', '-map', '0', '-map', '1', '-c:v', 'libx264', '-g', '25', '-c:s', 'srt', input],
+    { encoding: 'utf8' }
+  );
+  if (made.status !== 0) throw new Error(made.stderr);
+  const output = join(directory, 'result.mp4');
+  const base = plan(input, output, 'remux-test', tools);
+  const subtitle = base.media.subtitles[0];
+  if (!subtitle) throw new Error('subtitle stream is missing');
+  const result = await convert(tools, { ...base, subtitle: { stream: subtitle, format: 'vtt' }, start: 4 }, () => undefined);
+  expect(result.subtitles).toBe(join(directory, 'result.vtt'));
+  const vtt = readFileSync(join(directory, 'result.vtt'), 'utf8');
+  // The sample starts at 4 s, so the second cue moves to 1 s. The first cue is outside the sample.
+  expect(vtt.startsWith('WEBVTT')).toBe(true);
+  expect(vtt).toContain('Second');
+  expect(vtt).not.toContain('First');
+  expect(readdirSync(directory).sort()).toEqual(['film.mkv', 'result.mp4', 'result.vtt', 'source.srt']);
 });

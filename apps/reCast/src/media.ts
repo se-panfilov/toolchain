@@ -11,14 +11,20 @@ const probeLimit = 16 * 1024 * 1024;
 export type Tools = { ffmpeg: string; ffprobe: string };
 export type VideoStream = { index: number; codec: string; width: number; height: number; pixelFormat: string; transfer: string; hdr: boolean };
 export type AudioStream = { index: number; codec: string; channels: number; language: string; title: string; isDefault: boolean };
-export type MediaInfo = { duration: number; size: number; container: string; video: VideoStream; audio: AudioStream[]; subtitles: number };
+export type SubtitleStream = { index: number; codec: string; language: string; title: string; isDefault: boolean; forced: boolean; kind: 'text' | 'image' };
+export type MediaInfo = { duration: number; size: number; container: string; video: VideoStream; audio: AudioStream[]; subtitles: SubtitleStream[] };
+
+/** Text subtitles convert into WebVTT or render with libass. Image subtitles can only be burned in with an overlay. */
+export const textSubtitles = new Set(['subrip', 'srt', 'ass', 'ssa', 'webvtt', 'mov_text', 'text']);
+export const imageSubtitles = new Set(['hdmv_pgs_subtitle', 'dvd_subtitle', 'dvb_subtitle', 'xsub']);
 
 /**
  * Isolate FFmpeg from the user environment. Variables such as FFREPORT write extra files.
  * Tools start with absolute paths, so PATH contains only system directories.
+ * HOME stays, because libass and fontconfig keep the font cache there for burned-in subtitles.
  */
 export function toolEnvironment(): NodeJS.ProcessEnv {
-  return { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', AV_LOG_FORCE_NOCOLOR: '1' };
+  return { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', AV_LOG_FORCE_NOCOLOR: '1', ...(process.env.HOME ? { HOME: process.env.HOME } : {}) };
 }
 
 function executable(path: string): string | undefined {
@@ -116,7 +122,19 @@ export function parseProbe(json: string, size: number): MediaInfo {
     container: text(format.format_name),
     video,
     audio,
-    subtitles: streams.filter((stream) => stream.codec_type === 'subtitle').length
+    subtitles: streams
+      .filter((stream) => stream.codec_type === 'subtitle')
+      .flatMap((stream): SubtitleStream[] => {
+        const codec = text(stream.codec_name);
+        const kind = textSubtitles.has(codec) ? 'text' : imageSubtitles.has(codec) ? 'image' : undefined;
+        // Unknown subtitle codecs, such as teletext, are not offered.
+        if (!kind) return [];
+        const tags = record(stream.tags);
+        const disposition = record(stream.disposition);
+        return [
+          { index: number(stream.index), codec, language: text(tags.language), title: text(tags.title), isDefault: number(disposition.default) === 1, forced: number(disposition.forced) === 1, kind }
+        ];
+      })
   };
 }
 

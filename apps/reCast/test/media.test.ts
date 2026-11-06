@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { findTools, isHdr, parseProbe, toolEnvironment } from '@reCast/media';
-import { expect, test, type TestContext } from 'vitest';
+import { expect, test, type TestContext, vi } from 'vitest';
 
 function workspace(t: TestContext): string {
   const directory = mkdtempSync(join(tmpdir(), 'tx-recast-media-test-'));
@@ -27,7 +27,9 @@ const probe = JSON.stringify({
     { index: 1, codec_type: 'video', codec_name: 'hevc', width: 3840, height: 2160, pix_fmt: 'yuv420p10le', color_transfer: 'smpte2084', disposition: { attached_pic: 0 } },
     { index: 2, codec_type: 'audio', codec_name: 'truehd', channels: 8, tags: { language: 'eng', title: 'Atmos' }, disposition: { default: 1 } },
     { index: 3, codec_type: 'audio', codec_name: 'ac3', channels: 6, tags: { language: 'rus' }, disposition: { default: 0 } },
-    { index: 4, codec_type: 'subtitle', codec_name: 'subrip' }
+    { index: 4, codec_type: 'subtitle', codec_name: 'subrip', tags: { language: 'rus' }, disposition: { default: 1, forced: 0 } },
+    { index: 5, codec_type: 'subtitle', codec_name: 'hdmv_pgs_subtitle', tags: { title: 'Signs' }, disposition: { forced: 1 } },
+    { index: 6, codec_type: 'subtitle', codec_name: 'dvb_teletext' }
   ]
 });
 
@@ -40,7 +42,11 @@ test('probe data skips cover images and reads HDR, audio, and subtitles', () => 
     { index: 2, codec: 'truehd', channels: 8, language: 'eng', title: 'Atmos', isDefault: true },
     { index: 3, codec: 'ac3', channels: 6, language: 'rus', title: '', isDefault: false }
   ]);
-  expect(info.subtitles).toBe(1);
+  // Teletext is not offered, because it cannot become WebVTT or an overlay.
+  expect(info.subtitles).toEqual([
+    { index: 4, codec: 'subrip', language: 'rus', title: '', isDefault: true, forced: false, kind: 'text' },
+    { index: 5, codec: 'hdmv_pgs_subtitle', language: '', title: 'Signs', isDefault: false, forced: true, kind: 'image' }
+  ]);
 });
 
 test('probe data without a video stream or with invalid JSON is rejected', () => {
@@ -65,10 +71,14 @@ test.each([
   expect(isHdr(transfer)).toBe(expected);
 });
 
-test('the tool environment drops user variables', () => {
+test('the tool environment drops user variables and keeps HOME for the font cache', () => {
+  vi.stubEnv('HOME', '/Users/test');
+  vi.stubEnv('FFREPORT', 'file=/tmp/report.log');
+  vi.stubEnv('DYLD_INSERT_LIBRARIES', '/tmp/evil.dylib');
   const env = toolEnvironment();
-  expect(Object.keys(env).sort()).toEqual(['AV_LOG_FORCE_NOCOLOR', 'PATH']);
+  expect(Object.keys(env).sort()).toEqual(['AV_LOG_FORCE_NOCOLOR', 'HOME', 'PATH']);
   expect(env.PATH).toBe('/usr/bin:/bin:/usr/sbin:/sbin');
+  expect(env.HOME).toBe('/Users/test');
 });
 
 test.skipIf(process.platform === 'win32')('Homebrew directories come before PATH, and FFprobe must be next to FFmpeg', (t) => {
