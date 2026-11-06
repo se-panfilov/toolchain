@@ -18,6 +18,7 @@ on:
         default: all
         options:
           - all
+          - reCast
           - reHistory
       dry_run:
         description: Show the plan only. Do not install or run tests.
