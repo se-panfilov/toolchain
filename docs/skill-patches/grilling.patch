@@ -1,0 +1,21 @@
+--- a/.agents/skills/grilling/SKILL.md
++++ b/.agents/skills/grilling/SKILL.md
+@@ -3,6 +3,18 @@
+ description: Grill the user relentlessly about a plan, decision, or idea. Use when the user wants to stress-test their thinking, or uses any 'grill' trigger phrases.
+ ---
+ 
++<!-- Adapted for Toolchain from mattpocock/skills at a496f5513d4a4cf889bc48e189e579f4b0bdf6aa. -->
++
++## Toolchain integration
++
++Read [AGENTS.md](../../../AGENTS.md) before applying the upstream workflow below.
++Write the questions and recommended answers in Russian.
++Ask only questions that materially affect scope, safety, or observable behavior. Look up facts yourself.
++Use a subagent for a fact lookup only if the host has one. Otherwise, do the read-only lookup in the current session.
++An answer to a question does not authorize a decision that AGENTS.md reserves for a human unless the human makes that decision explicitly.
++
++## Upstream workflow
++
+ Interview the user relentlessly until you reach a shared understanding. Map this as a **design tree**: every decision branches into the decisions that hang off it.
+ 
+ Work the tree in **rounds**. The **frontier** is every decision whose prerequisites are already settled: the questions you can ask _now_ without guessing at answers you haven't heard yet. Ask the whole frontier in one round: number each question and give your recommended answer. Then wait for the user's answers before the next round.

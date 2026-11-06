@@ -29,12 +29,47 @@
       "skillPath": "skills/doc-coauthoring/SKILL.md",
       "computedHash": "b964e4c3ffe13f66f76dd7919073e60c7aec622cd8a8363bb36323188100cf8e"
     },
+    "find-bugs": {
+      "source": "getsentry/skills",
+      "ref": "d12f250460ffd961f549dbebf7eeb0cf4afd4c2e",
+      "sourceType": "github",
+      "skillPath": "skills/find-bugs/SKILL.md",
+      "computedHash": "7bf00be700d1d205b747126aa96d3587bbc2855cd09897614676e179eebe35ed"
+    },
+    "fp-check": {
+      "source": "trailofbits/skills",
+      "ref": "2be6433b39e009cd2b6fd3be1895f6b1faa5af9a",
+      "sourceType": "github",
+      "skillPath": "plugins/fp-check/skills/fp-check/SKILL.md",
+      "computedHash": "b84703ecb023c8bfc77f08d79b932a5f4baf0a3d716550117dcbd7b0e48c81a6"
+    },
+    "gha-security-review": {
+      "source": "getsentry/skills",
+      "ref": "d12f250460ffd961f549dbebf7eeb0cf4afd4c2e",
+      "sourceType": "github",
+      "skillPath": "skills/gha-security-review/SKILL.md",
+      "computedHash": "7569699e788bf657f49f8d2fe217ffb6aa7d267d2de60d5c597013a178f57aa2"
+    },
+    "grilling": {
+      "source": "mattpocock/skills",
+      "ref": "a496f5513d4a4cf889bc48e189e579f4b0bdf6aa",
+      "sourceType": "github",
+      "skillPath": "skills/productivity/grilling/SKILL.md",
+      "computedHash": "e40cc1d348f6d935e28f1e24474302d7368f0a400429271a43b35fe154891dc5"
+    },
     "property-based-testing": {
       "source": "trailofbits/skills",
       "ref": "2be6433b39e009cd2b6fd3be1895f6b1faa5af9a",
       "sourceType": "github",
       "skillPath": "plugins/property-based-testing/skills/property-based-testing/SKILL.md",
       "computedHash": "c754807c7113dfb2e8c2de64e19a6612f87282b621da8b1e50e2a7137d8bbe8c"
+    },
+    "second-opinion": {
+      "source": "trailofbits/skills",
+      "ref": "2be6433b39e009cd2b6fd3be1895f6b1faa5af9a",
+      "sourceType": "github",
+      "skillPath": "plugins/second-opinion/skills/second-opinion/SKILL.md",
+      "computedHash": "b2507ce5463c23fd19bdc031f2ba1dcd6049a2b48ac2d183155f6f28dd3b11c8"
     },
     "sharp-edges": {
       "source": "trailofbits/skills",
@@ -56,6 +91,13 @@
       "sourceType": "github",
       "skillPath": "plugins/supply-chain-risk-auditor/skills/supply-chain-risk-auditor/SKILL.md",
       "computedHash": "1c8dc1f5f5e4321e26fe0d9f3eb123b915efe924f192716e7fe4781a66a4500f"
+    },
+    "writing-for-agents": {
+      "source": "mattpocock/skills",
+      "ref": "a496f5513d4a4cf889bc48e189e579f4b0bdf6aa",
+      "sourceType": "github",
+      "skillPath": "skills/productivity/writing-for-agents/SKILL.md",
+      "computedHash": "95da47fc97af998e85b7d7e6d57b3ac76727c1e290cfe9ea09005aacb826959f"
     }
   }
 }

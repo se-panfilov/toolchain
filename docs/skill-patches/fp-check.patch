@@ -1,0 +1,30 @@
+--- a/.agents/skills/fp-check/SKILL.md
++++ b/.agents/skills/fp-check/SKILL.md
+@@ -1,11 +1,26 @@
+ ---
+ name: fp-check
+ description: "Systematically verifies suspected security bugs to eliminate false positives, producing a TRUE POSITIVE or FALSE POSITIVE verdict with documented evidence for each. Use when asked whether a specific finding is real, exploitable, or a false positive, or to verify or validate a suspected vulnerability — not for hunting or discovering new bugs."
+-allowed-tools: Read Grep Glob LSP Bash Task Write Edit AskUserQuestion TaskCreate TaskUpdate TaskList TaskGet
++allowed-tools: Read Grep Glob LSP Task AskUserQuestion TaskCreate TaskUpdate TaskList TaskGet
+ ---
+ 
++<!-- Adapted for Toolchain from trailofbits/skills at 2be6433b39e009cd2b6fd3be1895f6b1faa5af9a. -->
++
+ # False Positive Check
+ 
++## Toolchain integration
++
++Read [AGENTS.md](../../../AGENTS.md) before applying the upstream workflow below.
++Bash, Write, and Edit are removed from `allowed-tools`. Commands and file writes then follow the normal permission rules of the host.
++The plugin agents that deep verification names are not installed. Do those phases in the current session, or with a general subagent if the host has one.
++Prefer pseudocode PoCs. Create an executable or unit test PoC only in an isolated temporary directory with synthetic data.
++Do not run a PoC against real repositories, user data, remote services, or the network.
++Do not add a PoC or regression test to the repository unless the user asks for that change.
++The verdict is evidence for a human decision. It does not accept, ignore, or postpone a security risk.
++Write the report in Russian.
++
++## Upstream workflow
++
+ ## When to Use
+ 
+ - "Is this bug real?" or "is this a true positive?"

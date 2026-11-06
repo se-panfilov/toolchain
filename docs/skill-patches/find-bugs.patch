@@ -1,0 +1,31 @@
+--- a/.agents/skills/find-bugs/SKILL.md
++++ b/.agents/skills/find-bugs/SKILL.md
+@@ -3,8 +3,28 @@
+ description: Find bugs, security vulnerabilities, and code quality issues in local branch changes. Use when asked to review changes, find bugs, security review, or audit code on the current branch.
+ ---
+ 
++<!-- Adapted for Toolchain from getsentry/skills at d12f250460ffd961f549dbebf7eeb0cf4afd4c2e. -->
++
+ # Find Bugs
+ 
++## Toolchain integration
++
++Read [AGENTS.md](../../../AGENTS.md) before applying the upstream workflow below.
++This skill is read-only. Do not edit files, commit, push, or post review comments.
++If `gh` is not available or not authenticated, use `git diff origin/master...HEAD`. Use the pull request base when it is different.
++Apply the web items in Phase 3 only to code that has those surfaces.
++Also examine each changed CLI file for these items:
++
++* [ ] **Subprocesses**: argument arrays only, no user data in shell text, isolated environment and Git configuration.
++* [ ] **Files**: path validation, symbolic links, hard links, permissions, overwrite behavior, and atomic writes.
++* [ ] **User data**: dry-run does not write the target, destructive writes need deliberate confirmation, and backups are not replaced silently.
++* [ ] **Terminal**: raw mode and input handlers restored after success, cancellation, and errors. Untrusted text sanitized before terminal control sequences. Machine output has no colors or prompts.
++* [ ] **Network and external effects**: no data transfer, publication, or push without explicit authorization.
++
++Write the report in Russian. A human decides how to handle each finding.
++
++## Upstream workflow
++
+ Review changes on this branch for bugs, security vulnerabilities, and code quality issues.
+ 
+ ## Phase 1: Complete Input Gathering

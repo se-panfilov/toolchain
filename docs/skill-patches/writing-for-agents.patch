@@ -1,0 +1,21 @@
+--- a/.agents/skills/writing-for-agents/SKILL.md
++++ b/.agents/skills/writing-for-agents/SKILL.md
+@@ -3,6 +3,18 @@
+ description: Writing documents for agents. Use when creating or editing skills, or modifying AGENTS.md or CLAUDE.md.
+ ---
+ 
++<!-- Adapted for Toolchain from mattpocock/skills at a496f5513d4a4cf889bc48e189e579f4b0bdf6aa. -->
++
++## Toolchain integration
++
++Read [AGENTS.md](../../../AGENTS.md) and [the writing rules](../../../docs/WRITING.md) before applying the reference below.
++Use this reference with the [agents-md](../agents-md/SKILL.md) skill. That skill gives the procedure, and this reference gives the writing principles.
++Do not remove or weaken required safety, authorization, or human-decision rules to reduce context load. Such a change needs a human decision.
++Keep a security prohibition as a prohibition. Add the positive target behavior next to it when that helps.
++`disable-model-invocation` is Claude Code frontmatter. Other hosts can ignore it. Keep shared skills usable by all hosts that [the agent setup guide](../../../docs/AI_AGENTS.md) lists.
++
++## Reference
++
+ Reference for writing any document an agent consumes: a skill, an `AGENTS.md` / `CLAUDE.md`, a doc reached by a pointer. The packaging differs; the writing does not: the same levers make each one predictable, since the agent takes the same _process_ every run rather than producing the same output.
+ 
+ When the document you're writing is a skill, read [`SKILL-MECHANICS.md`](SKILL-MECHANICS.md) for frontmatter, invocation choice, and router skills.
