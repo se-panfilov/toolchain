@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "skills": {
+    "agents-md": {
+      "source": "getsentry/skills",
+      "ref": "d12f250460ffd961f549dbebf7eeb0cf4afd4c2e",
+      "sourceType": "github",
+      "skillPath": "skills/agents-md/SKILL.md",
+      "computedHash": "7ff79d6771cdf3db33606251eb15bbc5203b68a94b036ee471869842118ea02a"
+    },
+    "code-simplifier": {
+      "source": "getsentry/skills",
+      "ref": "d12f250460ffd961f549dbebf7eeb0cf4afd4c2e",
+      "sourceType": "github",
+      "skillPath": "skills/code-simplifier/SKILL.md",
+      "computedHash": "ff9cb10181e31daf1f1644754c491601a7849dff4b4536a1d0ec4f97f680348e"
+    },
+    "differential-review": {
+      "source": "trailofbits/skills",
+      "ref": "2be6433b39e009cd2b6fd3be1895f6b1faa5af9a",
+      "sourceType": "github",
+      "skillPath": "plugins/differential-review/skills/differential-review/SKILL.md",
+      "computedHash": "3c330b7d8e2a7a6bba9ff9c7f9971d3b6c17fef84b9382efdd325abdd481371c"
+    },
+    "doc-coauthoring": {
+      "source": "anthropics/skills",
+      "ref": "ca45fc496a3436251f191354091d557da31c15b5",
+      "sourceType": "github",
+      "skillPath": "skills/doc-coauthoring/SKILL.md",
+      "computedHash": "b964e4c3ffe13f66f76dd7919073e60c7aec622cd8a8363bb36323188100cf8e"
+    },
+    "property-based-testing": {
+      "source": "trailofbits/skills",
+      "ref": "2be6433b39e009cd2b6fd3be1895f6b1faa5af9a",
+      "sourceType": "github",
+      "skillPath": "plugins/property-based-testing/skills/property-based-testing/SKILL.md",
+      "computedHash": "c754807c7113dfb2e8c2de64e19a6612f87282b621da8b1e50e2a7137d8bbe8c"
+    },
+    "sharp-edges": {
+      "source": "trailofbits/skills",
+      "ref": "2be6433b39e009cd2b6fd3be1895f6b1faa5af9a",
+      "sourceType": "github",
+      "skillPath": "plugins/sharp-edges/skills/sharp-edges/SKILL.md",
+      "computedHash": "63318ab9403b975a63fc0310540a14b632079f63f61414b711305860337a54b6"
+    },
+    "skill-scanner": {
+      "source": "getsentry/skills",
+      "ref": "d12f250460ffd961f549dbebf7eeb0cf4afd4c2e",
+      "sourceType": "github",
+      "skillPath": "skills/skill-scanner/SKILL.md",
+      "computedHash": "9ec22514620fedc4e9f2d9b886551a1d4f8383dd272c210d85526a71b7b84adb"
+    },
+    "supply-chain-risk-auditor": {
+      "source": "trailofbits/skills",
+      "ref": "2be6433b39e009cd2b6fd3be1895f6b1faa5af9a",
+      "sourceType": "github",
+      "skillPath": "plugins/supply-chain-risk-auditor/skills/supply-chain-risk-auditor/SKILL.md",
+      "computedHash": "1c8dc1f5f5e4321e26fe0d9f3eb123b915efe924f192716e7fe4781a66a4500f"
+    }
+  }
+}
