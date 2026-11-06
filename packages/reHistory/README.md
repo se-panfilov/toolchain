@@ -47,9 +47,12 @@ You can replace commit messages with one selected message.
 - Git 2.39 or later.
 - An ANSI terminal for a history change or an export.
 - A complete repository with a local branch that contains a commit.
+- Git in an absolute PATH directory. Empty and relative PATH entries are ignored.
+- No configured clean, process, or smudge filters for rewrite and export.
 
 macOS is the test platform.
-Linux and Windows do not have different test results.
+Native Linux and Windows checks are configured in CI.
+Local verification does not establish results for those platforms.
 Local development requires the locked build dependencies.
 The published package has no runtime dependencies.
 
@@ -295,7 +298,10 @@ The remote must have one HTTPS or SSH push URL.
 SCP syntax, such as `git@host:owner/repo.git`, keeps its home-relative path.
 URL substitutions, embedded credentials, redirects, and ambiguous paths are rejected.
 Credential helpers and password prompts are disabled.
-Use an existing SSH key or agent for authenticated push.
+Use SSH with an existing key or agent for authenticated push.
+GitHub and GitLab HTTPS authentication through credential helpers is not supported.
+HTTPS is available only when the server permits the operation without those credentials.
+Local `http.*` settings are rejected before network access, including URL-specific settings.
 SSH configuration remains part of the trust boundary.
 
 Hooks, automatic tag following, submodule pushes, mirror pushes, and inherited push options are disabled.
@@ -449,7 +455,9 @@ It rejects file, git, HTTP, and ext protocols.
 
 An SSH key and a known host key are necessary.
 It uses `BatchMode=yes`.
-HTTPS authentication must operate without credential helpers or password prompts.
+Use SSH for authenticated demo writes to GitHub or GitLab.
+HTTPS requires a server that permits these writes without credential helpers or password prompts.
+Local `http.*` settings are not supported.
 The program keeps TLS checks and rejects HTTPS redirects.
 Atomic push must be available on the server.
 
@@ -521,8 +529,36 @@ The recovery file cannot restore objects that are not available.
 5. Examine the refs in the repository.
 6. Remove the lock file only after these checks.
 
+An existing lock error shows its PID when readable.
+Ctrl+C is deferred during the local apply phase so cleanup can run.
+An interrupted Git subprocess can still abort the atomic ref transaction.
+Forced termination, a crash, or power loss can leave the lock.
 Do not remove an active lock file.
 The program does not remove another lock file automatically.
+
+## Object validation and resource use
+
+Rewrite and export check filters in initialized nested submodules before status.
+The check accepts at most 256 working trees and requires UTF-8 index paths.
+
+Commit or tag metadata containing NUL is not supported.
+Planning rejects NUL in selected source commits before it writes data.
+Generated metadata containing NUL is also rejected.
+Other binary message bytes remain unchanged unless you select message replacement.
+Git validates the metadata pack with `index-pack --strict` before the ref transaction.
+The program does not bypass validation with `--literally`.
+
+Planning reads commits in groups and computes object IDs in Node.js.
+Applying a plan writes the generated metadata through one pack import.
+Export transfers trees and blobs through a temporary pack file.
+It does not capture complete blob contents in Node.js stdout buffers.
+A file larger than 256 MiB can therefore be exported.
+Git, available disk space, metadata limits, and verification can still limit large repositories.
+Temporary packs use private directories and are removed after normal completion or handled errors.
+Forced termination can leave temporary files.
+
+JSON reports escape C1 and Unicode format controls.
+Parsing the JSON restores the original values.
 
 ## Rejected source states
 

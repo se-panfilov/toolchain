@@ -1,6 +1,7 @@
-import { existsSync, lstatSync, mkdirSync, realpathSync, readFileSync, readdirSync, writeFileSync, openSync, readSync, closeSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, realpathSync, readFileSync, readdirSync, writeFileSync, openSync, readSync, closeSync, mkdtempSync, rmSync, constants } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
-import { Repository, runGit, parts, field, validateIdentity, normalizeCommitMessage, type Plan, type Options } from '@reHistory/engine';
+import { Repository, runGit, parts, field, validateIdentity, normalizeCommitMessage, writeObjects, readMetadataBatches, type Plan, type Options } from '@reHistory/engine';
 import { inventory, objectClosure, stamp } from '@reHistory/audit';
 
 export const manifestName = 'rehistory-export.json';
@@ -314,25 +315,27 @@ export function verifyExport(path: string) {
     'Набор коммитов не соответствует плану.'
   );
   const times = new Map<string, number>();
-  for (const [index, oid] of manifest.commitOrder.entries())
-    attempt(() => {
-      const raw = repo.git(['cat-file', 'commit', oid]);
-      const a = stamp(raw, 'author');
-      const c = stamp(raw, 'committer');
-      const expected = manifest.policy.start + index * manifest.policy.interval;
-      if (manifest.policy.commitMessage !== undefined) check(parts(raw).message.equals(normalizeCommitMessage(manifest.policy.commitMessage)), `Неверное сообщение коммита ${oid}.`);
-      check(a.timestamp === expected && c.timestamp === expected && a.timezone === '+0000' && c.timezone === '+0000', `Неверные даты коммита ${oid}.`);
-      if (manifest.policy.identity) {
-        const who = `${manifest.policy.identity.name} <${manifest.policy.identity.email}>`;
-        check(a.identity === who && c.identity === who, `Неверная идентичность коммита ${oid}.`);
-      }
-      for (const h of parts(raw).headers) {
-        if (manifest.policy.commitMessage !== undefined) check(field(h) !== 'encoding', `Неверная кодировка сообщения коммита ${oid}.`);
-        check(!['gpgsig', 'gpgsig-sha256', 'mergetag'].includes(field(h)), `Остался заголовок подписи в ${oid}.`);
-        if (field(h) === 'parent') check(times.has(h.subarray(7).toString('ascii')) && times.get(h.subarray(7).toString('ascii'))! < expected, `Неверный порядок родителей ${oid}.`);
-      }
-      times.set(oid, expected);
-    });
+  attempt(() => {
+    for (const [index, oid, type, raw] of readMetadataBatches(repo, manifest.commitOrder))
+      attempt(() => {
+        check(type === 'commit', `Ожидался коммит ${oid}.`);
+        const a = stamp(raw, 'author');
+        const c = stamp(raw, 'committer');
+        const expected = manifest.policy.start + index * manifest.policy.interval;
+        if (manifest.policy.commitMessage !== undefined) check(parts(raw).message.equals(normalizeCommitMessage(manifest.policy.commitMessage)), `Неверное сообщение коммита ${oid}.`);
+        check(a.timestamp === expected && c.timestamp === expected && a.timezone === '+0000' && c.timezone === '+0000', `Неверные даты коммита ${oid}.`);
+        if (manifest.policy.identity) {
+          const who = `${manifest.policy.identity.name} <${manifest.policy.identity.email}>`;
+          check(a.identity === who && c.identity === who, `Неверная идентичность коммита ${oid}.`);
+        }
+        for (const h of parts(raw).headers) {
+          if (manifest.policy.commitMessage !== undefined) check(field(h) !== 'encoding', `Неверная кодировка сообщения коммита ${oid}.`);
+          check(!['gpgsig', 'gpgsig-sha256', 'mergetag'].includes(field(h)), `Остался заголовок подписи в ${oid}.`);
+          if (field(h) === 'parent') check(times.has(h.subarray(7).toString('ascii')) && times.get(h.subarray(7).toString('ascii'))! < expected, `Неверный порядок родителей ${oid}.`);
+        }
+        times.set(oid, expected);
+      });
+  });
   for (const object of objects.filter((o) => o.type === 'tag'))
     attempt(() => {
       const raw = repo.git(['cat-file', 'tag', object.oid]);
@@ -370,18 +373,31 @@ export function exportPlan(plan: Plan, destination: string) {
     ];
     const info = repo.text(['cat-file', '--batch-check=%(objectname) %(objecttype)'], original.join('\n') + '\n');
     const expectedObjects = new Set<string>();
-    // Copy only source tree and blob objects. Do not copy source commits or tags.
+    // Pack only explicitly enumerated content objects. Do not traverse source commits or tags.
+    const content: string[] = [];
     for (const line of info.split('\n').filter(Boolean)) {
       const [oid, type] = line.split(' ');
       if (type !== 'tree' && type !== 'blob') continue;
-      const data = repo.git(['cat-file', type, oid]);
-      if (output.text(['hash-object', '-w', '-t', type, '--stdin'], data) !== oid) throw new Error('Не совпал хеш дерева/файла при копировании.');
+      content.push(oid);
       expectedObjects.add(oid);
     }
-    for (const object of plan.objects) {
-      if (output.text(['hash-object', '-w', '-t', object.type, '--stdin'], object.data) !== object.oid) throw new Error('Не совпал хеш переписанного объекта.');
-      expectedObjects.add(object.oid);
+    const transfer = mkdtempSync(join(tmpdir(), 'rehistory-content-'));
+    let fd: number | undefined;
+    try {
+      const file = join(transfer, 'content.pack');
+      fd = openSync(file, 'wx', 0o600);
+      // No --revs: only these object IDs enter the pack. Disable reuse of unselected delta bases.
+      repo.git(['pack-objects', '--stdout', '--window=0', '--no-reuse-delta', '--no-reuse-object'], content.join('\n') + '\n', {}, fd);
+      closeSync(fd);
+      fd = undefined;
+      fd = openSync(file, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+      output.git(['index-pack', '--stdin', '--strict'], fd);
+    } finally {
+      if (fd !== undefined) closeSync(fd);
+      rmSync(transfer, { recursive: true, force: true });
     }
+    writeObjects(output, plan.objects);
+    for (const object of plan.objects) expectedObjects.add(object.oid);
     const refs = plan.selected.map((r) => ({ name: r.name, oid: plan.mapping.get(r.oid)! }));
     output.git(['update-ref', '--stdin'], ['start', ...refs.map((r) => `create ${r.name} ${r.oid}`), 'prepare', 'commit', ''].join('\n'));
     const manifest: Manifest = {

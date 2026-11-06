@@ -30,6 +30,7 @@ export function validateRemoteURL(value: string): string {
 }
 
 export function networkGit(repo: Repository, args: string[]): Buffer {
+  rejectNetworkConfiguration(configuration(repo));
   return repo.git(
     [
       '-c',
@@ -67,6 +68,12 @@ function configuration(repo: Repository): Configuration {
     values.set(key, [...(values.get(key) ?? []), value]);
   }
   return { values, digest: createHash('sha256').update(raw).digest('hex') };
+}
+
+function rejectNetworkConfiguration(config: Configuration): void {
+  const keys = [...config.values.keys()];
+  if (keys.some((key) => /^http\./i.test(key))) throw new Error('HTTP-настройки Git не поддерживаются для сетевых операций. Уберите http.* в отдельном клоне или используйте ручной push.');
+  if (keys.some((key) => /^url\..*\.(?:insteadof|pushinsteadof)$/i.test(key))) throw new Error('URL-подстановки Git не поддерживаются для push. Выполните отправку вручную.');
 }
 
 export function pushRemotes(repo: Repository, head: string): { names: string[]; initial: number } {
@@ -112,7 +119,7 @@ export function preparePush(rewrite: Plan, remote: string, connection: PushTrans
   if (!pushRemotes(repo, rewrite.head).names.includes(remote)) throw new Error('Remote не найден. Push отменён.');
   const config = configuration(repo);
   // Explicit destinations must not be silently redirected by a second URL rewrite.
-  if ([...config.values.keys()].some((key) => /^url\..*\.(?:insteadof|pushinsteadof)$/i.test(key))) throw new Error('URL-подстановки Git не поддерживаются для push. Выполните отправку вручную.');
+  rejectNetworkConfiguration(config);
   const urls = repo.text(['remote', 'get-url', '--push', '--all', '--', remote]).split('\n').filter(Boolean);
   if (urls.length !== 1) throw new Error('Для push нужен remote с одним URL отправки.');
   const url = validateRemoteURL(urls[0]);
