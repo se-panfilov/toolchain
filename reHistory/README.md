@@ -465,13 +465,8 @@ Read the warnings and object data in the report.
 
 ## Package preparation
 
-Use [NPX_RELEASE.md](NPX_RELEASE.md) for the complete manual publication procedure.
-
-The source package starts with the publication guard `private: true`.
 The package has no runtime dependencies.
 The npm bin name is `rehistory`.
-`private: true` prevents publication.
-Make sure that the npm package name is available before publication.
 
 1. Open the package directory.
 
