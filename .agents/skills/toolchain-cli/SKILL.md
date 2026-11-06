@@ -17,7 +17,7 @@ This skill does not grant permission to publish, push, or change real user data.
 4. Resolve material ambiguities before dependent work. Continue independent authorized work.
 5. Select checks that can demonstrate both the result and the relevant safety properties.
 
-For a new utility, use a separate directory under `packages/`.
+For a new utility, use a separate directory under `apps/`.
 Check the npm package name and CLI command against the naming rule in AGENTS.md.
 Inspect tsconfig.json and package scripts against the compilation requirements in AGENTS.md.
 Check the Vite build, separate TypeScript check, and Vitest test commands.
@@ -82,6 +82,10 @@ Metadata or included-file changes require a new archive and repeated artifact ch
 Leave publication and real network operations outside this workflow unless the user explicitly authorized them.
 
 ## Deliver
+
+Apply the SemVer policy in docs/PACKAGES.md once for each changed application.
+Use `npm version` with `--no-git-tag-version --ignore-scripts`, then check package and lockfile versions.
+Do not replace user version changes or repeat a completed iteration bump.
 
 Run Prettier on changed maintained files with the existing configuration.
 Run format:check and ESLint for the affected application. Fix errors before completion.
