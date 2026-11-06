@@ -5,10 +5,10 @@ import { join } from 'node:path';
 
 import { applyPlan, makePlan, normalizeCommitMessage, Repository, runGit } from '@reHistory/engine';
 import { exportPlan, manifestName, verifyExport } from '@reHistory/export';
-import { executePush, networkGit, preparePush, pushRemotes, type PushTransport, validateRemoteURL } from '@reHistory/remote';
+import { executePush, networkGit, preparePush, pushRemotes, type PushTransport, remoteCopy, updateTrackingRef, validateRemoteURL } from '@reHistory/remote';
 import { test } from 'vitest';
 
-const settings = { start: 1700000000, interval: 1 };
+const settings = { flow: 'dates' as const, start: 1700000000, interval: 1 };
 type Fixture = {
   root: string;
   repo: Repository;
@@ -63,7 +63,7 @@ function fixture(t: { onTestFinished: (fn: () => void) => void }, format = 'sha1
 for (const format of ['sha1', 'sha256']) {
   test(`${format}: сообщения заменяются только в выбранной истории; экспорт проверяет сообщение`, (t) => {
     const { repo, before, root } = fixture(t, format);
-    const plan = makePlan(repo, { ...settings, commitMessage: 'Общее сообщение', backupBranch: 'backup' });
+    const plan = makePlan(repo, { flow: 'messages', commitMessage: 'Общее сообщение', backupBranch: 'backup' });
     const target = join(root, 'export.git');
     exportPlan(plan, target);
     assert.equal(verifyExport(target).ok, true);
@@ -91,7 +91,7 @@ for (const format of ['sha1', 'sha256']) {
       ['push.pushOption', 'unexpected']
     ])
       repo.git(['config', key, value]);
-    const plan = makePlan(repo, { ...settings, backupBranch: 'backup', commitMessage: 'Uniform' });
+    const plan = makePlan(repo, { flow: 'messages', backupBranch: 'backup', commitMessage: 'Uniform' });
     applyPlan(plan);
     executePush(preparePush(plan, 'origin', connection), connection);
     assert.equal(stats().pushes, 1);
@@ -113,6 +113,35 @@ for (const format of ['sha1', 'sha256']) {
     assert.equal(existsSync(marker), false);
   });
 }
+
+test('после push remote-ветка обновляется и следующий флоу не блокируется', (t) => {
+  const { repo, connection, before } = fixture(t);
+  const main = before.find((ref) => ref.name === 'refs/heads/main')!.oid;
+  repo.git(['update-ref', 'refs/remotes/origin/main', main]);
+  assert.equal(remoteCopy(repo, main).unpushed, 0);
+  const plan = makePlan(repo, { flow: 'messages', commitMessage: 'Новое' });
+  applyPlan(plan);
+  const head = plan.mapping.get(main)!;
+  assert.equal(remoteCopy(repo, head).unpushed, 2);
+  const push = preparePush(plan, 'origin', connection);
+  executePush(push, connection);
+  assert.equal(updateTrackingRef(push), 'refs/remotes/origin/main');
+  assert.equal(repo.text(['rev-parse', 'refs/remotes/origin/main']), head);
+  assert.equal(remoteCopy(repo, head).unpushed, 0);
+});
+
+test('remote-ветка не меняется при нестандартном fetch refspec', (t) => {
+  const { repo, connection, before } = fixture(t);
+  const main = before.find((ref) => ref.name === 'refs/heads/main')!.oid;
+  repo.git(['update-ref', 'refs/remotes/origin/main', main]);
+  repo.git(['config', '--replace-all', 'remote.origin.fetch', '+refs/heads/main:refs/remotes/mirror/main']);
+  const plan = makePlan(repo, { flow: 'authors', identity: { name: 'Новый', email: 'new@example.org' } });
+  applyPlan(plan);
+  const push = preparePush(plan, 'origin', connection);
+  executePush(push, connection);
+  assert.equal(updateTrackingRef(push), undefined);
+  assert.equal(repo.text(['rev-parse', 'refs/remotes/origin/main']), main);
+});
 
 test('проверка сообщения отклоняет пустой текст, скрытые символы и слишком большие значения', () => {
   for (const value of ['', ' \n\t ', 'x\x1b[31m', 'x\0', 'x\r', 'x\u202e', 'я'.repeat(32769)]) assert.throws(() => normalizeCommitMessage(value), /Сообщение/);
@@ -220,7 +249,7 @@ test('новый UTF-8 текст не наследует старую коди�
   const encoded = Buffer.concat([original.subarray(0, split), Buffer.from('\nencoding ISO-8859-1\n\nold\n')]);
   const oid = repo.text(['hash-object', '-w', '-t', 'commit', '--stdin'], encoded);
   repo.git(['update-ref', 'HEAD', oid]);
-  const plan = makePlan(repo, { ...settings, commitMessage: 'Общее сообщение' });
+  const plan = makePlan(repo, { flow: 'messages', commitMessage: 'Общее сообщение' });
   applyPlan(plan);
   assert.equal(repo.text(['show', '-s', '--format=%B', 'HEAD']), 'Общее сообщение');
   assert(!repo.git(['cat-file', 'commit', 'HEAD']).includes(Buffer.from('\nencoding ')));

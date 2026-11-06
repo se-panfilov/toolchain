@@ -43,7 +43,7 @@ function snapshot(path: string): Map<string, Buffer> {
   walk(path);
   return result;
 }
-const settings = { start: 1700000000, interval: 2 };
+const settings = { flow: 'dates' as const, start: 1700000000, interval: 2 };
 
 for (const format of ['sha1', 'sha256'])
   test(`проверка экспорта ${format} не подменяет каталог родительским Git-репозиторием`, (t) => {
@@ -145,7 +145,14 @@ test('схема манифеста отвергает неверные типы
     { ...original, commitOrder: [...original.commitOrder, original.commitOrder[0]] },
     { ...original, policy: { ...original.policy, identity: { name: 'Test', email: 'test@example.org', sourcePath: '/private' } } },
     { ...original, policy: { ...original.policy, sourcePath: '/private' } },
-    { ...original, policy: { ...original.policy, identity: null } }
+    { ...original, policy: { ...original.policy, identity: null } },
+    { ...original, policy: { ...original.policy, flow: 'other' } },
+    { ...original, policy: { ...original.policy, flow: 'authors' } },
+    { ...original, policy: { ...original.policy, flow: 'messages', commitMessage: 'x' } },
+    { ...original, policy: { flow: 'authors', identity: { name: 'Test', email: 'test@example.org' }, commitMessage: 'x' } },
+    { ...original, policy: { flow: 'messages', commitMessage: '\u001b[31m' } },
+    { ...original, version: 3 },
+    { ...original, version: 1 }
   ];
   for (const value of cases) {
     writeFileSync(file, JSON.stringify(value));
@@ -223,10 +230,11 @@ test('нормализуются даты и tagger вложенных тего�
   const original = repo.git(['cat-file', 'tag', 'annotated']);
   const preserved = makePlan(repo, { ...settings, tagPolicy: 'preserve' });
   assert.deepEqual(stamp(preserved.objects.find((o) => o.oid === preserved.mapping.get(repo.text(['rev-parse', 'annotated'])))!.data, 'tagger'), stamp(original, 'tagger'));
-  applyPlan(makePlan(repo, { ...settings, tagIdentity: { name: 'Новый', email: 'new@example.org' } }));
+  const originals = new Map(['annotated', 'nested'].map((name) => [name, stamp(repo.git(['cat-file', 'tag', name]), 'tagger')]));
+  applyPlan(makePlan(repo, settings));
   for (const name of ['annotated', 'nested']) {
     const tagger = stamp(repo.git(['cat-file', 'tag', name]), 'tagger');
-    assert.deepEqual(tagger, { identity: 'Новый <new@example.org>', timestamp: settings.start, timezone: '+0000' });
+    assert.deepEqual(tagger, { identity: originals.get(name)!.identity, timestamp: settings.start, timezone: '+0000' });
   }
 });
 

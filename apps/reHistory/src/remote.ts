@@ -186,3 +186,32 @@ export function executePush(plan: PushPlan, connection: PushTransport = transpor
   ];
   connection.push(plan.rewrite.repo, plan.url, args);
 }
+
+export type RemoteCopy = { tracking: number; unpushed: number };
+/** Count current-branch commits that no remote-tracking ref contains. Read only local refs. Never fetch. */
+export function remoteCopy(repo: Repository, headOid: string): RemoteCopy {
+  const tracking = repo.refs().filter((ref) => ref.name.startsWith('refs/remotes/') && !ref.symbolic && ref.oid).length;
+  const unpushed = Number(repo.text(['rev-list', '--count', headOid, ...(tracking ? ['--not', '--remotes'] : [])]));
+  if (!Number.isSafeInteger(unpushed) || unpushed < 0) throw new Error('Не удалось сравнить ветку с remote-ссылками.');
+  return { tracking, unpushed };
+}
+
+/**
+ * Record a confirmed push in the remote-tracking branch, as `git push <remote>` does.
+ * Only the default fetch mapping is supported. Return undefined when the mapping is different.
+ */
+export function updateTrackingRef(plan: PushPlan): string | undefined {
+  const { repo, head } = plan.rewrite;
+  const branch = plan.refs.find((ref) => ref.local === head);
+  if (!branch) return undefined;
+  const fetch = configuration(repo).values.get(`remote.${plan.remote}.fetch`) ?? [];
+  if (!fetch.some((value) => value === `+refs/heads/*:refs/remotes/${plan.remote}/*` || value === `refs/heads/*:refs/remotes/${plan.remote}/*`)) return undefined;
+  const tracking = `refs/remotes/${plan.remote}/${branch.destination.slice(11)}`;
+  repo.git(['check-ref-format', tracking]);
+  const current = repo.refs().find((ref) => ref.name === tracking);
+  if (current?.symbolic) return undefined;
+  // A missing ref must stay missing until this create. An existing ref must keep its value until this update.
+  const expected = current?.oid ?? '0'.repeat(branch.oid.length);
+  repo.git(['update-ref', '--no-deref', '-m', 'reHistory: push', tracking, branch.oid, expected]);
+  return tracking;
+}

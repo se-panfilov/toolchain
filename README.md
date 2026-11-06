@@ -78,7 +78,7 @@ Do not add a lockfile for an individual application.
 The documentation and code comments use English.
 The CLI interface uses Russian.
 
-- [reHistory](apps/reHistory/README.md) changes Git dates and makes a verifiable export.
+- [reHistory](apps/reHistory/README.md) changes Git commit dates, authors, or messages, one flow per run, and makes a verifiable export.
 - [Agent instructions](AGENTS.md) define development and authorization rules.
 - [Workspace guide](docs/WORKSPACES.md) describes shared configuration and adding an application.
 - [Package requirements](docs/PACKAGES.md) define workspace layout, versions, TypeScript, and distribution.
