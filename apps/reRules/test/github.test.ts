@@ -1,5 +1,5 @@
-import { ApiError, classify, GitHubClient, repoPath } from '@reRules/github';
-import { describe, expect, test } from 'vitest';
+import { ApiError, classify, fetchTransport, GitHubClient, repoPath } from '@reRules/github';
+import { describe, expect, test, vi } from 'vitest';
 
 import { FakeApi } from './helpers.js';
 
@@ -50,6 +50,100 @@ describe('write guard', () => {
 });
 
 describe('requests', () => {
+  test('an oversized declared body is cancelled before it is read', async () => {
+    let reads = 0;
+    let cancelled = false;
+    const stream = new ReadableStream<Uint8Array>(
+      {
+        pull(controller) {
+          reads++;
+          controller.close();
+        },
+        cancel() {
+          cancelled = true;
+        }
+      },
+      { highWaterMark: 0 }
+    );
+    const response = new Response(stream, { headers: { 'content-length': String(17 * 1024 * 1024) } });
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(response);
+    try {
+      const transport = await fetchTransport({ method: 'GET', url: 'https://api.github.com/user', headers: {} });
+      await expect(transport.text()).rejects.toMatchObject({ kind: 'invalid-response' });
+      expect(reads).toBe(0);
+      expect(cancelled).toBe(true);
+      expect(stream.locked).toBe(false);
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
+  test('an oversized streamed response stops reading and cancels the body', async () => {
+    let reads = 0;
+    let cancelled = false;
+    const stream = new ReadableStream<Uint8Array>(
+      {
+        pull(controller) {
+          reads++;
+          if (reads <= 20) controller.enqueue(new Uint8Array(1024 * 1024));
+          else controller.close();
+        },
+        cancel() {
+          cancelled = true;
+        }
+      },
+      { highWaterMark: 0 }
+    );
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(stream));
+    try {
+      const response = await fetchTransport({ method: 'GET', url: 'https://api.github.com/user', headers: {} });
+      await expect(response.text().then(() => 'accepted')).rejects.toMatchObject({ kind: 'invalid-response' });
+      expect(reads).toBeLessThanOrEqual(17);
+      expect(cancelled).toBe(true);
+      expect(stream.locked).toBe(false);
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
+  test('the response limit counts UTF-8 bytes rather than string characters', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('я'.repeat(9 * 1024 * 1024)));
+    try {
+      const response = await fetchTransport({ method: 'GET', url: 'https://api.github.com/user', headers: {} });
+      await expect(response.text().then(() => 'accepted')).rejects.toMatchObject({ kind: 'invalid-response' });
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
+  test('streamed JSON is decoded correctly across UTF-8 chunk boundaries', async () => {
+    const bytes = Buffer.from('{"login":"я"}', 'utf8');
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const byte of bytes) controller.enqueue(Uint8Array.of(byte));
+        controller.close();
+      }
+    });
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(stream));
+    try {
+      const client = new GitHubClient({ token: 'test-token-0123456789abcdef' });
+      expect(await client.get('/user')).toEqual({ login: 'я' });
+      expect(stream.locked).toBe(false);
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
+  test('a body at the byte limit is accepted', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('a'.repeat(16 * 1024 * 1024)));
+    try {
+      const response = await fetchTransport({ method: 'GET', url: 'https://api.github.com/user', headers: {} });
+      expect((await response.text()).length).toBe(16 * 1024 * 1024);
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
   test('pagination follows next links on api.github.com only', async () => {
     const api = new FakeApi()
       .on('GET', '/repos/me/template/labels', (request) =>

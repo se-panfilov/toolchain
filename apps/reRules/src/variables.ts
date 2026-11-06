@@ -2,7 +2,7 @@ import { askConflict, askTransfer, pick } from '@reRules/flow';
 import { type GitHubClient, repoPath } from '@reRules/github';
 import { category, type Context, type PlanItem, Stage } from '@reRules/plan';
 import type { RepoInfo } from '@reRules/repo';
-import { attempt, type Read, rec, str } from '@reRules/state';
+import { attempt, missing, type Read, rec, str } from '@reRules/state';
 import { clip } from '@reRules/ui';
 
 const title = 'Переменные Actions';
@@ -46,8 +46,13 @@ async function readAll(client: GitHubClient, repo: RepoInfo, failed: string[]): 
 export async function discoverVariables(ctx: Context): Promise<VariablesData> {
   const failedScopes: string[] = [];
   const source = await attempt(() => readAll(ctx.client, ctx.source, failedScopes));
-  const target = await attempt(() => readAll(ctx.client, ctx.target, failedScopes));
-  return { source, target, failedScopes };
+  const targetFailures: string[] = [];
+  const target = await attempt(() => readAll(ctx.client, ctx.target, targetFailures));
+  return {
+    source,
+    target: target.ok && targetFailures.length ? missing('unknown', targetFailures.join('; ')) : target,
+    failedScopes: [...failedScopes, ...targetFailures]
+  };
 }
 
 export function variableLabel(variable: Pick<Variable, 'scope' | 'name'>): string {

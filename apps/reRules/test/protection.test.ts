@@ -22,6 +22,27 @@ const targetRaw = {
 };
 
 describe('branch protection model', () => {
+  test.each([null, -1, 456])('merge preserves the target check app when the source app is %s', (appId) => {
+    const current = { ...unprotected, checks: { strict: true, checks: [{ context: 'ci', app_id: 123 }] } };
+    const source = { ...unprotected, checks: { strict: false, checks: [{ context: 'ci', app_id: appId }] } };
+    const merged = combine(current, source, new Set(['checks']), 'merge');
+    expect(protectionBody(merged, false).required_status_checks).toEqual({ strict: true, checks: [{ context: 'ci', app_id: 123 }] });
+  });
+
+  test.each([null, -1, 456])('replacing a check app with %s requires a weakening warning', (appId) => {
+    const current = { ...unprotected, checks: { strict: true, checks: [{ context: 'ci', app_id: 123 }] } };
+    const next = { ...unprotected, checks: { strict: true, checks: [{ context: 'ci', app_id: appId }] } };
+    expect(weakenedFields(current, next)).toContain('checks');
+  });
+
+  test('merge can bind an unbound target check to the source app', () => {
+    const current = { ...unprotected, checks: { strict: false, checks: [{ context: 'ci', app_id: -1 }] } };
+    const source = { ...unprotected, checks: { strict: true, checks: [{ context: 'ci', app_id: 123 }] } };
+    const merged = combine(current, source, new Set(['checks']), 'merge');
+    expect(merged.checks).toEqual({ strict: true, checks: [{ context: 'ci', app_id: 123 }] });
+    expect(weakenedFields(current, merged)).toEqual([]);
+  });
+
   test('the API response is normalized without invented values', () => {
     const value = normalizeProtection(sourceRaw);
     expect(value.checks).toEqual({ strict: true, checks: [{ context: 'ci', app_id: null }] });
