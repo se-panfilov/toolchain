@@ -4,6 +4,8 @@ import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { devNull } from 'node:os';
 
+export const defaultBackupBranch = 'rehistory-backup/original';
+
 export type Ref = { name: string; oid: string; symbolic: string };
 export type Options = { interval: number; start: number; identity?: { name: string; email: string }; backupBranch?: string; tagPolicy?: 'normalize' | 'preserve'; tagIdentity?: { name: string; email: string } };
 export type ObjectData = { type: 'commit' | 'tag'; data: Buffer; oid: string };
@@ -178,7 +180,7 @@ export function applyPlan(plan: Plan): { recovery: string; backupPrefix?: string
     writeFileSync(fd, `${process.pid}\n`);
     const snapshot = repo.inspect();
     if (JSON.stringify(snapshot.refs) !== JSON.stringify(plan.refs) || snapshot.head !== plan.head || snapshot.headOid !== plan.headOid) throw new Error('Репозиторий изменился после построения плана. Запустите скрипт заново.');
-    const id = `${new Date().toISOString().replace(/[:.]/g, '-')}-${randomUUID()}`;
+    const id = randomUUID();
     const backupPrefix = options.backupBranch ? `refs/rehistory/backups/${id}` : undefined;
     // Эксклюзивное создание исключает перезапись, включая цели символических ссылок.
     recovery = join(repo.common, `rehistory-recovery-${id}.json`);

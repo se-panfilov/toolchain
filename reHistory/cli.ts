@@ -2,7 +2,7 @@
 import { stdin, stdout } from 'node:process';
 import { pathToFileURL } from 'node:url';
 import { realpathSync } from 'node:fs';
-import { Repository, makePlan, applyPlan, validateIdentity } from './engine.ts';
+import { Repository, makePlan, applyPlan, validateIdentity, defaultBackupBranch } from './engine.ts';
 import { auditRepository, auditText } from './audit.ts';
 import { exportDestination, exportPlan, verifyExport } from './export.ts';
 import { runDemo, validateDemoURL } from './demo.ts';
@@ -49,6 +49,31 @@ export function parseDate(value: string): number {
   const result = Date.parse(value) / 1000;
   if (!Number.isSafeInteger(result) || result < 0) throw new Error('Дата должна быть не раньше 1970 года.');
   return result;
+}
+
+/** Отдельные дата и время; без суффикса время относится к системному поясу. */
+export function parseStart(date: string, time: string): number {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('Дата: ГГГГ-ММ-ДД.');
+  // Календарь проверяем независимо от местного перехода через полночь.
+  parseDate(`${date}T00:00:00Z`);
+  const match = /^(\d{2}):(\d{2})(?::(\d{2}))?(Z|[+-]\d{2}:\d{2})?$/.exec(time);
+  if (!match) throw new Error('Время: ЧЧ:ММ[:СС], при необходимости с +ЧЧ:ММ или Z.');
+  const [, hour, minute, seconds = '00', zone] = match;
+  const [h, min, sec] = [hour, minute, seconds].map(Number);
+  if (h > 23 || min > 59 || sec > 59) throw new Error('Некорректное время.');
+  if (zone) {
+    const timestamp = parseDate(`${date}T${hour}:${minute}:${seconds}${zone}`);
+    if (timestamp > 253402300799) throw new Error('Дата и время должны находиться в пределах 1970–9999 годов.');
+    return timestamp;
+  }
+  const [y, m, d] = date.split('-').map(Number);
+  const local = new Date(0);
+  local.setFullYear(y, m - 1, d);
+  local.setHours(h, min, sec, 0);
+  if (local.getFullYear() !== y || local.getMonth() !== m - 1 || local.getDate() !== d || local.getHours() !== h || local.getMinutes() !== min || local.getSeconds() !== sec) throw new Error('В этом часовом поясе такого времени нет. Измените время или укажите смещение.');
+  const timestamp = local.getTime() / 1000;
+  if (!Number.isSafeInteger(timestamp) || timestamp < 0 || timestamp > 253402300799) throw new Error('Дата и время должны находиться в пределах 1970–9999 годов.');
+  return timestamp;
 }
 
 export function parseArguments(args: string[]) {
@@ -129,14 +154,13 @@ async function main(): Promise<void> {
     let backupBranch: string | undefined;
     if (!mode.destination) {
       if (await choose('Создать бекап?', true)) {
-        const fallback = `rehistory-backup/${new Date().toISOString().replace(/[:.]/g, '-')}`;
         for (;;) {
-          const candidate = await ask('Ветка бекапа', fallback);
-          try {
-            repo.git(['check-ref-format', `refs/heads/${candidate}`]);
-            if (state.refs.some(r => r.name === `refs/heads/${candidate}`)) throw new Error('Такая ветка уже существует.');
-            backupBranch = candidate; break;
-          } catch (error) { print(error instanceof Error ? error.message : error); }
+          const candidate = await ask('Ветка бекапа', defaultBackupBranch);
+          try { repo.git(['check-ref-format', `refs/heads/${candidate}`]); }
+          catch (error) { print(error instanceof Error ? error.message : error); continue; }
+          // Занятое имя — остановка, без подбора суффиксов и без перезаписи.
+          if (repo.refs().some(r => r.name === `refs/heads/${candidate}`)) throw new Error('Бекап-ветка уже существует.');
+          backupBranch = candidate; break;
         }
       } else print('Без бекапа восстановление не гарантируется.', 'warning');
     } else print(`Экспорт → ${mode.destination}`, 'muted');
@@ -149,13 +173,19 @@ async function main(): Promise<void> {
     }
     const today = new Date();
     const dateDefault = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    let date: string;
+    for (;;) {
+      date = await ask('Дата первого коммита', dateDefault);
+      try {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('Дата: ГГГГ-ММ-ДД.');
+        parseDate(`${date}T00:00:00Z`); break;
+      } catch (error) { print(error instanceof Error ? error.message : error); }
+    }
     let start: number;
     for (;;) {
-      try { start = parseDate(await ask('Дата первого коммита', dateDefault)); break; }
-      catch (error) {
-        if (error instanceof PromptCancelled) throw error;
-        print(error instanceof Error ? error.message : error);
-      }
+      const time = await ask('Время первого коммита', '00:00:00');
+      try { start = parseStart(date, time); break; }
+      catch (error) { print(error instanceof Error ? error.message : error); }
     }
     const identity = await choose('Заменить авторов и коммитеров?', false) ? await newIdentity() : undefined;
     const tagPolicy = await choose('Нормализовать даты тегов?', true) ? 'normalize' : 'preserve';
