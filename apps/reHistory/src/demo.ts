@@ -4,9 +4,9 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 
 import { auditRepository, auditText } from '@reHistory/audit';
-import { applyPlan,makePlan, Repository, runGit } from '@reHistory/engine';
+import { applyPlan, makePlan, Repository, runGit } from '@reHistory/engine';
 import { exportPlan } from '@reHistory/export';
-import { networkGit,validateRemoteURL } from '@reHistory/remote';
+import { networkGit, validateRemoteURL } from '@reHistory/remote';
 
 /** Demo still requires a URL before any files or network calls. */
 export function validateDemoURL(value: string | undefined): string {

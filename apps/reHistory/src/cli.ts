@@ -6,10 +6,10 @@ import { pathToFileURL } from 'node:url';
 
 import { auditRepository, auditText } from '@reHistory/audit';
 import { runDemo, validateDemoURL } from '@reHistory/demo';
-import { applyPlan, defaultBackupBranch, makePlan, normalizeCommitMessage, type Plan,Repository, terminalJSON, validateIdentity } from '@reHistory/engine';
+import { applyPlan, defaultBackupBranch, makePlan, normalizeCommitMessage, type Plan, Repository, terminalJSON, validateIdentity } from '@reHistory/engine';
 import { exportDestination, exportPlan, verifyExport } from '@reHistory/export';
 import { PromptCancelled, TerminalPrompts, terminalStyle } from '@reHistory/prompts';
-import { executePush,preparePush, pushRemotes } from '@reHistory/remote';
+import { executePush, preparePush, pushRemotes } from '@reHistory/remote';
 
 // Git metadata and errors can contain terminal control characters.
 function safe(value: unknown): string {

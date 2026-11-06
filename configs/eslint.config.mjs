@@ -23,7 +23,11 @@ export default defineConfig([
         'error',
         { selector: "MethodDefinition[kind='set']", message: 'Use an explicit method instead of a property setter.' },
         { selector: "Property[kind='set']", message: 'Use an explicit method instead of a property setter.' },
-        { selector: "Identifier[name='arguments']", message: 'Use explicit parameters or rest parameters.' },
+        {
+          selector:
+            "Identifier[name='arguments']:not(MemberExpression[computed=false] > Identifier.property):not(Property[computed=false] > Identifier.key):not(MethodDefinition[computed=false] > Identifier.key):not(TSPropertySignature > Identifier.key)",
+          message: 'Use explicit parameters or rest parameters.'
+        },
         {
           selector: "CallExpression[arguments.length>2][callee.type='MemberExpression'][callee.object.name='Object'][callee.property.name='assign'][callee.computed=false]",
           message: 'Use at most two Object.assign arguments. Split the changes into explicit steps.'
