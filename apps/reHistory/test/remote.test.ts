@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 import { applyPlan, makePlan, normalizeCommitMessage, Repository, runGit } from '@reHistory/engine';
 import { exportPlan, manifestName, verifyExport } from '@reHistory/export';
-import { executePush, networkGit, preparePush, pushRemotes, type PushTransport, remoteCopy, updateTrackingRef, validateRemoteURL } from '@reHistory/remote';
+import { executePush, networkGit, preparePush, pushRemotes, type PushTransport, remoteCopy, sharedTags, updateTrackingRef, validateRemoteURL } from '@reHistory/remote';
 import { test } from 'vitest';
 
 const settings = { flow: 'dates' as const, start: 1700000000, interval: 1 };
@@ -61,24 +61,24 @@ function fixture(t: { onTestFinished: (fn: () => void) => void }, format = 'sha1
 }
 
 for (const format of ['sha1', 'sha256']) {
-  test(`${format}: сообщения заменяются только в выбранной истории; экспорт проверяет сообщение`, (t) => {
+  test(`${format}: messages change only in the selected history; export verifies the message`, (t) => {
     const { repo, before, root } = fixture(t, format);
-    const plan = makePlan(repo, { flow: 'messages', commitMessage: 'Общее сообщение', backupBranch: 'backup' });
+    const plan = makePlan(repo, { flow: 'messages', commitMessage: 'Shared message', backupBranch: 'backup' });
     const target = join(root, 'export.git');
     exportPlan(plan, target);
     assert.equal(verifyExport(target).ok, true);
     const manifest = JSON.parse(readFileSync(join(target, manifestName), 'utf8'));
-    manifest.policy.commitMessage = 'Подмена';
+    manifest.policy.commitMessage = 'Substitute';
     writeFileSync(join(target, manifestName), JSON.stringify(manifest));
     assert(verifyExport(target).errors.some((error) => error.includes('сообщение коммита')));
     applyPlan(plan);
-    for (const oid of plan.commitOrder) assert.equal(repo.text(['show', '-s', '--format=%B', oid]), 'Общее сообщение');
+    for (const oid of plan.commitOrder) assert.equal(repo.text(['show', '-s', '--format=%B', oid]), 'Shared message');
     assert.equal(repo.text(['show', '-s', '--format=%B', 'side']), 'side');
     assert.equal(repo.text(['for-each-ref', '--format=%(contents)', 'refs/tags/release']), 'tag message');
     for (const ref of before.filter((ref) => ref.name.includes('side'))) assert.equal(repo.text(['rev-parse', ref.name]), ref.oid);
   });
 
-  test(`${format}: атомарный push меняет только выбранную ветку и её теги`, (t) => {
+  test(`${format}: atomic push changes only the selected branch and its tags`, (t) => {
     const { repo, before, server, connection, stats, git, root } = fixture(t, format);
     const marker = join(root, 'hook-ran');
     mkdirSync(join(repo.common, 'hooks'));
@@ -114,12 +114,12 @@ for (const format of ['sha1', 'sha256']) {
   });
 }
 
-test('после push remote-ветка обновляется и следующий флоу не блокируется', (t) => {
+test('after push the remote-tracking branch is updated and the next flow is not blocked', (t) => {
   const { repo, connection, before } = fixture(t);
   const main = before.find((ref) => ref.name === 'refs/heads/main')!.oid;
   repo.git(['update-ref', 'refs/remotes/origin/main', main]);
   assert.equal(remoteCopy(repo, main).unpushed, 0);
-  const plan = makePlan(repo, { flow: 'messages', commitMessage: 'Новое' });
+  const plan = makePlan(repo, { flow: 'messages', commitMessage: 'New' });
   applyPlan(plan);
   const head = plan.mapping.get(main)!;
   assert.equal(remoteCopy(repo, head).unpushed, 2);
@@ -130,12 +130,12 @@ test('после push remote-ветка обновляется и следующ
   assert.equal(remoteCopy(repo, head).unpushed, 0);
 });
 
-test('remote-ветка не меняется при нестандартном fetch refspec', (t) => {
+test('remote-tracking branch stays unchanged with a nonstandard fetch refspec', (t) => {
   const { repo, connection, before } = fixture(t);
   const main = before.find((ref) => ref.name === 'refs/heads/main')!.oid;
   repo.git(['update-ref', 'refs/remotes/origin/main', main]);
   repo.git(['config', '--replace-all', 'remote.origin.fetch', '+refs/heads/main:refs/remotes/mirror/main']);
-  const plan = makePlan(repo, { flow: 'authors', identity: { name: 'Новый', email: 'new@example.org' } });
+  const plan = makePlan(repo, { flow: 'authors', identity: { name: 'New', email: 'new@example.org' } });
   applyPlan(plan);
   const push = preparePush(plan, 'origin', connection);
   executePush(push, connection);
@@ -143,13 +143,13 @@ test('remote-ветка не меняется при нестандартном 
   assert.equal(repo.text(['rev-parse', 'refs/remotes/origin/main']), main);
 });
 
-test('проверка сообщения отклоняет пустой текст, скрытые символы и слишком большие значения', () => {
-  for (const value of ['', ' \n\t ', 'x\x1b[31m', 'x\0', 'x\r', 'x\u202e', 'я'.repeat(32769)]) assert.throws(() => normalizeCommitMessage(value), /Сообщение/);
-  assert.equal(normalizeCommitMessage('Привет').toString(), 'Привет\n');
+test('message validation rejects empty text, hidden characters, and values that are too large', () => {
+  for (const value of ['', ' \n\t ', 'x\x1b[31m', 'x\0', 'x\r', 'x\u202e', 'é'.repeat(32769)]) assert.throws(() => normalizeCommitMessage(value), /Сообщение/);
+  assert.equal(normalizeCommitMessage('Grüße').toString(), 'Grüße\n');
   assert.equal(normalizeCommitMessage('first\nsecond\n').toString(), 'first\nsecond\n');
 });
 
-test('lease защищает от гонки сервера; обновления тегов и ветки не применяются частично', (t) => {
+test('leases protect against a server race; tag and branch updates are not applied partially', (t) => {
   const { repo, connection, git, server, before } = fixture(t);
   const plan = makePlan(repo, settings);
   applyPlan(plan);
@@ -161,7 +161,7 @@ test('lease защищает от гонки сервера; обновлени�
   assert.equal(git(['--git-dir', server, 'rev-parse', 'refs/tags/release']).toString().trim(), before.find((ref) => ref.name === 'refs/tags/release')!.oid);
 });
 
-test('изменённый сервер и отключённый atomic останавливают push без fallback', (t) => {
+test('a changed server and disabled atomic push stop the push without fallback', (t) => {
   const { repo, connection, git, server, before, stats } = fixture(t);
   const plan = makePlan(repo, settings);
   applyPlan(plan);
@@ -177,7 +177,7 @@ test('изменённый сервер и отключённый atomic ост�
   assert.equal(git(['--git-dir', server, 'rev-parse', 'main']).toString().trim(), plan.headOid);
 });
 
-test('локальная гонка и смена config после проверки не допускают отправку', (t) => {
+test('a local race and a config change after the check prevent the push', (t) => {
   const { repo, connection, stats } = fixture(t);
   const plan = makePlan(repo, settings);
   applyPlan(plan);
@@ -190,7 +190,7 @@ test('локальная гонка и смена config после провер
   assert.equal(stats().pushes, 0);
 });
 
-test('upstream выбирает ветку назначения; известный старый предок допустим', (t) => {
+test('upstream selects the destination branch; a known old ancestor is accepted', (t) => {
   const { repo, connection, git, server, first } = fixture(t);
   repo.git(['config', 'branch.main.remote', 'origin']);
   repo.git(['config', 'branch.main.merge', 'refs/heads/trunk']);
@@ -205,7 +205,7 @@ test('upstream выбирает ветку назначения; известн�
   assert.equal(git(['--git-dir', server, 'rev-parse', 'main']).toString().trim(), plan.headOid);
 });
 
-test('опасные, неоднозначные и подменённые URL отклоняются до сетевого запроса', (t) => {
+test('dangerous, ambiguous, and substituted URLs are rejected before a network request', (t) => {
   const { repo, connection, stats } = fixture(t);
   const plan = makePlan(repo, settings);
   applyPlan(plan);
@@ -232,7 +232,7 @@ test('опасные, неоднозначные и подменённые URL �
   assert.equal(stats().reads, 0);
 });
 
-test('неверные и повторные строки сервера не допускают отправку', (t) => {
+test('invalid and repeated server lines prevent the push', (t) => {
   const { repo, connection, stats } = fixture(t);
   const plan = makePlan(repo, settings);
   applyPlan(plan);
@@ -242,20 +242,20 @@ test('неверные и повторные строки сервера не д
   assert.equal(stats().pushes, 0);
 });
 
-test('новый UTF-8 текст не наследует старую кодировку сообщения', (t) => {
+test('new UTF-8 text does not inherit the old message encoding', (t) => {
   const { repo } = fixture(t);
   const original = repo.git(['cat-file', 'commit', 'HEAD']);
   const split = original.indexOf(Buffer.from('\n\n'));
   const encoded = Buffer.concat([original.subarray(0, split), Buffer.from('\nencoding ISO-8859-1\n\nold\n')]);
   const oid = repo.text(['hash-object', '-w', '-t', 'commit', '--stdin'], encoded);
   repo.git(['update-ref', 'HEAD', oid]);
-  const plan = makePlan(repo, { flow: 'messages', commitMessage: 'Общее сообщение' });
+  const plan = makePlan(repo, { flow: 'messages', commitMessage: 'Shared message: café ✓' });
   applyPlan(plan);
-  assert.equal(repo.text(['show', '-s', '--format=%B', 'HEAD']), 'Общее сообщение');
+  assert.equal(repo.text(['show', '-s', '--format=%B', 'HEAD']), 'Shared message: café ✓');
   assert(!repo.git(['cat-file', 'commit', 'HEAD']).includes(Buffer.from('\nencoding ')));
 });
 
-test('гонка тега не позволяет частично обновить ветку; чужой тег отклоняется до push', (t) => {
+test('a tag race cannot partially update the branch; an unknown tag is rejected before push', (t) => {
   const { repo, connection, git, server, before } = fixture(t);
   const plan = makePlan(repo, settings);
   applyPlan(plan);
@@ -267,19 +267,66 @@ test('гонка тега не позволяет частично обнови�
   assert.equal(git(['--git-dir', server, 'rev-parse', 'main']).toString().trim(), plan.headOid);
 });
 
-test('пустой сервер использует пустые lease и получает только выбранную историю', (t) => {
+test('an empty server uses empty leases and receives only the selected history', (t) => {
   const { repo, connection, git, server, before } = fixture(t);
   for (const ref of before) git(['--git-dir', server, 'update-ref', '-d', ref.name]);
   const plan = makePlan(repo, settings);
   applyPlan(plan);
   const push = preparePush(plan, 'origin', connection);
   assert(push.refs.every((ref) => ref.expected === ''));
-  executePush(push, connection);
+  assert.deepEqual(
+    push.optional.map((ref) => [ref.destination, ref.reasons]),
+    [['refs/tags/release', ['new']]]
+  );
+  executePush(push, connection, true);
   const names = git(['--git-dir', server, 'for-each-ref', '--format=%(refname)']).toString().trim().split('\n');
   assert.deepEqual(names.sort(), plan.selected.map((ref) => ref.name).sort());
 });
 
-test('сетевой адаптер отключает helpers, askpass, redirects и произвольные SSH-команды', () => {
+test('new local tags are not sent without a separate choice', (t) => {
+  const { repo, connection, git, server, stats } = fixture(t);
+  repo.git(['tag', 'local-only']);
+  const plan = makePlan(repo, settings);
+  applyPlan(plan);
+  const push = preparePush(plan, 'origin', connection);
+  assert.deepEqual(
+    push.optional.map((ref) => [ref.destination, ref.reasons]),
+    [['refs/tags/local-only', ['new']]]
+  );
+  executePush(push, connection);
+  assert(!stats().lastArgs.some((arg) => arg.includes('local-only')));
+  assert.equal(git(['--git-dir', server, 'for-each-ref', 'refs/tags/local-only']).toString(), '');
+  assert.equal(git(['--git-dir', server, 'rev-parse', 'refs/tags/release^{}']).toString().trim(), repo.text(['rev-parse', 'refs/tags/release^{}']));
+});
+
+test('tags of other branches move on the server only after a separate choice', (t) => {
+  const { repo, connection, git, server } = fixture(t);
+  repo.git(['checkout', '-q', '-b', 'feature']);
+  repo.git(['commit', '-q', '--allow-empty', '-m', 'feature']);
+  git(['push', server, 'feature']);
+  const release = git(['--git-dir', server, 'rev-parse', 'refs/tags/release']).toString().trim();
+  const plan = makePlan(repo, { ...settings, backupBranch: 'backup' });
+  applyPlan(plan);
+  assert.deepEqual(sharedTags(plan), new Set(['refs/tags/release']));
+  const push = preparePush(plan, 'origin', connection);
+  assert.deepEqual(
+    push.refs.map((ref) => ref.destination),
+    ['refs/heads/feature']
+  );
+  assert.deepEqual(
+    push.optional.map((ref) => [ref.destination, ref.reasons]),
+    [['refs/tags/release', ['shared']]]
+  );
+  executePush(push, connection);
+  assert.equal(git(['--git-dir', server, 'rev-parse', 'refs/tags/release']).toString().trim(), release);
+  assert.equal(git(['--git-dir', server, 'rev-parse', 'feature']).toString().trim(), plan.mapping.get(plan.headOid));
+  // The release tag stays in the history of main on the server.
+  git(['--git-dir', server, 'merge-base', '--is-ancestor', 'refs/tags/release^{}', 'main']);
+  executePush(preparePush(plan, 'origin', connection), connection, true);
+  assert.equal(git(['--git-dir', server, 'rev-parse', 'refs/tags/release']).toString().trim(), plan.mapping.get(plan.selected.find((ref) => ref.name === 'refs/tags/release')!.oid));
+});
+
+test('the network adapter disables helpers, askpass, redirects, and custom SSH commands', () => {
   let observed: { args: string[]; env: NodeJS.ProcessEnv } | undefined;
   const repo = {
     git: (args: string[], _input: unknown, env: NodeJS.ProcessEnv) => {

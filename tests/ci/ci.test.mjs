@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -32,7 +32,8 @@ function archive(t, files, extra = () => {}) {
     writeFileSync(join(base, 'package', path), content);
   }
   extra(join(base, 'package'));
-  const result = spawnSync('tar', ['-czf', join(base, 'out.tgz'), '-C', base, 'package'], { encoding: 'utf8' });
+  // macOS tar adds AppleDouble `._*` entries unless COPYFILE_DISABLE is set. The inspection correctly rejects them.
+  const result = spawnSync('tar', ['-czf', join(base, 'out.tgz'), '-C', base, 'package'], { encoding: 'utf8', env: { ...process.env, COPYFILE_DISABLE: '1' } });
   assert.equal(result.status, 0, result.stderr);
   return readFileSync(join(base, 'out.tgz'));
 }
@@ -62,6 +63,13 @@ test('a missing, extra, or reordered application choice is reported', (t) => {
   assert.match(problems[2], /в этом порядке/);
 });
 
+test('release publication waits for a successful secret scan', () => {
+  const release = readFileSync(join(root, '.github/workflows/release.yml'), 'utf8');
+  assert.match(release, /\n {2}secrets:\n(?: {4}.*\n)*? {4}uses: \.\/\.github\/workflows\/secrets\.yml\n/);
+  for (const job of ['publish-dry-run', 'publish']) assert.match(release, new RegExp(`\\n {2}${job}:\\n {4}needs: \\[[^\\]]*\\bsecrets\\b[^\\]]*\\]`), job);
+  assert.match(readFileSync(join(root, '.github/workflows/secrets.yml'), 'utf8'), /\n {2}workflow_call:\n/);
+});
+
 test('workflow choice parsing rejects flow lists and missing inputs', () => {
   assert.throws(() => workflowChoices('on:\n  push:\n'), /workflow_dispatch/);
   assert.throws(() => workflowChoices('on:\n  workflow_dispatch:\n    inputs:\n      app:\n        type: string\n'), /choice/);
@@ -88,7 +96,19 @@ test('application metadata must follow the package rules', (t) => {
   assert.throws(() => listApps(appsFixture(t, { demoApp: { ...good, version: '1.0.0-beta.1' } })), /X\.Y\.Z/);
   assert.throws(() => listApps(appsFixture(t, { demoApp: { ...good, bin: { 'tx-demoapp': '../outside.js' } } })), /bin/);
   assert.throws(() => listApps(appsFixture(t, { 'demo app': good })), /имя каталога/);
-  assert.throws(() => listApps(appsFixture(t, { demoApp: good, demoapp: good })), /регистра/);
+});
+
+test('application directories that differ only in case are rejected', (t) => {
+  const good = { name: 'tx-demoapp', version: '1.0.0', bin: { 'tx-demoapp': 'dist/cli.js' } };
+  const base = appsFixture(t, { demoApp: good });
+  // A case-insensitive file system, the macOS default, cannot hold both directories.
+  if (existsSync(join(base, 'apps', 'demoapp'))) {
+    t.skip('the file system does not distinguish letter case');
+    return;
+  }
+  mkdirSync(join(base, 'apps', 'demoapp'));
+  writeFileSync(join(base, 'apps', 'demoapp', 'package.json'), JSON.stringify(good));
+  assert.throws(() => listApps(base), /регистра/);
 });
 
 test('a linked application directory is rejected', posixOnly, (t) => {

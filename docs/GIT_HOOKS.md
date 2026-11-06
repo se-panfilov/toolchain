@@ -90,6 +90,7 @@ That limit does not bound the scanner's initial report writes or its total memor
 ## CI
 
 The [Secrets workflow](../.github/workflows/secrets.yml) has read-only repository permission.
+The Release workflow calls it. Publication does not start if the scan fails, is cancelled, or is skipped.
 Checkout retrieves complete history and does not retain GitHub credentials in Git configuration.
 The job downloads the official Gitleaks 8.30.1 Linux x64 archive and checks this SHA-256 before extraction:
 

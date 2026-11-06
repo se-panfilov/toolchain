@@ -72,8 +72,15 @@ jobs:
     with:
       app: ${{ inputs.app }}
 
+  secrets:
+    needs: plan
+    if: needs.plan.outputs.count != '0'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/secrets.yml
+
   publish-dry-run:
-    needs: [plan, test, build]
+    needs: [plan, test, build, secrets]
     if: needs.plan.outputs.dry_run == 'true'
     name: publish dry run (${{ matrix.release.name }}@${{ matrix.release.version }})
     strategy:
@@ -106,7 +113,7 @@ jobs:
         run: node scripts/ci/release.mjs publish
 
   publish:
-    needs: [plan, test, build]
+    needs: [plan, test, build, secrets]
     if: needs.plan.outputs.dry_run == 'false'
     name: publish (${{ matrix.release.name }}@${{ matrix.release.version }})
     strategy:

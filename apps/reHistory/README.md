@@ -347,15 +347,28 @@ No server request occurs when you keep this answer.
 1. Select Yes at `Сделать push?`.
 2. Select a configured remote if there is more than one.
 3. Examine the destination URL and the complete list of refs.
-4. Select Yes at `Отправить ветку и теги?` to send them.
+4. If the program shows tags for a separate decision, examine them. Select Yes at `Отправить и эти теги?` only if you want to send them.
+5. Select Yes at the final question to send the refs.
 
 The first Yes permits a read of server refs.
-The second Yes permits the push.
-Both questions initially select No.
+The final Yes permits the push.
+All questions initially select No.
+
+These tags need a separate decision:
+
+| Reason in the list     | Condition                                                                    | Risk if you send the tag                                                  |
+| ---------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `есть в других ветках` | Another local branch or remote-tracking ref contains the initial tag target. | The server tag moves out of the history of that branch, such as `master`. |
+| `нет на сервере`       | The server does not have the tag.                                            | The tag becomes public.                                                   |
+
+The current branch, its remote-tracking refs, and the push destination do not count as other branches.
+If you keep No, the program does not send these tags.
+They stay rewritten in the local repository.
+The plan also shows the number of tags that other branches contain before you apply the change.
 A missing remote stops this optional step.
 The program does not add a remote.
 
-The push contains the current branch and its selected tags.
+The push contains the current branch and its selected tags, except tags for a separate decision that you did not select.
 For the branch upstream remote, the destination is its configured upstream branch.
 Otherwise, the destination has the current branch name.
 Backup refs, other branches, and other tags are excluded.

@@ -4,6 +4,7 @@ Toolchain has three GitHub Actions workflows for tests, builds, and npm releases
 Each workflow can use all applications or one application from `apps/`.
 Each workflow has a dry-run mode.
 The separate [Secrets workflow](../.github/workflows/secrets.yml) scans all local history and working files without an application selection.
+Release also calls it and publishes only after a successful scan of the same commit.
 See [Git hooks and secret checks](GIT_HOOKS.md) for its configuration, setup, and limits.
 
 | Workflow                                    | Start                                                            | Result                                                                      |
@@ -55,11 +56,12 @@ The Release workflow does these steps:
 1. The `plan` job reads the version of each selected application.
 2. It asks the npm registry for that exact version. Published versions are skipped.
 3. If no version remains, the workflow stops after `plan`.
-4. The Tests and Build workflows run for the selected `app`.
-5. The `publish` job downloads the archive from Build and checks it again.
-6. It publishes that archive with `npm publish --provenance --ignore-scripts`.
-7. The `github-release` job creates the tag `<package>@<version>` on the tested commit.
-8. It creates a GitHub Release and attaches the published archive.
+4. The Tests, Build, and Secrets workflows run. Tests and Build use the selected `app`.
+5. If Tests, Build, or Secrets does not succeed, publication does not start.
+6. The `publish` job downloads the archive from Build and checks it again.
+7. It publishes that archive with `npm publish --provenance --ignore-scripts`.
+8. The `github-release` job creates the tag `<package>@<version>` on the tested commit.
+9. It creates a GitHub Release and attaches the published archive.
 
 Real publication is possible only from `refs/heads/master`.
 Other branches stop in `plan` unless `dry_run` is `true`.

@@ -76,6 +76,11 @@ The final push is disabled by default and exists only after a successful local r
 It has separate permission for server inspection and server writes.
 It sends only the rewritten branch and selected tags.
 It does not send backup refs or use automatic tag discovery.
+Two groups of tags need a separate permission. The initial answer is No.
+The first group contains tags whose initial target is also in another local branch or remote-tracking ref.
+The current branch, its remote-tracking refs, and the push destination are excluded from this comparison.
+The second group contains tags that the server does not have.
+Without the separate permission, these tags are not in the push arguments.
 
 Every ref has an explicit expected server object ID.
 The initial server branch must belong to the selected initial history or match the rewritten head.
@@ -359,22 +364,44 @@ Temporary packs use private directories outside the source repository.
 A normal return or handled error removes them.
 An abrupt process termination can leave those private files.
 
+## Tag push security audit: 2026-10-29
+
+An independent audit after the flow split examined all source files, the push procedure, and the GitHub Actions workflows.
+It found two defects in the push of tags. Tests with synthetic repositories confirmed both defects.
+
+| Defect                 | Condition                                                                | Effect before the fix                                                          |
+| ---------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------ |
+| Tags of other branches | The current branch contains commits of another branch, such as `master`. | The push moved release tags of `master` to rewritten commits outside `master`. |
+| New local tags         | A tag in the current history was never sent to the server.               | The push created the tag on the server.                                        |
+
+The planning is unchanged. The program still rewrites all tags in the current history locally.
+The push now sends these two groups only after a separate permission. The initial answer is No.
+The plan shows the number of tags that other branches contain.
+
+These limits remain. A human decides whether to accept them:
+
+- Local tags of other branches are rewritten, so they no longer agree with those branches.
+- The comparison uses local refs. A branch that exists only on the server is not examined.
+- The remote copy check accepts commits in the remote-tracking refs of any remote, not only the push remote.
+
+Regression tests: [push](test/remote.test.ts).
+
 ## Flow split security audit: 2026-10-29
 
 This audit examined the three flows, the remote copy check, the remote-tracking update, and the export manifest.
 
-| Area                | Result                                                                                                |
-| ------------------- | ----------------------------------------------------------------------------------------------------- |
-| Flow selection      | A fixed list. The engine rejects unknown flows and the parameters of other flows.                     |
-| Dates flow          | Unchanged date logic. Identities, messages, and taggers keep their bytes.                             |
-| Authors flow        | Names and emails pass identity validation. Dates and offsets are copied from validated header digits. |
-| Messages flow       | Message validation is unchanged. Dates, identities, and all tag data keep their bytes.                |
-| Signatures          | All flows remove signatures only after a separate permission. No flow makes new signatures.           |
-| Remote copy check   | Read-only `rev-list` and `for-each-ref` calls with the existing Git isolation. No network access.     |
-| Remote-tracking ref | Written only after a successful atomic push, with Git name validation and an old-value comparison.    |
-| No change plan      | The terminal interface stops before a write when the plan keeps every selected ref.                   |
-| Export manifest     | Version 2 has strict keys for each flow. Version 1 is still verified as a date change.                |
-| Terminal output     | New plan lines use the existing control character removal.                                            |
+| Area                | Result                                                                                                 |
+| ------------------- | ------------------------------------------------------------------------------------------------------ |
+| Flow selection      | A fixed list. The engine rejects unknown flows and the parameters of other flows.                      |
+| Dates flow          | Unchanged date logic. Identities, messages, and taggers keep their bytes.                              |
+| Authors flow        | Names and emails pass identity validation. Dates and offsets are copied from validated header digits.  |
+| Messages flow       | Message validation is unchanged. Dates and identities keep their bytes. Tags change only their target. |
+| Signatures          | All flows remove signatures only after a separate permission. No flow makes new signatures.            |
+| Remote copy check   | Read-only `rev-list` and `for-each-ref` calls with the existing Git isolation. No network access.      |
+| Remote-tracking ref | Written only after a successful atomic push, with Git name validation and an old-value comparison.     |
+| No change plan      | The terminal interface stops before a write when the plan keeps every selected ref.                    |
+| Export manifest     | Version 2 has strict keys for each flow. Version 1 is still verified as a date change.                 |
+| Terminal output     | New plan lines use the existing control character removal.                                             |
 
 No confirmed defect remains open from this audit.
 The audit found one design gap during development.

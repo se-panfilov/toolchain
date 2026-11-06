@@ -97,12 +97,18 @@ const transport: PushTransport = {
     networkGit(repo, args);
   }
 };
+export type PushRef = { local: string; destination: string; oid: string; expected: string };
+/** `shared`: another branch contains the initial tag target. `new`: the server does not have the tag. */
+export type OptionalTagReason = 'shared' | 'new';
 export type PushPlan = {
   rewrite: Plan;
   remote: string;
   url: string;
   configDigest: string;
-  refs: { local: string; destination: string; oid: string; expected: string }[];
+  /** The branch and the tags that only this branch contains and that the server already has. */
+  refs: PushRef[];
+  /** Tags that need a separate user choice. They are not sent by default. */
+  optional: (PushRef & { reasons: OptionalTagReason[] })[];
 };
 
 function checkLocal(rewrite: Plan): void {
@@ -111,6 +117,27 @@ function checkLocal(rewrite: Plan): void {
   for (const ref of rewrite.selected) {
     if (current.refs.find((item) => item.name === ref.name)?.oid !== rewrite.mapping.get(ref.oid)) throw new Error('Локальная ветка или тег изменились. Push отменён.');
   }
+}
+
+/**
+ * Find initial tag targets that other branches also contain, for example tags of the default branch.
+ * The current branch, its remote-tracking refs and the push destination do not count.
+ */
+export function sharedTags(rewrite: Plan, push?: { remote: string; destination: string }): Set<string> {
+  const { repo } = rewrite;
+  const branch = rewrite.head.slice(11);
+  const own = new Set([rewrite.head]);
+  if (push) own.add(`refs/remotes/${push.remote}/${push.destination.slice(11)}`);
+  for (const name of repo.text(['remote']).split('\n').filter(Boolean)) own.add(`refs/remotes/${name}/${branch}`);
+  const tips = rewrite.refs.filter((ref) => !ref.symbolic && ref.oid && /^refs\/(heads|remotes)\//.test(ref.name) && !own.has(ref.name)).map((ref) => ref.oid);
+  const shared = new Set<string>();
+  if (!tips.length) return shared;
+  const reachable = new Set(repo.text(['rev-list', '--stdin'], tips.join('\n') + '\n').split('\n'));
+  for (const ref of rewrite.selected) {
+    if (!ref.name.startsWith('refs/tags/')) continue;
+    if (reachable.has(repo.text(['rev-parse', '--verify', `${ref.oid}^{commit}`]))) shared.add(ref.name);
+  }
+  return shared;
 }
 
 /** Read the selected server only after the user opts in. Never fetch. */
@@ -140,22 +167,34 @@ export function preparePush(rewrite: Plan, remote: string, connection: PushTrans
   }
   const newCommits = new Set(rewrite.objects.filter((object) => object.type === 'commit').map((object) => object.oid));
   const oldCommits = new Set([...rewrite.mapping].filter(([, oid]) => newCommits.has(oid)).map(([oid]) => oid));
-  const refs = rewrite.selected.map((ref) => {
+  const shared = sharedTags(rewrite, { remote, destination });
+  const refs: PushPlan['refs'] = [];
+  const optional: PushPlan['optional'] = [];
+  for (const ref of rewrite.selected) {
     const target = ref.name === rewrite.head ? destination : ref.name;
     const oid = rewrite.mapping.get(ref.oid)!;
     const expected = server.get(target) ?? '';
     if (expected && expected !== oid && (ref.name === rewrite.head ? !oldCommits.has(expected) : expected !== ref.oid)) {
       throw new Error(`На сервере есть неизвестные изменения: ${target}. Push отменён.`);
     }
-    return { local: ref.name, destination: target, oid, expected };
-  });
+    const item = { local: ref.name, destination: target, oid, expected };
+    const reasons: OptionalTagReason[] = [];
+    if (ref.name !== rewrite.head) {
+      if (shared.has(ref.name)) reasons.push('shared');
+      if (!expected) reasons.push('new');
+    }
+    if (reasons.length) optional.push({ ...item, reasons });
+    else refs.push(item);
+  }
   if (configuration(repo).digest !== config.digest) throw new Error('Настройки Git изменились. Push отменён.');
   checkLocal(rewrite);
-  return { rewrite, remote, url, configDigest: config.digest, refs };
+  return { rewrite, remote, url, configDigest: config.digest, refs, optional };
 }
 
-export function executePush(plan: PushPlan, connection: PushTransport = transport): void {
+/** Send the required refs. Optional tags are sent only when the user selected them separately. */
+export function executePush(plan: PushPlan, connection: PushTransport = transport, includeOptional = false): void {
   checkLocal(plan.rewrite);
+  const refs: PushRef[] = [...plan.refs, ...(includeOptional ? plan.optional : [])];
   if (configuration(plan.rewrite.repo).digest !== plan.configDigest) throw new Error('Настройки Git изменились после проверки. Push отменён.');
   // Explicit object IDs prevent a concurrent local ref update from changing the payload.
   const args = [
@@ -179,10 +218,10 @@ export function executePush(plan: PushPlan, connection: PushTransport = transpor
     '--recurse-submodules=no',
     '--no-signed',
     '--no-verify',
-    ...plan.refs.map((ref) => `--force-with-lease=${ref.destination}:${ref.expected}`),
+    ...refs.map((ref) => `--force-with-lease=${ref.destination}:${ref.expected}`),
     '--',
     plan.url,
-    ...plan.refs.map((ref) => `${ref.oid}:${ref.destination}`)
+    ...refs.map((ref) => `${ref.oid}:${ref.destination}`)
   ];
   connection.push(plan.rewrite.repo, plan.url, args);
 }
