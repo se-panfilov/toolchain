@@ -7,9 +7,14 @@ description: Scan agent skills for security issues. Use when asked to "scan a sk
 allowed-tools: Read Grep Glob Bash
 ---
 
+<!-- Adapted for Toolchain: describe pre-prompt syntax without an executable template literal. -->
+
 # Skill Security Scanner
 
 Scan agent skills for security issues before adoption. Detects prompt injection, malicious code, excessive permissions, secret exposure, and supply chain risks.
+
+The local scanner redacts recognized credentials from its report.
+Pattern matching cannot identify every secret. Review reports before sharing them.
 
 **Requires**: The `uv` CLI for python package management, install guide at https://docs.astral.sh/uv/getting-started/installation/
 
@@ -106,7 +111,7 @@ This phase is agent-only — no pattern matching. Read the full SKILL.md instruc
 **Structural attacks** (check scanner output for these):
 - **Symlinks**: Files that resolve outside the skill directory — can disguise reads of `~/.ssh/id_rsa`, `~/.aws/credentials`, etc. as "example" files
 - **Frontmatter hooks**: `PostToolUse`/`PreToolUse` hooks in YAML — execute shell commands automatically, the model cannot prevent it
-- **`!`command`` syntax**: Runs shell commands at skill load time during template expansion, before the model sees the prompt
+- **Pre-prompt command syntax**: An exclamation mark followed by a backtick-delimited command can execute during template expansion.
 - **Test files**: `conftest.py`, `test_*.py`, `*.test.js` — test runners auto-discover and execute these as side effects of `pytest` or `npm test`
 - **npm lifecycle hooks**: `postinstall` scripts in bundled `package.json` — run automatically on `npm install`
 - **Image metadata**: PNG files with text in metadata chunks (tEXt/iTXt) — multimodal LLMs can read hidden instructions from image metadata

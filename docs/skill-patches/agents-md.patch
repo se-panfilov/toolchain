@@ -1,0 +1,22 @@
+--- a/.agents/skills/agents-md/SKILL.md
++++ b/.agents/skills/agents-md/SKILL.md
+@@ -3,7 +3,19 @@
+ description: Creates and maintains concise AGENTS.md and CLAUDE.md project instruction files. Use when asked to create AGENTS.md, update AGENTS.md, maintain agent docs, set up CLAUDE.md, document repository agent conventions, or keep coding-agent instructions minimal and reference-backed.
+ ---
+ 
++<!-- Adapted for Toolchain from getsentry/skills at d12f250460ffd961f549dbebf7eeb0cf4afd4c2e. -->
++
+ # Maintaining AGENTS.md
++
++## Toolchain integration
++
++Read [AGENTS.md](../../../AGENTS.md) before applying the upstream workflow below.
++Preserve the existing CLAUDE.md import. Do not replace it with a symbolic link.
++Treat line-count targets as guidance. Do not remove required safety or authorization rules to meet them.
++The sample package manager and commit attribution are examples, not Toolchain requirements.
++Keep the project's language and ASD-STE100 writing rules.
++
++## Upstream workflow
+ 
+ Goal: concise, actionable agent instructions. Target under 60 lines; never exceed 100.
+ 

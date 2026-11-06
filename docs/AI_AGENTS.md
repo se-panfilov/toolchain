@@ -18,9 +18,13 @@ Agent behavior also depends on the host, version, trust settings, and higher-pri
 
 Use the exact uppercase filenames `AGENTS.md` and `SKILL.md`.
 Do not add lowercase copies or separate copies of the project rules.
-All adapter files are regular text files. They do not require symbolic links or Windows Developer Mode.
+The original instruction adapters are regular text files. They do not require symbolic links or Windows Developer Mode.
 No adapter starts a command, installs a package, or changes tool permissions.
 The setup does not change global vendor settings.
+
+The [installed third-party skills](INSTALLED_SKILLS.md) use the skills CLI directory layout.
+Their Claude entries are relative directory links to the common skill files.
+That guide records the Windows link requirements, pinned revisions, local adaptations, and security checks.
 
 ## Tool integration
 
