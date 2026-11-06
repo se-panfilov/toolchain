@@ -235,7 +235,6 @@ The English vocabulary check uses the ASD-STE100 Issue 9 dictionary.
 A vocabulary check alone does not show correct meaning or part of speech.
 Another person has not done an STE language check.
 
-
 ## Checks for this documentation revision
 
 The source comparison confirms 35 comment replacements in ten source files.
@@ -249,7 +248,6 @@ The package inventory includes the terminology document.
 
 The full implementation test suite was not repeated for comment and documentation changes.
 The previous result of 46 tests is the implementation baseline.
-
 
 ## Earlier npx publication procedure checks
 
@@ -271,7 +269,6 @@ The Russian help and a read-only audit completed correctly.
 The synthetic repository did not change during the audit.
 The offline publication dry-run completed without a registry write.
 The checks did not use account login or public publication.
-
 
 ## Publication security audit: 2026-10-29
 
@@ -426,3 +423,20 @@ This result does not prove the absence of dependency defects.
 The Vite migration passed all 78 tests on Node.js 24.12.0.
 The source-only unit command passed 30 tests.
 A clean offline install with scripts disabled produced identical runtime modules.
+
+## Formatting and lint controls
+
+Prettier and ESLint are development dependencies. They do not enter the npm archive.
+The existing formatting configuration and ignore file remain applicable.
+ESLint uses recommended JavaScript and TypeScript rules with formatting conflicts disabled.
+Lint warnings fail the command. Formatting checks do not write files.
+The check command runs formatting checks, lint, type checks, and tests.
+The write-format command excludes generated output and ignored files.
+
+Three contextual errors now retain their original cause.
+Their user-facing messages and recovery instructions remain unchanged.
+Terminal tests use explicit spacing counts and an exact ANSI string comparison.
+Other source changes from this stage are formatting only.
+
+Dependency installation retained min-release-age=7 and disabled installation scripts.
+typescript-eslint 8.72.0 was selected because the newer patch did not meet the age requirement.

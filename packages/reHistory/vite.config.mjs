@@ -16,12 +16,12 @@ export default defineConfig({
     copyPublicDir: false,
     reportCompressedSize: false,
     lib: {
-      entry: modules.map(name => fileURLToPath(new URL(`./src/${name}.ts`, import.meta.url))),
-      formats: ['es'],
+      entry: modules.map((name) => fileURLToPath(new URL(`./src/${name}.ts`, import.meta.url))),
+      formats: ['es']
     },
     rolldownOptions: {
       external: [/^node:/],
-      output: { preserveModules: true, preserveModulesRoot: source, entryFileNames: 'src/[name].js' },
-    },
-  },
+      output: { preserveModules: true, preserveModulesRoot: source, entryFileNames: 'src/[name].js' }
+    }
+  }
 });

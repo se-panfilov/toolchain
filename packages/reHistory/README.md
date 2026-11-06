@@ -9,14 +9,14 @@ Use [SECURITY.md](SECURITY.md) for security controls and limits.
 
 ## Package structure
 
-| Path | Purpose |
-| --- | --- |
-| `src/` | TypeScript application modules. |
-| `test/` | Vitest unit, integration, and build regression tests. |
-| `scripts/build.mjs` | Type checking, Vite build, and output publication. |
-| `dist/src/` | Compiled runtime modules. |
-| `vite.config.mjs` | Node.js build target, aliases, and module output. |
-| `vitest.config.mjs` | Test isolation and shared Vite alias resolution. |
+| Path                | Purpose                                               |
+| ------------------- | ----------------------------------------------------- |
+| `src/`              | TypeScript application modules.                       |
+| `test/`             | Vitest unit, integration, and build regression tests. |
+| `scripts/build.mjs` | Type checking, Vite build, and output publication.    |
+| `dist/src/`         | Compiled runtime modules.                             |
+| `vite.config.mjs`   | Node.js build target, aliases, and module output.     |
+| `vitest.config.mjs` | Test isolation and shared Vite alias resolution.      |
 
 The package is a CLI without a public import API.
 Its exports map is empty.
@@ -143,17 +143,17 @@ The dry-run gives a plan without writes.
 
 Enter these values at the program questions:
 
-| Item | Initial value | Effect |
-| --- | --- | --- |
-| Backup | Yes | Keep the initial branch and the selected tags. |
-| Backup branch | `rehistory-backup/original` | Stop if there is a branch with this name. |
-| Commit interval | `1` second | Use an integer from 1 to 31536000. |
-| First date | Today | Use `YYYY-MM-DD`. |
-| First time | `00:00:00` | Use local time unless you add an offset. |
-| Commit identity change | No | Change all selected authors and committers if you select Yes. |
-| Tag date change | Yes | Set each annotated tag date to its target commit date. |
-| Tagger identity change | No | Enter a different name and email address. |
-| Permission to write | No | Write only after a specified Yes. |
+| Item                   | Initial value               | Effect                                                        |
+| ---------------------- | --------------------------- | ------------------------------------------------------------- |
+| Backup                 | Yes                         | Keep the initial branch and the selected tags.                |
+| Backup branch          | `rehistory-backup/original` | Stop if there is a branch with this name.                     |
+| Commit interval        | `1` second                  | Use an integer from 1 to 31536000.                            |
+| First date             | Today                       | Use `YYYY-MM-DD`.                                             |
+| First time             | `00:00:00`                  | Use local time unless you add an offset.                      |
+| Commit identity change | No                          | Change all selected authors and committers if you select Yes. |
+| Tag date change        | Yes                         | Set each annotated tag date to its target commit date.        |
+| Tagger identity change | No                          | Enter a different name and email address.                     |
+| Permission to write    | No                          | Write only after a specified Yes.                             |
 
 If you change the commit identity, the initial tagger choice is Yes.
 This choice uses the same name and email address for taggers.
@@ -169,12 +169,12 @@ It does not replace the branch.
 The input has different fields for the date and time.
 These time formats are permitted:
 
-| Example | Meaning |
-| --- | --- |
-| `18:30` | Local time with zero seconds. |
-| `18:30:45` | Local time with specified seconds. |
-| `18:30:45+01:00` | Time with a specified UTC offset. |
-| `17:30:45Z` | UTC time. |
+| Example          | Meaning                            |
+| ---------------- | ---------------------------------- |
+| `18:30`          | Local time with zero seconds.      |
+| `18:30:45`       | Local time with specified seconds. |
+| `18:30:45+01:00` | Time with a specified UTC offset.  |
+| `17:30:45Z`      | UTC time.                          |
 
 If a local time does not exist during a clock change, the program rejects it.
 Use a specified offset for a local time that occurs twice.
@@ -488,12 +488,12 @@ The export excludes these refs.
 
 ## Exit codes
 
-| Code | Meaning |
-| --- | --- |
-| `0` | The operation completed, or the user selected No. |
-| `1` | An error occurred, or the export check failed. |
-| `2` | The audit inventory is not complete. |
-| `130` | The user canceled an interactive question. |
+| Code  | Meaning                                           |
+| ----- | ------------------------------------------------- |
+| `0`   | The operation completed, or the user selected No. |
+| `1`   | An error occurred, or the export check failed.    |
+| `2`   | The audit inventory is not complete.              |
+| `130` | The user canceled an interactive question.        |
 
 An audit result of `0` does not show that all old dates are absent.
 Read the warnings and object data in the report.
@@ -580,9 +580,20 @@ The program does not publish itself.
 
 ```sh
 cd /path/to/toolchain/packages/reHistory
+npm run format
+npm run lint
 npm run typecheck
 npm test
 ```
+
+Use `npm run format:check` for a read-only formatting check.
+Use `npm run lint:fix` for explicit ESLint fixes.
+Use `npm run check` for formatting checks, lint, type checks, and the complete test suite.
+The lint command rejects warnings as well as errors.
+The existing .prettierrc and .prettierignore define formatting and excluded paths.
+ESLint uses the recommended JavaScript and TypeScript rules with Node.js globals.
+eslint-config-prettier disables conflicting style rules. Prettier runs separately.
+Generated output, dependencies, coverage, and reports stay outside these checks.
 
 All existing tests now use Vitest.
 The unit suite covers dates, identities, signature removal, environment isolation, and terminal interaction.

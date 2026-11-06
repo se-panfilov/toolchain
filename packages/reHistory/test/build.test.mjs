@@ -18,7 +18,7 @@ function fixture(t) {
   copyFileSync(join(root, 'vite.config.mjs'), join(directory, 'vite.config.mjs'));
   for (const folder of ['src', 'test']) {
     mkdirSync(join(directory, folder));
-    for (const name of modules.filter(name => name.endsWith('.test') === (folder === 'test'))) {
+    for (const name of modules.filter((name) => name.endsWith('.test') === (folder === 'test'))) {
       copyFileSync(join(root, folder, `${name}.ts`), join(directory, folder, `${name}.ts`));
     }
   }
@@ -30,7 +30,7 @@ function build(directory) {
   return spawnSync(process.execPath, [join(directory, 'scripts/build.mjs')], { cwd: directory, encoding: 'utf8', timeout: 60000 });
 }
 
-test('ошибка типов сохраняет dist и не позволяет npm start запустить старую сборку', t => {
+test('ошибка типов сохраняет dist и не позволяет npm start запустить старую сборку', (t) => {
   const directory = fixture(t);
   const marker = join(directory, 'unexpected-start');
   mkdirSync(join(directory, 'dist/src'), { recursive: true });
@@ -40,10 +40,10 @@ test('ошибка типов сохраняет dist и не позволяет
   // Keep npm configuration and logs isolated from account settings.
   const userConfig = join(directory, 'user.npmrc');
   const globalConfig = join(directory, 'global.npmrc');
-  writeFileSync(userConfig, ''); writeFileSync(globalConfig, '');
+  writeFileSync(userConfig, '');
+  writeFileSync(globalConfig, '');
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.toUpperCase().startsWith('NPM_CONFIG_')));
-  Object.assign(env, { NPM_CONFIG_USERCONFIG: userConfig, NPM_CONFIG_GLOBALCONFIG: globalConfig,
-    NPM_CONFIG_CACHE: join(directory, 'cache'), NPM_CONFIG_OFFLINE: 'true' });
+  Object.assign(env, { NPM_CONFIG_USERCONFIG: userConfig, NPM_CONFIG_GLOBALCONFIG: globalConfig, NPM_CONFIG_CACHE: join(directory, 'cache'), NPM_CONFIG_OFFLINE: 'true' });
   const result = process.env.npm_execpath
     ? spawnSync(process.execPath, [process.env.npm_execpath, 'start', '--', '--help'], { cwd: directory, env, encoding: 'utf8', timeout: 60000 })
     : spawnSync('npm', ['start', '--', '--help'], { cwd: directory, env, encoding: 'utf8', timeout: 60000 });
@@ -54,7 +54,7 @@ test('ошибка типов сохраняет dist и не позволяет
   assert.equal(readFileSync(join(directory, 'dist/src', 'cli.js'), 'utf8'), stale);
 });
 
-test('сборка отклоняет ссылки в dist и сохраняет внешние файлы', t => {
+test('сборка отклоняет ссылки в dist и сохраняет внешние файлы', (t) => {
   const directory = fixture(t);
   const external = join(directory, 'external.js');
   writeFileSync(external, 'protected');
@@ -87,7 +87,7 @@ test('сборка отклоняет ссылки в dist и сохраняет
   }
 });
 
-test('сборка сохраняет неизвестные файлы dist и требует их отдельной проверки', t => {
+test('сборка сохраняет неизвестные файлы dist и требует их отдельной проверки', (t) => {
   const directory = fixture(t);
   mkdirSync(join(directory, 'dist'));
   const file = join(directory, 'dist', 'private-note.txt');
@@ -99,14 +99,13 @@ test('сборка сохраняет неизвестные файлы dist и 
   assert.equal(readFileSync(file, 'utf8'), 'protected');
 });
 
-test('ошибка Vite после проверки типов сохраняет готовую сборку', t => {
+test('ошибка Vite после проверки типов сохраняет готовую сборку', (t) => {
   const directory = fixture(t);
   mkdirSync(join(directory, 'dist/src'), { recursive: true });
   const file = join(directory, 'dist/src/cli.js');
   writeFileSync(file, 'protected');
   const config = join(directory, 'vite.config.mjs');
-  writeFileSync(config, readFileSync(config, 'utf8').replace('  build: {',
-    "  plugins: [{ name: 'fixture-failure', buildStart() { throw new Error('fixture-vite-failure'); } }],\n  build: {"));
+  writeFileSync(config, readFileSync(config, 'utf8').replace('  build: {', "  plugins: [{ name: 'fixture-failure', buildStart() { throw new Error('fixture-vite-failure'); } }],\n  build: {"));
   const result = build(directory);
   assert.equal(result.error, undefined);
   assert.notEqual(result.status, 0);

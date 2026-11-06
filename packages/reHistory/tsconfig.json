@@ -1,25 +1,19 @@
 {
   "compilerOptions": {
     "target": "ES2023",
-    "lib": [
-      "ES2023"
-    ],
+    "lib": ["ES2023"],
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "rootDir": ".",
     "outDir": "dist",
-    "types": [
-      "node"
-    ],
+    "types": ["node"],
     "strict": true,
     "noEmitOnError": true,
     "forceConsistentCasingInFileNames": true,
     "verbatimModuleSyntax": true,
     "isolatedModules": true,
     "paths": {
-      "@reHistory/*": [
-        "./src/*.ts"
-      ]
+      "@reHistory/*": ["./src/*.ts"]
     },
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
@@ -28,12 +22,6 @@
     "noUnusedParameters": true,
     "noEmit": true
   },
-  "include": [
-    "src/**/*.ts",
-    "test/**/*.ts"
-  ],
-  "exclude": [
-    "dist",
-    "node_modules"
-  ]
+  "include": ["src/**/*.ts", "test/**/*.ts"],
+  "exclude": ["dist", "node_modules"]
 }

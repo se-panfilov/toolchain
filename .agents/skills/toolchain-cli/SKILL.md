@@ -34,15 +34,15 @@ Keep reusable business logic independent of terminal prompts where practical.
 After each stage, examine its security impact before continuing.
 Check the applicable boundaries:
 
-| Boundary | Questions to resolve |
-| --- | --- |
-| Input | Can malformed values select another target or become executable text? |
-| Subprocess | Can inherited environment, config, hooks, helpers, or shell parsing change the operation? |
-| File system | Can links, existing paths, permissions, or concurrent changes cause an unintended write? |
-| Terminal | Can displayed data inject controls? Does cancellation restore input state? |
-| Network | Is the destination authorized? What happens after a partial success or a retry? |
-| Recovery | Can failure leave partial data? Can the user restore the previous state? |
-| Distribution | Can the archive include secrets, unrelated data, or installation-time execution? |
+| Boundary     | Questions to resolve                                                                      |
+| ------------ | ----------------------------------------------------------------------------------------- |
+| Input        | Can malformed values select another target or become executable text?                     |
+| Subprocess   | Can inherited environment, config, hooks, helpers, or shell parsing change the operation? |
+| File system  | Can links, existing paths, permissions, or concurrent changes cause an unintended write?  |
+| Terminal     | Can displayed data inject controls? Does cancellation restore input state?                |
+| Network      | Is the destination authorized? What happens after a partial success or a retry?           |
+| Recovery     | Can failure leave partial data? Can the user restore the previous state?                  |
+| Distribution | Can the archive include secrets, unrelated data, or installation-time execution?          |
 
 For inapplicable boundaries, record why they do not apply instead of adding unnecessary mechanisms.
 
@@ -83,6 +83,9 @@ Leave publication and real network operations outside this workflow unless the u
 
 ## Deliver
 
+Run Prettier on changed maintained files with the existing configuration.
+Run format:check and ESLint for the affected application. Fix errors before completion.
+Keep generated output and vendored skills outside formatting changes.
 Update the utility's operating instructions and security notes as necessary.
 Report the result, executed checks, fixed defects, and remaining limits in Russian.
 Do not present static review as native platform testing or a formal security certificate.

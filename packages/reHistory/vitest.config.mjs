@@ -14,6 +14,6 @@ export default defineConfig({
     hookTimeout: 60000,
     restoreMocks: true,
     unstubEnvs: true,
-    unstubGlobals: true,
-  },
+    unstubGlobals: true
+  }
 });

@@ -15,7 +15,8 @@ function fixture(t: { onTestFinished: (fn: () => void) => void }, format?: strin
   const repo = new Repository(dir);
   repo.git(['config', 'user.name', 'Тестовый автор']);
   repo.git(['config', 'user.email', 'test@example.org']);
-  commit(repo, 'первый'); return repo;
+  commit(repo, 'первый');
+  return repo;
 }
 function commit(repo: Repository, message: string): string {
   repo.git(['commit', '-q', '--allow-empty', '-m', message]);
@@ -31,10 +32,11 @@ function snapshot(repo: Repository): Map<string, Buffer> {
       else if (entry.isFile()) result.set(path, readFileSync(path));
     }
   }
-  walk(repo.common); return result;
+  walk(repo.common);
+  return result;
 }
 
-test('merge-граф, содержимое, сообщения, другие ветки и соответствующие теги', t => {
+test('merge-граф, содержимое, сообщения, другие ветки и соответствующие теги', (t) => {
   const repo = fixture(t);
   const root = repo.text(['rev-parse', 'HEAD']);
   repo.git(['tag', 'root']);
@@ -62,18 +64,18 @@ test('merge-граф, содержимое, сообщения, другие в�
   assert.equal(repo.text(['rev-parse', 'rehistory-backup/test']), before.at(-1));
   assert.equal(repo.text(['rev-parse', 'root']), plan.mapping.get(root));
   assert.equal(repo.text(['rev-parse', 'nested^{}']), repo.text(['rev-parse', 'HEAD']));
-  assert.equal(repo.text(['rev-parse', `${result.backupPrefix}/tags/release`]), plan.selected.find(r => r.name === 'refs/tags/release')!.oid);
+  assert.equal(repo.text(['rev-parse', `${result.backupPrefix}/tags/release`]), plan.selected.find((r) => r.name === 'refs/tags/release')!.oid);
   for (const [index, old] of before.entries()) {
     const next = plan.mapping.get(old)!;
     assert.equal(repo.text(['show', '-s', '--format=%at:%ct:%T:%B', next]), repo.text(['show', '-s', `--format=${options.start + index * 3}:${options.start + index * 3}:%T:%B`, old]));
     const parents = repo.text(['show', '-s', '--format=%P', old]).split(' ').filter(Boolean);
-    assert.equal(repo.text(['show', '-s', '--format=%P', next]), parents.map(x => plan.mapping.get(x)).join(' '));
+    assert.equal(repo.text(['show', '-s', '--format=%P', next]), parents.map((x) => plan.mapping.get(x)).join(' '));
     assert.equal(repo.text(['show', '-s', '--format=%an:%ae:%cn:%ce', next]), repo.text(['show', '-s', '--format=%an:%ae:%cn:%ce', old]));
   }
   repo.git(['fsck', '--strict', '--no-reflogs']);
 });
 
-test('dry-run не меняет ни одного файла в .git', t => {
+test('dry-run не меняет ни одного файла в .git', (t) => {
   const repo = fixture(t);
   commit(repo, 'второй');
   const before = snapshot(repo);
@@ -82,7 +84,7 @@ test('dry-run не меняет ни одного файла в .git', t => {
   assert.deepEqual(snapshot(repo), before);
 });
 
-test('смена идентичности всех авторов и коммитеров; отсутствие бекапа', t => {
+test('смена идентичности всех авторов и коммитеров; отсутствие бекапа', (t) => {
   const repo = fixture(t);
   const plan = makePlan(repo, { ...options, identity: { name: 'Новый автор', email: 'new@example.org' } });
   const result = applyPlan(plan);
@@ -91,7 +93,7 @@ test('смена идентичности всех авторов и комми�
   assert.equal(JSON.parse(readFileSync(result.recovery, 'utf8')).refs[0].new, repo.text(['rev-parse', 'HEAD']));
 });
 
-test('теги другой ветки и теги blob остаются без изменений', t => {
+test('теги другой ветки и теги blob остаются без изменений', (t) => {
   const repo = fixture(t);
   repo.git(['checkout', '-q', '-b', 'other']);
   const other = commit(repo, 'другая');
@@ -106,16 +108,16 @@ test('теги другой ветки и теги blob остаются без 
   assert.equal(repo.text(['rev-parse', 'blob-tag']), blob);
 });
 
-test('конкурирующее изменение ветки отменяет применение', t => {
+test('конкурирующее изменение ветки отменяет применение', (t) => {
   const repo = fixture(t);
   const plan = makePlan(repo, { ...options, backupBranch: 'rehistory-backup/cas' });
   const changed = commit(repo, 'новый');
   assert.throws(() => applyPlan(plan), /изменился/);
   assert.equal(repo.text(['rev-parse', 'HEAD']), changed);
-  assert(!repo.refs().some(r => r.name.includes('rehistory-backup')));
+  assert(!repo.refs().some((r) => r.name.includes('rehistory-backup')));
 });
 
-test('нельзя перезаписать существующий бекап или частично обновить refs', t => {
+test('нельзя перезаписать существующий бекап или частично обновить refs', (t) => {
   const repo = fixture(t);
   repo.git(['branch', 'rehistory-backup/existing']);
   assert.throws(() => makePlan(repo, { ...options, backupBranch: 'rehistory-backup/existing' }), /уже существует/);
@@ -127,7 +129,7 @@ test('нельзя перезаписать существующий бекап 
   assert.deepEqual(repo.refs(), before);
 });
 
-test('грязное дерево, detached HEAD, stash и незавершённая операция блокируются', t => {
+test('грязное дерево, detached HEAD, stash и незавершённая операция блокируются', (t) => {
   const repo = fixture(t);
   writeFileSync(join(repo.path, 'untracked'), 'test');
   assert.throws(() => makePlan(repo, options), /чистыми/);
@@ -142,7 +144,7 @@ test('грязное дерево, detached HEAD, stash и незавершён�
   assert.throws(() => makePlan(repo, options));
 });
 
-test('shallow, partial clone, grafts и дополнительные worktree блокируются', t => {
+test('shallow, partial clone, grafts и дополнительные worktree блокируются', (t) => {
   const repo = fixture(t);
   const oid = repo.text(['rev-parse', 'HEAD']);
   writeFileSync(join(repo.common, 'shallow'), oid + '\n');
@@ -159,12 +161,17 @@ test('shallow, partial clone, grafts и дополнительные worktree б
   assert.throws(() => makePlan(repo, options), /worktree/);
 });
 
-test('удаляются подписи и mergetag, бинарное сообщение сохраняется побайтно', t => {
+test('удаляются подписи и mergetag, бинарное сообщение сохраняется побайтно', (t) => {
   const repo = fixture(t);
   const old = repo.git(['cat-file', 'commit', 'HEAD']);
   const split = old.indexOf('\n\n');
   const message = Buffer.from([0xff, 0x00, 0x0a, 0x41]);
-  const raw = Buffer.concat([old.subarray(0, split), Buffer.from('\ngpgsig -----BEGIN PGP SIGNATURE-----\n fake\n -----END PGP SIGNATURE-----\nmergetag object fake\n type commit'), Buffer.from('\n\n'), message]);
+  const raw = Buffer.concat([
+    old.subarray(0, split),
+    Buffer.from('\ngpgsig -----BEGIN PGP SIGNATURE-----\n fake\n -----END PGP SIGNATURE-----\nmergetag object fake\n type commit'),
+    Buffer.from('\n\n'),
+    message
+  ]);
   const signed = repo.text(['hash-object', '-w', '-t', 'commit', '--stdin'], raw);
   repo.git(['update-ref', 'refs/heads/main', signed]);
   const tagRaw = Buffer.from(`object ${signed}\ntype commit\ntag signed\ntagger Test <test@example.org> 1000000000 +0000\n\nтег\n-----BEGIN PGP SIGNATURE-----\nfake\n-----END PGP SIGNATURE-----\n`);
@@ -181,26 +188,35 @@ test('удаляются подписи и mergetag, бинарное сообщ
 
 test('снятие подписи сохраняет произвольные байты сообщения и идемпотентно', () => {
   let seed = 0x51a7;
-  const next = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed; };
+  const next = () => {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    return seed;
+  };
   for (let sample = 0; sample < 256; sample++) {
     // Exclude the marker's first character so each prefix is an unsigned message.
-    const bytes = Buffer.from(Array.from({ length: next() % 384 }, () => { const byte = next() & 255; return byte === 45 ? 44 : byte; }));
+    const bytes = Buffer.from(
+      Array.from({ length: next() % 384 }, () => {
+        const byte = next() & 255;
+        return byte === 45 ? 44 : byte;
+      })
+    );
     const prefix = Buffer.concat([bytes, Buffer.from('\n')]);
     const before = Buffer.from(prefix);
-    for (const kind of ['PGP SIGNATURE', 'SSH SIGNATURE']) for (const newline of ['\n', '\r\n']) {
-      const armor = Buffer.from(`-----BEGIN ${kind}-----${newline}ZmFrZQ==${newline}-----END ${kind}-----${newline}`);
-      const raw = Buffer.concat([prefix, armor]);
-      const original = Buffer.from(raw);
-      const result = stripTagSignature(raw);
-      assert.equal(result.stripped, true, `sample=${sample}; kind=${kind}`);
-      assert.deepEqual(result.message, before);
-      assert.deepEqual(stripTagSignature(result.message), { message: before, stripped: false });
-      assert.deepEqual(raw, original);
-    }
+    for (const kind of ['PGP SIGNATURE', 'SSH SIGNATURE'])
+      for (const newline of ['\n', '\r\n']) {
+        const armor = Buffer.from(`-----BEGIN ${kind}-----${newline}ZmFrZQ==${newline}-----END ${kind}-----${newline}`);
+        const raw = Buffer.concat([prefix, armor]);
+        const original = Buffer.from(raw);
+        const result = stripTagSignature(raw);
+        assert.equal(result.stripped, true, `sample=${sample}; kind=${kind}`);
+        assert.deepEqual(result.message, before);
+        assert.deepEqual(stripTagSignature(result.message), { message: before, stripped: false });
+        assert.deepEqual(raw, original);
+      }
   }
 });
 
-test('неполная подпись и текст после подписи тега не обрезаются', t => {
+test('неполная подпись и текст после подписи тега не обрезаются', (t) => {
   const repo = fixture(t);
   for (const message of [
     'notes\n-----BEGIN PGP SIGNATURE-----\nincomplete example\nkeep this text\n',
@@ -208,7 +224,7 @@ test('неполная подпись и текст после подписи т
     'notes\n-----BEGIN SSH SIGNATURE-----\nfake\n-----END PGP SIGNATURE-----\n',
     'notes\n-----BEGIN SIGNED MESSAGE-----\nkeep this text\n',
     'notes\n-----BEGIN PGP SIGNATURE-----\nfake\n-----END PGP SIGNATURE-----\nkeep this text\n-----BEGIN PGP SIGNATURE-----\nfake\n-----END PGP SIGNATURE-----\n',
-    'notes\n-----BEGIN SSH SIGNATURE-----\nfake\n-----BEGIN PGP SIGNATURE-----\nfake\n-----END PGP SIGNATURE-----\n-----END SSH SIGNATURE-----\n',
+    'notes\n-----BEGIN SSH SIGNATURE-----\nfake\n-----BEGIN PGP SIGNATURE-----\nfake\n-----END PGP SIGNATURE-----\n-----END SSH SIGNATURE-----\n'
   ]) {
     const raw = Buffer.from(`object ${repo.text(['rev-parse', 'HEAD'])}\ntype commit\ntag ambiguous\ntagger Test <test@example.org> 1000000000 +0000\n\n${message}`);
     const oid = repo.text(['hash-object', '-w', '-t', 'tag', '--stdin'], raw);
@@ -219,7 +235,7 @@ test('неполная подпись и текст после подписи т
   }
 });
 
-test('не исполняются локальные hooks; блокируется второй процесс', t => {
+test('не исполняются локальные hooks; блокируется второй процесс', (t) => {
   const repo = fixture(t);
   const marker = join(repo.path, 'hook-ran');
   mkdirSync(join(repo.common, 'hooks'), { recursive: true });
@@ -233,7 +249,7 @@ test('не исполняются локальные hooks; блокируетс
   assert.throws(() => readFileSync(marker));
 });
 
-test('валидация интервалов, дат и идентичности', t => {
+test('валидация интервалов, дат и идентичности', (t) => {
   const repo = fixture(t);
   for (const interval of [0, -1, 1.5, NaN, Infinity, 31536001]) assert.throws(() => makePlan(repo, { ...options, interval }));
   assert.throws(() => makePlan(repo, { ...options, start: 253402300800 }));
@@ -243,7 +259,7 @@ test('валидация интервалов, дат и идентичност�
   for (const date of ['2023-02-29', '2024-02-30T12:00:00Z', '2024-01-01T25:00:00Z', '2024-01-01T10:00:00', 'yesterday']) assert.throws(() => parseDate(date));
 });
 
-test('поддерживается SHA-256 и bare-репозиторий', t => {
+test('поддерживается SHA-256 и bare-репозиторий', (t) => {
   const repo = fixture(t, 'sha256');
   const plan = makePlan(repo, options);
   assert.equal(plan.mapping.values().next().value!.length, 64);
@@ -256,8 +272,7 @@ test('поддерживается SHA-256 и bare-репозиторий', t =>
   bareRepo.git(['fsck', '--strict']);
 });
 
-
-test('файл восстановления возвращает ветку и теги одной транзакцией', t => {
+test('файл восстановления возвращает ветку и теги одной транзакцией', (t) => {
   const repo = fixture(t);
   repo.git(['tag', '-a', 'release', '-m', 'tag']);
   const before = repo.refs();
@@ -278,25 +293,38 @@ test('изоляция окружения Git не зависит от реги�
   assert.deepEqual(source, before);
 });
 
-test('переменные GIT_* не перенаправляют работу в другой репозиторий', t => {
+test('переменные GIT_* не перенаправляют работу в другой репозиторий', (t) => {
   const repo = fixture(t);
   const foreign = fixture(t);
   const child = join(repo.common, 'routing-check.mjs');
-  writeFileSync(child, `
+  writeFileSync(
+    child,
+    `
     import { Repository, makePlan } from ${JSON.stringify(new URL('../dist/src/engine.js', import.meta.url).href)};
     const repo = new Repository(process.argv[2]);
     const plan = makePlan(repo, { start: 1700000000, interval: 1 });
     console.log(JSON.stringify({ commits: plan.commits, common: repo.common }));
-  `);
+  `
+  );
   const before = snapshot(repo);
   const foreignBefore = snapshot(foreign);
   // Use an .mjs file and the fixture directory to avoid npm or eval scope.
   // Do not pass internal Node test context to the child CLI.
   const childEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('NODE_TEST_')));
   const result = spawnSync(process.execPath, [child, repo.path], {
-    cwd: repo.path, timeout: 30000,
+    cwd: repo.path,
+    timeout: 30000,
     // An IDE can set FORCE_COLOR. Machine JSON must not contain ANSI colors.
-    env: { ...childEnv, FORCE_COLOR: '1', GIT_DIR: foreign.common, GIT_WORK_TREE: foreign.path, GIT_INDEX_FILE: join(foreign.common, 'index'), GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'core.hooksPath', GIT_CONFIG_VALUE_0: '/nonexistent' },
+    env: {
+      ...childEnv,
+      FORCE_COLOR: '1',
+      GIT_DIR: foreign.common,
+      GIT_WORK_TREE: foreign.path,
+      GIT_INDEX_FILE: join(foreign.common, 'index'),
+      GIT_CONFIG_COUNT: '1',
+      GIT_CONFIG_KEY_0: 'core.hooksPath',
+      GIT_CONFIG_VALUE_0: '/nonexistent'
+    }
   });
   const diagnostic = `Node ${process.version}; status=${result.status}; signal=${result.signal}; error=${result.error?.message || 'нет'}\nstdout: ${result.stdout?.toString()}\nstderr: ${result.stderr?.toString()}`;
   assert.equal(result.status, 0, diagnostic);
@@ -305,8 +333,7 @@ test('переменные GIT_* не перенаправляют работу 
   assert.deepEqual(snapshot(foreign), foreignBefore);
 });
 
-
-test('фиксированное имя бекапа не содержит времени и не перезаписывается', t => {
+test('фиксированное имя бекапа не содержит времени и не перезаписывается', (t) => {
   const repo = fixture(t);
   assert.equal(defaultBackupBranch, 'rehistory-backup/original');
   repo.git(['branch', defaultBackupBranch]);
@@ -325,23 +352,26 @@ test('отдельное время первого коммита: минуты,
   assert.throws(() => parseStart('9999-12-31', '23:59:59-01:00'));
 });
 
-test('введённое время попадает в даты автора и коммитера', t => {
+test('введённое время попадает в даты автора и коммитера', (t) => {
   const repo = fixture(t);
   const start = parseStart('2026-10-29', '18:45:12+01:00');
   applyPlan(makePlan(repo, { ...options, start }));
   assert.equal(repo.text(['show', '-s', '--format=%at:%ct', 'HEAD']), `${start}:${start}`);
 });
 
-test('локальное время проверяется при переходах DST; явное смещение однозначно', t => {
+test('локальное время проверяется при переходах DST; явное смещение однозначно', (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'rehistory-time-'));
   t.onTestFinished(() => rmSync(dir, { recursive: true, force: true }));
   const child = join(dir, 'time-check.mjs');
-  writeFileSync(child, `
+  writeFileSync(
+    child,
+    `
     import { parseStart } from ${JSON.stringify(new URL('../dist/src/cli.js', import.meta.url).href)};
     let missing = false;
     try { parseStart('2026-03-29', '02:30'); } catch { missing = true; }
     console.log(JSON.stringify({ missing, delta: parseStart('2026-10-25', '02:30+01:00') - parseStart('2026-10-25', '02:30+02:00') }));
-  `);
+  `
+  );
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('NODE_TEST_')));
   const result = spawnSync(process.execPath, [child], { env: { ...env, TZ: 'Europe/Amsterdam' }, timeout: 30000 });
   assert.equal(result.status, 0, result.stderr?.toString());

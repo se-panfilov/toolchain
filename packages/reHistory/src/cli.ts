@@ -9,9 +9,13 @@ import { runDemo, validateDemoURL } from '@reHistory/demo';
 import { TerminalPrompts, PromptCancelled, terminalStyle } from '@reHistory/prompts';
 
 // Git metadata and errors can contain terminal control characters.
-function safe(value: unknown): string { return String(value).replace(/[\p{Cc}\p{Cf}]/gu, ch => ch === '\n' ? ch : '?'); }
+function safe(value: unknown): string {
+  return String(value).replace(/[\p{Cc}\p{Cf}]/gu, (ch) => (ch === '\n' ? ch : '?'));
+}
 const style = terminalStyle();
-function print(value: unknown, tone: keyof ReturnType<typeof terminalStyle> = 'plain'): void { console.log(style[tone](safe(value))); }
+function print(value: unknown, tone: keyof ReturnType<typeof terminalStyle> = 'plain'): void {
+  console.log(style[tone](safe(value)));
+}
 function help(): void {
   print(`reHistory — нормализация истории текущей ветки и её тегов.
 Node.js 24.12+, Git 2.39+. Запуск: node /путь/toolchain/packages/reHistory/dist/src/cli.js [параметры]
@@ -70,7 +74,8 @@ export function parseStart(date: string, time: string): number {
   const local = new Date(0);
   local.setFullYear(y, m - 1, d);
   local.setHours(h, min, sec, 0);
-  if (local.getFullYear() !== y || local.getMonth() !== m - 1 || local.getDate() !== d || local.getHours() !== h || local.getMinutes() !== min || local.getSeconds() !== sec) throw new Error('В этом часовом поясе такого времени нет. Измените время или укажите смещение.');
+  if (local.getFullYear() !== y || local.getMonth() !== m - 1 || local.getDate() !== d || local.getHours() !== h || local.getMinutes() !== min || local.getSeconds() !== sec)
+    throw new Error('В этом часовом поясе такого времени нет. Измените время или укажите смещение.');
   const timestamp = local.getTime() / 1000;
   if (!Number.isSafeInteger(timestamp) || timestamp < 0 || timestamp > 253402300799) throw new Error('Дата и время должны находиться в пределах 1970–9999 годов.');
   return timestamp;
@@ -78,9 +83,15 @@ export function parseStart(date: string, time: string): number {
 
 export function parseArguments(args: string[]) {
   let path = process.cwd();
-  let dryRun = false; let audit = false; let json = false; let demo = false;
-  let destination: string | undefined; let verify: string | undefined;
-  let remote: string | undefined; let demoDir: string | undefined; let explicitRepo = false;
+  let dryRun = false;
+  let audit = false;
+  let json = false;
+  let demo = false;
+  let destination: string | undefined;
+  let verify: string | undefined;
+  let remote: string | undefined;
+  let demoDir: string | undefined;
+  let explicitRepo = false;
   const seen = new Set<string>();
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -89,7 +100,10 @@ export function parseArguments(args: string[]) {
     if (['--repo', '--export', '--verify-export', '--demo-remote', '--demo-dir'].includes(arg)) {
       const value = args[++i];
       if (!value || value.startsWith('--')) throw new Error(`Отсутствует значение ${arg}.`);
-      if (arg === '--repo') { path = value; explicitRepo = true; }
+      if (arg === '--repo') {
+        path = value;
+        explicitRepo = true;
+      }
       if (arg === '--export') destination = value;
       if (arg === '--verify-export') verify = value;
       if (arg === '--demo-remote') remote = value;
@@ -110,10 +124,17 @@ export function parseArguments(args: string[]) {
 }
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
-  if (args.length === 1 && ['--help', '-h'].includes(args[0])) { help(); return; }
+  if (args.length === 1 && ['--help', '-h'].includes(args[0])) {
+    help();
+    return;
+  }
   const mode = parseArguments(args);
-  if (Number(process.versions.node.split('.')[0]) < 24 || (Number(process.versions.node.split('.')[0]) === 24 && Number(process.versions.node.split('.')[1]) < 12)) throw new Error('Требуется Node.js 24.12 или новее.');
-  if (mode.demo) { runDemo({ remote: mode.remote!, directory: mode.demoDir, print }); return; }
+  if (Number(process.versions.node.split('.')[0]) < 24 || (Number(process.versions.node.split('.')[0]) === 24 && Number(process.versions.node.split('.')[1]) < 12))
+    throw new Error('Требуется Node.js 24.12 или новее.');
+  if (mode.demo) {
+    runDemo({ remote: mode.remote!, directory: mode.demoDir, print });
+    return;
+  }
   if (mode.verify) {
     const report = verifyExport(mode.verify);
     if (mode.json) console.log(JSON.stringify(report, null, 2));
@@ -138,16 +159,21 @@ async function main(): Promise<void> {
   if (mode.destination) exportDestination(repo, mode.destination);
   print(`reHistory · ${mode.destination ? 'экспорт' : 'переписывание'}${mode.dryRun ? ' · dry-run' : ''}`, 'accent');
   print(`${repo.path} · ${state.head.slice(11)}`, 'muted');
-  if (state.refs.some(r => r.name.startsWith('refs/codex/'))) print('refs/codex/* сохраняют старую историю; в экспорт не входят.', 'warning');
+  if (state.refs.some((r) => r.name.startsWith('refs/codex/'))) print('refs/codex/* сохраняют старую историю; в экспорт не входят.', 'warning');
   print('Не запускайте другие операции Git до завершения.', 'warning');
   const prompts = new TerminalPrompts();
   const ask = (question: string, initial?: string) => prompts.text(question, initial);
   const choose = (question: string, defaultYes: boolean) => prompts.confirm(question, defaultYes);
   async function newIdentity(): Promise<{ name: string; email: string }> {
     for (;;) {
-      const name = await ask('Имя'); const email = await ask('Email');
-      try { validateIdentity(name, email); return { name, email }; }
-      catch (error) { print(error instanceof Error ? error.message : error); }
+      const name = await ask('Имя');
+      const email = await ask('Email');
+      try {
+        validateIdentity(name, email);
+        return { name, email };
+      } catch (error) {
+        print(error instanceof Error ? error.message : error);
+      }
     }
   }
   try {
@@ -156,11 +182,16 @@ async function main(): Promise<void> {
       if (await choose('Создать бекап?', true)) {
         for (;;) {
           const candidate = await ask('Ветка бекапа', defaultBackupBranch);
-          try { repo.git(['check-ref-format', `refs/heads/${candidate}`]); }
-          catch (error) { print(error instanceof Error ? error.message : error); continue; }
+          try {
+            repo.git(['check-ref-format', `refs/heads/${candidate}`]);
+          } catch (error) {
+            print(error instanceof Error ? error.message : error);
+            continue;
+          }
           // Stop if the name exists. Do not add a suffix or overwrite the branch.
-          if (repo.refs().some(r => r.name === `refs/heads/${candidate}`)) throw new Error('Бекап-ветка уже существует.');
-          backupBranch = candidate; break;
+          if (repo.refs().some((r) => r.name === `refs/heads/${candidate}`)) throw new Error('Бекап-ветка уже существует.');
+          backupBranch = candidate;
+          break;
         }
       } else print('Без бекапа восстановление не гарантируется.', 'warning');
     } else print(`Экспорт → ${mode.destination}`, 'muted');
@@ -178,24 +209,32 @@ async function main(): Promise<void> {
       date = await ask('Дата первого коммита', dateDefault);
       try {
         if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('Дата: ГГГГ-ММ-ДД.');
-        parseDate(`${date}T00:00:00Z`); break;
-      } catch (error) { print(error instanceof Error ? error.message : error); }
+        parseDate(`${date}T00:00:00Z`);
+        break;
+      } catch (error) {
+        print(error instanceof Error ? error.message : error);
+      }
     }
     let start: number;
     for (;;) {
       const time = await ask('Время первого коммита', '00:00:00');
-      try { start = parseStart(date, time); break; }
-      catch (error) { print(error instanceof Error ? error.message : error); }
+      try {
+        start = parseStart(date, time);
+        break;
+      } catch (error) {
+        print(error instanceof Error ? error.message : error);
+      }
     }
-    const identity = await choose('Заменить авторов и коммитеров?', false) ? await newIdentity() : undefined;
-    const tagPolicy = await choose('Нормализовать даты тегов?', true) ? 'normalize' : 'preserve';
+    const identity = (await choose('Заменить авторов и коммитеров?', false)) ? await newIdentity() : undefined;
+    const tagPolicy = (await choose('Нормализовать даты тегов?', true)) ? 'normalize' : 'preserve';
     let tagIdentity: { name: string; email: string } | undefined;
-    if (identity) { if (await choose('То же имя/email для тегов?', true)) tagIdentity = identity; }
-    else if (await choose('Заменить создателей тегов?', false)) tagIdentity = await newIdentity();
+    if (identity) {
+      if (await choose('То же имя/email для тегов?', true)) tagIdentity = identity;
+    } else if (await choose('Заменить создателей тегов?', false)) tagIdentity = await newIdentity();
     print('Готовлю план…');
     const plan = makePlan(repo, { start, interval, identity, backupBranch, tagPolicy, tagIdentity });
     print('\nПлан', 'accent');
-    print(`Коммиты: ${plan.commits} · шаг: ${interval} с · теги: ${plan.selected.filter(r => r.name.startsWith('refs/tags/')).length}`);
+    print(`Коммиты: ${plan.commits} · шаг: ${interval} с · теги: ${plan.selected.filter((r) => r.name.startsWith('refs/tags/')).length}`);
     print(`${new Date(start * 1000).toISOString()} → ${new Date((start + (plan.commits - 1) * interval) * 1000).toISOString()}`);
     print(`Автор и коммитер: ${identity ? `${identity.name} <${identity.email}>` : 'без изменений'}`);
     print(`Теги: даты ${tagPolicy === 'normalize' ? 'нормализовать' : 'сохранить исходными'}; создатель ${tagIdentity ? `${tagIdentity.name} <${tagIdentity.email}>` : 'без изменений'}`);
@@ -203,9 +242,18 @@ async function main(): Promise<void> {
     for (const ref of plan.selected) print(`  ${ref.name}  ${ref.oid.slice(0, 12)} → ${plan.mapping.get(ref.oid)!.slice(0, 12)}`, 'muted');
     if (plan.stripped) print(`Подписи и mergetag к удалению: ${plan.stripped}`, 'warning');
     print('Даты условные; старые копии сохраняют исходную историю.', 'muted');
-    if (mode.dryRun) { print('Dry-run завершён. Без изменений.', 'success'); return; }
-    if (plan.stripped && !await choose('Удалить подписи и mergetag?', false)) { print('Отменено.'); return; }
-    if (!await choose(mode.destination ? 'Создать экспорт?' : 'Применить изменения?', false)) { print('Отменено.'); return; }
+    if (mode.dryRun) {
+      print('Dry-run завершён. Без изменений.', 'success');
+      return;
+    }
+    if (plan.stripped && !(await choose('Удалить подписи и mergetag?', false))) {
+      print('Отменено.');
+      return;
+    }
+    if (!(await choose(mode.destination ? 'Создать экспорт?' : 'Применить изменения?', false))) {
+      print('Отменено.');
+      return;
+    }
     if (mode.destination) {
       const result = exportPlan(plan, mode.destination);
       print(`✓ Экспорт проверен · коммиты: ${result.commits} · теги: ${result.tags}`, 'success');
@@ -215,14 +263,25 @@ async function main(): Promise<void> {
       print(`✓ Готово · коммиты: ${plan.commits}`, 'success');
       print(`Восстановление: ${result.recovery}${result.backupPrefix ? `\nБекап-ссылки: ${result.backupPrefix}` : ''}`, 'muted');
     }
-  } finally { prompts.close(); }
+  } finally {
+    prompts.close();
+  }
 }
 // An npm bin can be a symbolic link. Compare the real paths.
 let entry = '';
-try { if (process.argv[1]) entry = pathToFileURL(realpathSync(process.argv[1])).href; } catch { /* Import from stdin or eval. */ }
+try {
+  if (process.argv[1]) entry = pathToFileURL(realpathSync(process.argv[1])).href;
+} catch {
+  /* Import from stdin or eval. */
+}
 if (import.meta.url === entry) {
-  main().catch(error => {
-    if (error instanceof PromptCancelled) { print('Отменено.', 'muted'); process.exitCode = 130; }
-    else { console.error(style.error(safe(`Ошибка: ${error instanceof Error ? error.message : error}`))); process.exitCode = 1; }
+  main().catch((error) => {
+    if (error instanceof PromptCancelled) {
+      print('Отменено.', 'muted');
+      process.exitCode = 130;
+    } else {
+      console.error(style.error(safe(`Ошибка: ${error instanceof Error ? error.message : error}`)));
+      process.exitCode = 1;
+    }
   });
 }

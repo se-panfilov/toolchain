@@ -3,15 +3,19 @@ import { stdin, stdout } from 'node:process';
 import type { ReadStream, WriteStream } from 'node:tty';
 
 export class PromptCancelled extends Error {
-  constructor() { super('Ввод отменён. Изменения не применены.'); }
+  constructor() {
+    super('Ввод отменён. Изменения не применены.');
+  }
 }
 type Key = { name?: string; ctrl?: boolean; meta?: boolean; sequence?: string };
-function safe(value: string): string { return value.replace(/[\p{Cc}\p{Cf}]/gu, '?'); }
+function safe(value: string): string {
+  return value.replace(/[\p{Cc}\p{Cf}]/gu, '?');
+}
 
 // Add ANSI colors only after text sanitization. Keep pipe output without colors.
 export function terminalStyle(output: Pick<WriteStream, 'isTTY'> = stdout) {
   const enabled = Boolean(output.isTTY) && process.env.TERM !== 'dumb' && !('NO_COLOR' in process.env) && process.env.FORCE_COLOR !== '0';
-  const color = (code: number) => (text: string) => enabled ? `\x1b[${code}m${text}\x1b[0m` : text;
+  const color = (code: number) => (text: string) => (enabled ? `\x1b[${code}m${text}\x1b[0m` : text);
   return { plain: (text: string) => text, accent: color(36), muted: color(2), strong: color(1), success: color(32), warning: color(33), error: color(31) };
 }
 
@@ -22,8 +26,15 @@ export class TerminalPrompts {
   private style: ReturnType<typeof terminalStyle>;
   private active?: () => void;
   private closed = false;
-  constructor(input: ReadStream = stdin, output: WriteStream = stdout) { this.input = input; this.output = output; this.style = terminalStyle(output); }
-  close(): void { this.closed = true; this.active?.(); }
+  constructor(input: ReadStream = stdin, output: WriteStream = stdout) {
+    this.input = input;
+    this.output = output;
+    this.style = terminalStyle(output);
+  }
+  close(): void {
+    this.closed = true;
+    this.active?.();
+  }
   private check(): void {
     if (this.closed) throw new PromptCancelled();
     if (!this.input.isTTY || !this.output.isTTY) throw new Error('Нужен интерактивный терминал (TTY).');
@@ -49,7 +60,7 @@ export class TerminalPrompts {
         rl.on('close', cancel);
         process.once('SIGINT', cancel);
         process.once('SIGTERM', cancel);
-        rl.question(`${this.style.accent('◆')} ${this.style.strong(safe(question))}: `, value => {
+        rl.question(`${this.style.accent('◆')} ${this.style.strong(safe(question))}: `, (value) => {
           if (settled) return;
           settled = true;
           resolve(value.trim());
@@ -65,7 +76,8 @@ export class TerminalPrompts {
       process.removeListener('SIGTERM', cancel);
       rl.close();
       this.input.setRawMode(wasRaw);
-      if (wasFlowing) this.input.resume(); else this.input.pause();
+      if (wasFlowing) this.input.resume();
+      else this.input.pause();
       this.active = undefined;
     }
   }
@@ -83,13 +95,21 @@ export class TerminalPrompts {
     let cancel = () => {};
     let keypress = (_text: string | undefined, _key: Key) => {};
     const render = () => {
-      if (drawn) { moveCursor(this.output, 0, -2); cursorTo(this.output, 0); clearScreenDown(this.output); }
-      this.output.write(['Да', 'Нет'].map((label, index) => {
-        const cursor = focused === index ? this.style.accent('›') : ' ';
-        const mark = selected === index ? this.style.success('☑') : this.style.muted('☐');
-        const text = focused === index ? this.style.accent(label) : this.style.muted(label);
-        return `  ${cursor} ${mark} ${text}\n`;
-      }).join(''));
+      if (drawn) {
+        moveCursor(this.output, 0, -2);
+        cursorTo(this.output, 0);
+        clearScreenDown(this.output);
+      }
+      this.output.write(
+        ['Да', 'Нет']
+          .map((label, index) => {
+            const cursor = focused === index ? this.style.accent('›') : ' ';
+            const mark = selected === index ? this.style.success('☑') : this.style.muted('☐');
+            const text = focused === index ? this.style.accent(label) : this.style.muted(label);
+            return `  ${cursor} ${mark} ${text}\n`;
+          })
+          .join('')
+      );
       drawn = true;
     };
     try {
@@ -97,19 +117,33 @@ export class TerminalPrompts {
         const finish = (error?: Error) => {
           if (settled) return;
           settled = true;
-          if (error) reject(error); else resolve(selected === 0);
+          if (error) reject(error);
+          else resolve(selected === 0);
         };
         cancel = () => finish(new PromptCancelled());
         this.active = cancel;
         keypress = (_text, key = {}) => {
           if (settled) return;
-          if ((key.ctrl && (key.name === 'c' || key.name === 'd')) || key.name === 'escape') { cancel(); return; }
-          if (key.name === 'paste-start') { pasting = true; return; }
-          if (key.name === 'paste-end') { pasting = false; return; }
+          if ((key.ctrl && (key.name === 'c' || key.name === 'd')) || key.name === 'escape') {
+            cancel();
+            return;
+          }
+          if (key.name === 'paste-start') {
+            pasting = true;
+            return;
+          }
+          if (key.name === 'paste-end') {
+            pasting = false;
+            return;
+          }
           if (pasting || key.ctrl || key.meta) return;
-          if (key.name === 'up' || key.name === 'down') { focused = 1 - focused; render(); }
-          else if (key.name === 'space') { selected = focused; render(); }
-          else if (key.name === 'return' || key.name === 'enter') finish();
+          if (key.name === 'up' || key.name === 'down') {
+            focused = 1 - focused;
+            render();
+          } else if (key.name === 'space') {
+            selected = focused;
+            render();
+          } else if (key.name === 'return' || key.name === 'enter') finish();
           // Do not accept digits or letters as confirmation of destructive operations.
         };
         emitKeypressEvents(this.input);
@@ -129,10 +163,12 @@ export class TerminalPrompts {
       process.removeListener('SIGINT', cancel);
       process.removeListener('SIGTERM', cancel);
       this.active = undefined;
-      try { this.output.write('\x1b[?2004l'); }
-      finally {
+      try {
+        this.output.write('\x1b[?2004l');
+      } finally {
         this.input.setRawMode(wasRaw);
-        if (wasFlowing) this.input.resume(); else this.input.pause();
+        if (wasFlowing) this.input.resume();
+        else this.input.pause();
       }
     }
   }
