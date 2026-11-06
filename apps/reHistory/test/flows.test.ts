@@ -36,7 +36,7 @@ function tagger(repo: Repository): ReturnType<typeof stamp> {
 }
 const identity = { name: 'Новый автор', email: 'new@example.org' };
 
-test('флоу не принимает параметры других флоу и неизвестные флоу', () => {
+test('a flow rejects options of other flows and unknown flows', () => {
   const invalid: unknown[] = [
     undefined,
     {},
@@ -63,7 +63,7 @@ test('флоу не принимает параметры других флоу 
   validateOptions({ flow: 'messages', commitMessage: 'Сообщение' });
 });
 
-test('флоу времени меняет только даты коммитов и тегов', (t) => {
+test('the dates flow changes only commit and tag dates', (t) => {
   const repo = fixture(t);
   const before = commits(repo);
   const tag = tagger(repo);
@@ -80,7 +80,7 @@ test('флоу времени меняет только даты коммито�
   assert.equal(repo.text(['for-each-ref', '--format=%(contents)', 'refs/tags/release']), 'Релиз');
 });
 
-test('флоу авторов сохраняет даты, часовые пояса и сообщения', (t) => {
+test('the authors flow keeps dates, time zones, and messages', (t) => {
   const repo = fixture(t);
   const before = commits(repo);
   const tag = tagger(repo);
@@ -95,14 +95,14 @@ test('флоу авторов сохраняет даты, часовые поя
   assert.deepEqual(tagger(repo), tag);
 });
 
-test('флоу авторов меняет создателя тега без изменения его даты', (t) => {
+test('the authors flow changes the tag creator without a change to its date', (t) => {
   const repo = fixture(t);
   const tag = tagger(repo);
   applyPlan(makePlan(repo, { flow: 'authors', identity, tagIdentity: identity }));
   assert.deepEqual(tagger(repo), { identity: `${identity.name} <${identity.email}>`, timestamp: tag.timestamp, timezone: tag.timezone });
 });
 
-test('флоу сообщений сохраняет даты, авторов и теги', (t) => {
+test('the messages flow keeps dates, authors, and tags', (t) => {
   const repo = fixture(t);
   const before = commits(repo);
   const tag = tagger(repo);
@@ -122,7 +122,7 @@ test('флоу сообщений сохраняет даты, авторов и
 });
 
 for (const format of ['sha1', 'sha256'])
-  test(`экспорт ${format} проверяет каждый флоу по его манифесту`, (t) => {
+  test(`export of ${format} verifies each flow with its manifest`, (t) => {
     const cases: [Options, (policy: Record<string, unknown>) => void, RegExp][] = [
       [{ flow: 'dates', start: 1700000000, interval: 3, tagPolicy: 'normalize' }, (policy) => (policy.start = 1700000001), /даты коммита/],
       [{ flow: 'authors', identity, tagIdentity: identity }, (policy) => (policy.identity = { name: 'Другой', email: 'other@example.org' }), /идентичность коммита/],
@@ -148,7 +148,7 @@ for (const format of ['sha1', 'sha256'])
     }
   });
 
-test('экспорт старого формата (version 1) проверяется как нормализация дат', (t) => {
+test('an export in the old format (version 1) is verified as date normalization', (t) => {
   const repo = fixture(t);
   const target = join(repo.path, '..', 'legacy.git');
   exportPlan(makePlan(repo, { flow: 'dates', start: 1700000000, interval: 2, tagPolicy: 'normalize' }), target);
@@ -160,7 +160,7 @@ test('экспорт старого формата (version 1) проверяе�
   assert(verifyExport(target).errors.some((item) => /идентичность коммита/.test(item)));
 });
 
-test('незапушенные коммиты определяются по локальным remote-веткам', (t) => {
+test('unpushed commits are found from local remote-tracking branches', (t) => {
   const repo = fixture(t);
   const head = (): string => repo.text(['rev-parse', 'HEAD']);
   assert.deepEqual(remoteCopy(repo, head()), { tracking: 0, unpushed: 2 });
@@ -174,7 +174,7 @@ test('незапушенные коммиты определяются по ло
   assert.deepEqual(remoteCopy(repo, head()), { tracking: 2, unpushed: 0 });
 });
 
-test('решение о запуске: блокировка, подтверждение и предупреждения dry-run', () => {
+test('start decision: block, confirmation, and dry-run warnings', () => {
   assert.equal(remoteGate({ tracking: 1, unpushed: 0 }, false), 'ok');
   assert.equal(remoteGate({ tracking: 1, unpushed: 0 }, true), 'ok');
   assert.equal(remoteGate({ tracking: 1, unpushed: 3 }, false), 'block');
@@ -305,7 +305,7 @@ test.skipIf(process.platform === 'win32')('CLI не применяет план 
   assert.throws(() => repo.text(['rev-parse', '--verify', 'refs/heads/backup']));
 });
 
-test('план останавливается, если в хранилище нет дерева коммита', (t) => {
+test('the plan stops if the object store has no commit tree', (t) => {
   const repo = fixture(t);
   writeFileSync(join(repo.path, 'file.txt'), 'data\n');
   repo.git(['add', '--', 'file.txt']);
@@ -324,7 +324,7 @@ test('план останавливается, если в хранилище н
   assert.equal(repo.text(['rev-parse', 'HEAD']), head);
 });
 
-test('запуск из подкаталога рабочего дерева использует корень репозитория', (t) => {
+test('a start from a working tree subdirectory uses the repository root', (t) => {
   const repo = fixture(t);
   mkdirSync(join(repo.path, 'apps', 'tool'), { recursive: true });
   writeFileSync(join(repo.path, 'apps', 'tool', 'file.txt'), 'data\n');
@@ -338,7 +338,7 @@ test('запуск из подкаталога рабочего дерева и�
   repo.git(['fsck', '--strict', '--no-reflogs']);
 });
 
-test('импорт объектов использует общий каталог Git даже из подкаталога', (t) => {
+test('object import uses the common Git directory, also from a subdirectory', (t) => {
   const repo = fixture(t);
   mkdirSync(join(repo.path, 'apps', 'tool'), { recursive: true });
   writeFileSync(join(repo.path, 'apps', 'tool', 'file.txt'), 'data\n');

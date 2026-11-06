@@ -43,7 +43,7 @@ function fixture(t) {
   return { root, repository, git, commit, run };
 }
 
-test('форматирование сохраняет пробелы, переводы строк, glob-символы и имена, похожие на флаги', (t) => {
+test('formatting keeps spaces, line breaks, glob characters, and names that look like flags', (t) => {
   const { root, repository, commit, run } = fixture(t);
   const names = ['space name.ts', 'literal[1].mjs', '--config=evil.mjs', ...(process.platform === 'win32' ? [] : ['line\nbreak.ts'])];
   for (const name of names) writeFileSync(join(repository, name), 'export const value = 1;\n');
@@ -58,7 +58,7 @@ test('форматирование сохраняет пробелы, перев
   assert(!result.stdout.includes('line\nbreak.ts'));
 });
 
-test('staged-режим форматирует выбранные файлы без изменения индекса', (t) => {
+test('staged mode formats the selected files without a change to the index', (t) => {
   const { repository, git, commit, run } = fixture(t);
   writeFileSync(join(repository, 'chosen.ts'), 'export const value = 1;\n');
   writeFileSync(join(repository, 'other.ts'), 'export const value = 1;\n');
@@ -75,7 +75,7 @@ test('staged-режим форматирует выбранные файлы б�
   assert.deepEqual(readFileSync(join(repository, '.git/index')), index);
 });
 
-test('частично staged-файл отклоняется до любых записей', (t) => {
+test('a partly staged file is rejected before any write', (t) => {
   const { repository, git, commit, run } = fixture(t);
   writeFileSync(join(repository, 'a.ts'), 'export const value = 1;\n');
   writeFileSync(join(repository, 'b.ts'), 'export const value = 1;\n');
@@ -93,7 +93,7 @@ test('частично staged-файл отклоняется до любых з
   assert.deepEqual(readFileSync(join(repository, '.git/index')), index);
 });
 
-test('форматирование учитывает ignore-файл и удаляет Git-переменные выбора цели', (t) => {
+test('formatting uses the ignore file and removes Git variables that select a target', (t) => {
   const { root, repository, commit, run } = fixture(t);
   mkdirSync(join(repository, 'ignored'));
   writeFileSync(join(repository, 'chosen.ts'), 'export const value = 1;\n');
@@ -107,7 +107,7 @@ test('форматирование учитывает ignore-файл и уда�
   assert.equal(readFileSync(join(repository, 'ignored/fixture.ts'), 'utf8'), unformatted);
 });
 
-test('Git clean-фильтр отклоняется до diff и не запускает внешний код', (t) => {
+test('a Git clean filter is rejected before diff and does not run external code', (t) => {
   const { root, repository, git, commit, run } = fixture(t);
   writeFileSync(join(repository, '.gitattributes'), 'chosen.ts filter=fixture\n');
   writeFileSync(join(repository, 'chosen.ts'), 'export const value = 1;\n');
@@ -159,7 +159,7 @@ test.skipIf(process.platform !== 'linux')('невалидный UTF-8 в име�
   assert.equal(readFileSync(name, 'utf8'), 'export const value={a:1}\n');
 });
 
-test('пустой выбор и неизвестные параметры не запускают форматирование', (t) => {
+test('an empty selection and unknown options do not start formatting', (t) => {
   const { commit, run } = fixture(t);
   commit();
   const result = run();
@@ -170,7 +170,7 @@ test('пустой выбор и неизвестные параметры не 
   assert.match(invalid.stderr, /Допустимы параметры/);
 });
 
-test('check-режим не пишет файлы и возвращает ошибку для неверного формата', (t) => {
+test('check mode writes no files and returns an error for incorrect formatting', (t) => {
   const { repository, git, commit, run } = fixture(t);
   writeFileSync(join(repository, 'chosen.ts'), 'export const value = 1;\n');
   commit();
@@ -185,7 +185,7 @@ test('check-режим не пишет файлы и возвращает оши
   assert.equal(run(['--check', '--check']).status, 1);
 });
 
-test('ссылка в родительском каталоге отклоняется до форматирования staged-файла', (t) => {
+test('a link in a parent directory is rejected before a staged file is formatted', (t) => {
   const { root, repository, git, commit, run } = fixture(t);
   mkdirSync(join(repository, 'nested'));
   writeFileSync(join(repository, 'nested/chosen.ts'), 'export const value = 1;\n');
@@ -204,7 +204,7 @@ test('ссылка в родительском каталоге отклоняе
   assert.equal(readFileSync(join(external, 'chosen.ts'), 'utf8'), bytes);
 });
 
-test('clean:reinstall выполняет offline npm ci без lifecycle-скриптов', (t) => {
+test('clean:reinstall runs offline npm ci without lifecycle scripts', (t) => {
   // This fixture has no dependency links. npm ci can remove only its own node_modules.
   const directory = mkdtempSync(join(tmpdir(), 'toolchain-reinstall-'));
   t.onTestFinished(() => rmSync(directory, { recursive: true, force: true }));

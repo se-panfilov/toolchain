@@ -4,6 +4,8 @@ These requirements apply to each application under `apps/`.
 They are Toolchain conventions based on the official references below.
 npm does not require a source directory named `lib`.
 
+`npm run check:config` checks most requirements in this file. See [Enforced rules](ENFORCED_RULES.md).
+
 ## Directory structure
 
 | Directory  | Contents                                           |
@@ -35,6 +37,7 @@ Exclude tests and build scripts from publication.
 - Keep runtime dependencies in the application that uses them.
 - Keep shared build and test dependencies in the private root package.
 - Keep dependencies small and justify each addition. Pin development dependencies and track the lockfile.
+- Add each approved runtime dependency to `runtimeDependencyAllowlist` in [scripts/ci/config.mjs](../scripts/ci/config.mjs). The check rejects other runtime dependencies.
 - Provide build, typecheck, test, and start scripts. Build before packaging with prepack.
 - Stop startup after build failure. Do not depend on installation hooks for runtime readiness.
 - Check the actual archive inventory, permissions, metadata, and secrets before release.
@@ -57,6 +60,7 @@ Use the largest required increment when an iteration combines different change t
 | `major`   | Incompatible changes to the supported CLI, JSON output contract, defaults, runtime requirements, or public API.                                |
 
 Repository-only instructions do not require changing an unaffected application version.
+The `pr-rules` CI job requires one version step when a pull request changes files in `apps/<directory>/` outside `test/`.
 A directory move does not require a major increment when the installed CLI contract remains compatible.
 Do not repeat a bump already completed by the user for the same iteration.
 Use prerelease identifiers only when the release channel requires them.

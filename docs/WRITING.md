@@ -11,7 +11,7 @@ Do not claim full conformance from a sentence counter or an unchecked vocabulary
 - Keep commands, paths, identifiers, quoted software labels, and license text exact.
 - Write test names, test data, and test comments in English. Tests are not user interaction.
 - Use Russian in tests only to match Russian interface strings, such as an expected error message.
-- When you change a test file, translate its remaining Russian test names to English.
+- ESLint rejects Cyrillic in test names and code comments. See [ESLint rules](ESLINT.md).
 
 ## External examples
 
@@ -56,6 +56,7 @@ Keep this section as short as possible, with one or two paragraphs.
 The `tl;dr` section uses these plain-language requirements. The rest of the pull request must follow ASD-STE100.
 
 Never add links to AI agent threads, chats, or sessions where a feature was discussed.
+The commit-msg hook and the `pr-rules` CI job reject known links of this type. See [Enforced rules](ENFORCED_RULES.md).
 This rule applies to repository files, commit messages, pull requests, issues, and review comments.
 Do not add commit trailers or attribution lines with such links.
 These links are often private, and they can expire. Write the necessary context in the text itself.

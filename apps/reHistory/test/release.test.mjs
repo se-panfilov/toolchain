@@ -33,7 +33,7 @@ function fixture(t) {
   return { root, archive, marker, run };
 }
 
-test('release передаёт npm исходный архив, правильный cwd и флаги dry-run', (t) => {
+test('release gives npm the source archive, the correct cwd, and dry-run flags', (t) => {
   const { root, marker, run } = fixture(t);
   const result = run(['--dry-run']);
   assert.equal(result.status, 0, result.stderr);
@@ -43,19 +43,19 @@ test('release передаёт npm исходный архив, правильн
   assert.equal(publication.bytes, 'original packed bytes');
 });
 
-test('release возвращает ошибку npm без повторной публикации', (t) => {
+test('release returns the npm error without another publication', (t) => {
   const { run } = fixture(t);
   assert.equal(run([], { FIXTURE_EXIT_CODE: '7' }).status, 7);
 });
 
-test('release не принимает флаги выбора других пакетов', (t) => {
+test('release rejects flags that select other packages', (t) => {
   const { marker, run } = fixture(t);
   const result = run(['--workspaces']);
   assert.notEqual(result.status, 0);
   assert.equal(existsSync(marker), false);
 });
 
-test('release останавливается при отсутствии архива или при ссылках', (t) => {
+test('release stops when the archive is missing or is a link', (t) => {
   const { root, archive, marker, run } = fixture(t);
   rmSync(archive);
   assert.notEqual(run().status, 0);

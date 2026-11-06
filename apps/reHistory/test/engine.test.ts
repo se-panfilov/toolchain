@@ -39,7 +39,7 @@ function snapshot(repo: Repository): Map<string, Buffer> {
   return result;
 }
 
-test('merge-граф, содержимое, сообщения, другие ветки и соответствующие теги', (t) => {
+test('merge graph, content, messages, other branches, and related tags', (t) => {
   const repo = fixture(t);
   const root = repo.text(['rev-parse', 'HEAD']);
   repo.git(['tag', 'root']);
@@ -78,7 +78,7 @@ test('merge-граф, содержимое, сообщения, другие в�
   repo.git(['fsck', '--strict', '--no-reflogs']);
 });
 
-test('dry-run не меняет ни одного файла в .git', (t) => {
+test('dry-run changes no file in .git', (t) => {
   const repo = fixture(t);
   commit(repo, 'второй');
   const before = snapshot(repo);
@@ -87,7 +87,7 @@ test('dry-run не меняет ни одного файла в .git', (t) => {
   assert.deepEqual(snapshot(repo), before);
 });
 
-test('смена идентичности всех авторов и коммитеров; отсутствие бекапа', (t) => {
+test('identity change for all authors and committers without a backup', (t) => {
   const repo = fixture(t);
   const dates = repo.text(['show', '-s', '--format=%ad|%cd|%B', '--date=raw']);
   const plan = makePlan(repo, { flow: 'authors', identity: { name: 'Новый автор', email: 'new@example.org' } });
@@ -99,7 +99,7 @@ test('смена идентичности всех авторов и комми�
   assert.equal((JSON.parse(readFileSync(result.recovery, 'utf8')) as Recovery).refs[0]?.new, repo.text(['rev-parse', 'HEAD']));
 });
 
-test('теги другой ветки и теги blob остаются без изменений', (t) => {
+test('tags of another branch and blob tags stay unchanged', (t) => {
   const repo = fixture(t);
   repo.git(['checkout', '-q', '-b', 'other']);
   const other = commit(repo, 'другая');
@@ -114,7 +114,7 @@ test('теги другой ветки и теги blob остаются без 
   assert.equal(repo.text(['rev-parse', 'blob-tag']), blob);
 });
 
-test('конкурирующее изменение ветки отменяет применение', (t) => {
+test('a concurrent branch change cancels the apply step', (t) => {
   const repo = fixture(t);
   const plan = makePlan(repo, { ...options, backupBranch: 'rehistory-backup/cas' });
   const changed = commit(repo, 'новый');
@@ -123,7 +123,7 @@ test('конкурирующее изменение ветки отменяет 
   assert(!repo.refs().some((r) => r.name.includes('rehistory-backup')));
 });
 
-test('нельзя перезаписать существующий бекап или частично обновить refs', (t) => {
+test('an existing backup cannot be overwritten and refs cannot be updated partially', (t) => {
   const repo = fixture(t);
   repo.git(['branch', 'rehistory-backup/existing']);
   assert.throws(() => makePlan(repo, { ...options, backupBranch: 'rehistory-backup/existing' }), /уже существует/);
@@ -135,7 +135,7 @@ test('нельзя перезаписать существующий бекап 
   assert.deepEqual(repo.refs(), before);
 });
 
-test('грязное дерево, detached HEAD, stash и незавершённая операция блокируются', (t) => {
+test('a dirty tree, detached HEAD, stash, and an unfinished operation are blocked', (t) => {
   const repo = fixture(t);
   writeFileSync(join(repo.path, 'untracked'), 'test');
   assert.throws(() => makePlan(repo, options), /чистыми/);
@@ -150,7 +150,7 @@ test('грязное дерево, detached HEAD, stash и незавершён�
   assert.throws(() => makePlan(repo, options));
 });
 
-test('shallow, partial clone, grafts и дополнительные worktree блокируются', (t) => {
+test('shallow, partial clone, grafts, and additional worktrees are blocked', (t) => {
   const repo = fixture(t);
   const oid = repo.text(['rev-parse', 'HEAD']);
   writeFileSync(join(repo.common, 'shallow'), oid + '\n');
@@ -167,7 +167,7 @@ test('shallow, partial clone, grafts и дополнительные worktree б
   assert.throws(() => makePlan(repo, options), /worktree/);
 });
 
-test('удаляются подписи и mergetag, бинарное сообщение сохраняется побайтно', (t) => {
+test('signatures and mergetag are removed, and a binary message is kept byte for byte', (t) => {
   const repo = fixture(t);
   const old = repo.git(['cat-file', 'commit', 'HEAD']);
   const split = old.indexOf('\n\n');
@@ -192,7 +192,7 @@ test('удаляются подписи и mergetag, бинарное сообщ
   assert(!repo.git(['cat-file', 'tag', 'signed']).includes(Buffer.from('BEGIN PGP')));
 });
 
-test('снятие подписи сохраняет произвольные байты сообщения и идемпотентно', () => {
+test('signature removal keeps arbitrary message bytes and is idempotent', () => {
   let seed = 0x51a7;
   const next = (): number => {
     seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
@@ -222,7 +222,7 @@ test('снятие подписи сохраняет произвольные б
   }
 });
 
-test('неполная подпись и текст после подписи тега не обрезаются', (t) => {
+test('an incomplete signature and text after a tag signature are not cut', (t) => {
   const repo = fixture(t);
   for (const message of [
     'notes\n-----BEGIN PGP SIGNATURE-----\nincomplete example\nkeep this text\n',
@@ -241,7 +241,7 @@ test('неполная подпись и текст после подписи т
   }
 });
 
-test('не исполняются локальные hooks; блокируется второй процесс', (t) => {
+test('local hooks do not run, and a second process is blocked', (t) => {
   const repo = fixture(t);
   const marker = join(repo.path, 'hook-ran');
   mkdirSync(join(repo.common, 'hooks'), { recursive: true });
@@ -255,7 +255,7 @@ test('не исполняются локальные hooks; блокируетс
   assert.throws(() => readFileSync(marker));
 });
 
-test('валидация интервалов, дат и идентичности', (t) => {
+test('validation of intervals, dates, and identity', (t) => {
   const repo = fixture(t);
   for (const interval of [0, -1, 1.5, NaN, Infinity, 31536001]) assert.throws(() => makePlan(repo, { ...options, interval }));
   assert.throws(() => makePlan(repo, { ...options, start: 253402300800 }));
@@ -265,7 +265,7 @@ test('валидация интервалов, дат и идентичност�
   for (const date of ['2023-02-29', '2024-02-30T12:00:00Z', '2024-01-01T25:00:00Z', '2024-01-01T10:00:00', 'yesterday']) assert.throws(() => parseDate(date));
 });
 
-test('поддерживается SHA-256 и bare-репозиторий', (t) => {
+test('SHA-256 and bare repositories are supported', (t) => {
   const repo = fixture(t, 'sha256');
   const plan = makePlan(repo, options);
   assert.equal(plan.mapping.values().next().value!.length, 64);
@@ -278,7 +278,7 @@ test('поддерживается SHA-256 и bare-репозиторий', (t) 
   bareRepo.git(['fsck', '--strict']);
 });
 
-test('файл восстановления возвращает ветку и теги одной транзакцией', (t) => {
+test('the recovery file restores the branch and tags in one transaction', (t) => {
   const repo = fixture(t);
   repo.git(['tag', '-a', 'release', '-m', 'tag']);
   const before = repo.refs();
@@ -292,14 +292,14 @@ test('файл восстановления возвращает ветку и �
   repo.git(['fsck', '--strict']);
 });
 
-test('изоляция окружения Git не зависит от регистра имён переменных', () => {
+test('Git environment isolation does not depend on variable name case', () => {
   const source = { PATH: '/trusted/bin', TERM: 'xterm', GIT_DIR: '/other', git_work_tree: '/other', Git_Config_Count: '1', gIt_cOnFiG_kEy_0: 'core.hooksPath', GITHUB_ACTIONS: 'true' };
   const before = { ...source };
   assert.deepEqual(withoutGitEnvironment(source), { PATH: '/trusted/bin', TERM: 'xterm', GITHUB_ACTIONS: 'true' });
   assert.deepEqual(source, before);
 });
 
-test('переменные GIT_* не перенаправляют работу в другой репозиторий', (t) => {
+test('GIT_* variables do not redirect work to another repository', (t) => {
   const repo = fixture(t);
   const foreign = fixture(t);
   const child = join(repo.common, 'routing-check.mjs');
@@ -339,7 +339,7 @@ test('переменные GIT_* не перенаправляют работу 
   assert.deepEqual(snapshot(foreign), foreignBefore);
 });
 
-test('фиксированное имя бекапа не содержит времени и не перезаписывается', (t) => {
+test('the fixed backup name contains no time and is not overwritten', (t) => {
   const repo = fixture(t);
   assert.equal(defaultBackupBranch, 'rehistory-backup/original');
   repo.git(['branch', defaultBackupBranch]);
@@ -348,7 +348,7 @@ test('фиксированное имя бекапа не содержит вр�
   assert.deepEqual(snapshot(repo), before);
 });
 
-test('отдельное время первого коммита: минуты, секунды, UTC и смещение', () => {
+test('separate time of the first commit: minutes, seconds, UTC, and offset', () => {
   assert.equal(parseStart('2026-10-29', '18:45:12+01:00'), Date.parse('2026-10-29T17:45:12Z') / 1000);
   assert.equal(parseStart('2026-10-29', '18:45Z'), Date.parse('2026-10-29T18:45:00Z') / 1000);
   assert.equal(parseStart('2026-10-29', '18:45'), new Date(2026, 9, 29, 18, 45, 0).getTime() / 1000);
@@ -358,14 +358,14 @@ test('отдельное время первого коммита: минуты,
   assert.throws(() => parseStart('9999-12-31', '23:59:59-01:00'));
 });
 
-test('введённое время попадает в даты автора и коммитера', (t) => {
+test('the entered time goes into the author and committer dates', (t) => {
   const repo = fixture(t);
   const start = parseStart('2026-10-29', '18:45:12+01:00');
   applyPlan(makePlan(repo, { ...options, start }));
   assert.equal(repo.text(['show', '-s', '--format=%at:%ct', 'HEAD']), `${start}:${start}`);
 });
 
-test('локальное время проверяется при переходах DST; явное смещение однозначно', (t) => {
+test('local time is checked at DST transitions, and an explicit offset is unambiguous', (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'rehistory-time-'));
   t.onTestFinished(() => rmSync(dir, { recursive: true, force: true }));
   const child = join(dir, 'time-check.mjs');

@@ -2,8 +2,9 @@
 
 Toolchain uses Lefthook 2.2.2 as a root development dependency.
 The [configuration](../lefthook.yml) runs pre-commit checks in parallel.
-It checks formatting and secrets without automatic fixes, staging, or stashing.
-Hook commands do not substitute filenames into a shell command.
+It checks the branch, formatting, and secrets without automatic fixes, staging, or stashing.
+The commit-msg hook rejects links to AI agent sessions. The pre-push hook rejects a push to `master` or `main`.
+The only substituted value is the message file path that Git gives to commit-msg. Hook commands do not substitute staged filenames into a shell command.
 
 ## Trusted configuration sources
 
@@ -38,8 +39,9 @@ Lefthook's package has a postinstall script. npm ci --ignore-scripts deliberatel
 Platform-specific optional packages supply the Lefthook binary without a download hook.
 Do not add a prepare or postinstall script to install repository hooks.
 
-The explicit installer writes only the pre-commit hook in the common Git directory.
-It refuses an existing pre-commit hook, configured core.hooksPath, or linked hooks directory.
+The explicit installer writes the pre-commit, commit-msg, and pre-push hooks in the common Git directory.
+It refuses an existing hook of these types, configured core.hooksPath, or linked hooks directory.
+It replaces only a Lefthook wrapper that calls this project's node_modules/lefthook. Run `npm run hooks:install` again to add new hooks.
 An explicitly empty core.hooksPath is also preserved.
 It does not overwrite a personal hook or change Git configuration.
 If installation stops, inspect the existing setup and combine the checks manually if necessary.
@@ -127,6 +129,7 @@ History scans cover reachable local refs, not reflogs, unreachable objects, or r
 Secret detection can have false positives and false negatives.
 Review changes to configuration and dependency versions.
 
+Lefthook skips pre-commit commands for a commit without staged changes. The pre-push hook and the `pr-rules` CI job still check the branch.
 Local hooks can be bypassed with Git or Lefthook controls.
 CI provides a separate check. Required-check branch protection must be configured separately by the repository owner.
 No branch protection, remote setting, or publication permission is changed by this integration.

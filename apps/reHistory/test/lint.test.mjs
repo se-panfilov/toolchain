@@ -97,3 +97,39 @@ test('strict rules keep runtime checks that static types call unnecessary', asyn
   );
   expect(errors).toEqual([]);
 });
+
+test('subprocesses start without a shell', async () => {
+  const file = 'configs/lint-fixture.mjs';
+  const errors = await messages(
+    "import { exec, execSync, spawnSync } from 'node:child_process';\nimport * as processes from 'node:child_process';\nimport childProcess from 'node:child_process';\nspawnSync('git', ['status'], { shell: true });\nspawnSync('git', ['status'], { shell: '/bin/sh' });\nexport { childProcess, exec, execSync, processes };\n",
+    file
+  );
+  expect(errors.filter((error) => error.ruleId === 'no-restricted-imports')).toHaveLength(3);
+  expect(errors.filter((error) => error.ruleId === 'no-restricted-syntax')).toHaveLength(3);
+  expect(await messages("import { execFileSync, spawnSync } from 'node:child_process';\nspawnSync('git', ['status'], { shell: false });\nexport { execFileSync };\n", file)).toEqual([]);
+});
+
+test('Node.js built-in modules require the node: prefix', async () => {
+  const file = 'configs/lint-fixture.mjs';
+  const errors = await messages("import { readFileSync } from 'fs';\nimport { readFile } from 'fs/promises';\nexport { readFile, readFileSync };\n", file);
+  expect(errors.filter((error) => error.ruleId === 'no-restricted-imports')).toHaveLength(2);
+  expect(await messages("import { readFileSync } from 'node:fs';\nexport { readFileSync };\n", file)).toEqual([]);
+});
+
+test('test names and code comments are in English', async () => {
+  const file = 'apps/reHistory/test/unit.test.ts';
+  const russian = "import { expect, test } from 'vitest';\n// Проверка\ntest('проверка', () => {});\ntest(`проверка ${1}`, () => {});\n";
+  const errors = await messages(russian, file);
+  expect(errors.filter((error) => error.ruleId === 'no-restricted-syntax')).toHaveLength(2);
+  expect(errors.filter((error) => error.ruleId === 'toolchain/english-comments')).toHaveLength(1);
+  const english = "import { expect, test } from 'vitest';\n// Check the interface text.\ntest('the message is shown', () => {\n  expect('Ввод отменён.').toContain('Ввод');\n});\n";
+  expect(await messages(english, file)).toEqual([]);
+  expect((await messages('// Комментарий\nexport const value = 1;\n', 'configs/lint-fixture.mjs')).map((error) => error.ruleId)).toEqual(['toolchain/english-comments']);
+});
+
+test('an application imports only its own alias and @shared', async () => {
+  const errors = await messages("import '@reCast/cli';\nimport '@/engine';\nimport '../../reCast/src/cli.js';\n");
+  expect(new Set(errors.filter((error) => error.ruleId === 'no-restricted-imports').map((error) => error.line)).size).toBe(3);
+  expect(await messages("import '@reCast/cli';\n", 'apps/reHistory/test/unit.test.ts')).toHaveLength(1);
+  expect(await messages("import '@reHistory/audit';\nimport '@shared/text';\n")).toEqual([]);
+});

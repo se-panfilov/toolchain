@@ -37,7 +37,7 @@ function build(directory) {
   return spawnSync(process.execPath, [join(directory, 'scripts/build.mjs')], { cwd: directory, encoding: 'utf8', timeout: 60000 });
 }
 
-test('ошибка типов сохраняет dist и не позволяет npm start запустить старую сборку', (t) => {
+test('a type error keeps dist and prevents npm start from running the old build', (t) => {
   const directory = fixture(t);
   const marker = join(directory, 'unexpected-start');
   mkdirSync(join(directory, 'dist/src'), { recursive: true });
@@ -61,7 +61,7 @@ test('ошибка типов сохраняет dist и не позволяет
   assert.equal(readFileSync(join(directory, 'dist/src', 'cli.js'), 'utf8'), stale);
 });
 
-test('сборка отклоняет ссылки в dist и сохраняет внешние файлы', (t) => {
+test('the build rejects links in dist and keeps external files', (t) => {
   const directory = fixture(t);
   const external = join(directory, 'external.js');
   writeFileSync(external, 'protected');
@@ -94,7 +94,7 @@ test('сборка отклоняет ссылки в dist и сохраняет
   }
 });
 
-test('сборка сохраняет неизвестные файлы dist и требует их отдельной проверки', (t) => {
+test('the build keeps unknown dist files and requires a separate check of them', (t) => {
   const directory = fixture(t);
   mkdirSync(join(directory, 'dist'));
   const file = join(directory, 'dist', 'private-note.txt');
@@ -106,7 +106,7 @@ test('сборка сохраняет неизвестные файлы dist и 
   assert.equal(readFileSync(file, 'utf8'), 'protected');
 });
 
-test('ошибка Vite после проверки типов сохраняет готовую сборку', (t) => {
+test('a Vite error after the type check keeps the completed build', (t) => {
   const directory = fixture(t);
   mkdirSync(join(directory, 'dist/src'), { recursive: true });
   const file = join(directory, 'dist/src/cli.js');

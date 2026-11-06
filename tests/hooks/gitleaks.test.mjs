@@ -17,8 +17,17 @@ const secret = ['gh', 'p_', 'm7K2p9Z4v6B8n3X5q1R0s2T4u6V8w9Y1a3C5'].join('');
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), 'toolchain-gitleaks-'));
   t.onTestFinished(() => rmSync(root, { recursive: true, force: true }));
-  mkdirSync(join(root, 'scripts'));
-  for (const path of ['scripts/scan-secrets.mjs', 'scripts/format-changed.mjs', 'scripts/install-hooks.mjs', '.gitleaks.toml', 'lefthook.yml']) {
+  mkdirSync(join(root, 'scripts', 'ci'), { recursive: true });
+  for (const path of [
+    'scripts/scan-secrets.mjs',
+    'scripts/format-changed.mjs',
+    'scripts/install-hooks.mjs',
+    'scripts/git-rules.mjs',
+    'scripts/ci/rules.mjs',
+    'scripts/ci/files.mjs',
+    '.gitleaks.toml',
+    'lefthook.yml'
+  ]) {
     if (existsSync(join(workspace, path))) copyFileSync(join(workspace, path), join(root, path));
   }
   symlinkSync(join(workspace, 'node_modules'), join(root, 'node_modules'), 'junction');
@@ -46,7 +55,7 @@ function fixture(t) {
   return { root, git, scan, command };
 }
 
-test('staged-проверка обнаруживает секрет из индекса и не показывает его байты', (t) => {
+test('the staged check finds a secret in the index and does not show its bytes', (t) => {
   const { root, git, scan } = fixture(t);
   writeFileSync(join(root, 'space name.txt'), secret + '\n');
   git(['add', '--', 'space name.txt']);
@@ -60,7 +69,7 @@ test('staged-проверка обнаруживает секрет из инд�
   assert.equal(readFileSync(join(root, 'space name.txt'), 'utf8'), 'clean working copy\n');
 });
 
-test('временный индекс Git проверяется вместо обычного индекса', (t) => {
+test('a temporary Git index is checked instead of the usual index', (t) => {
   const { root, git, scan } = fixture(t);
   const alternate = join(root, '.git/alternate-index');
   git(['read-tree', 'HEAD'], { GIT_INDEX_FILE: alternate });
@@ -75,7 +84,7 @@ test('временный индекс Git проверяется вместо о
   assert.equal(existsSync(join(root, '.git/index')), original !== undefined);
 });
 
-test('inline allow и пользовательский config не отключают проверку', (t) => {
+test('inline allow and a user config do not disable the check', (t) => {
   const { root, git, scan } = fixture(t);
   writeFileSync(join(root, 'data.txt'), secret + ' # gitleaks:allow\n');
   git(['add', '--', 'data.txt']);
@@ -84,7 +93,7 @@ test('inline allow и пользовательский config не отключ�
   assert.match(result.stdout + result.stderr, /github-pat/);
 });
 
-test('ошибка Prettier в pre-commit-проверке не печатает секрет из исходника', (t) => {
+test('a Prettier error in the pre-commit check does not print a secret from the source', (t) => {
   const { root, git, command } = fixture(t);
   writeFileSync(join(root, 'broken.ts'), `export const token = "${secret}";\n@@@\n`);
   git(['add', '--', 'broken.ts']);
@@ -93,7 +102,7 @@ test('ошибка Prettier в pre-commit-проверке не печатает
   assert(!(result.stdout + result.stderr).includes(secret), 'Formatter diagnostics exposed source content.');
 });
 
-test('установщик не пишет через ссылку на каталог hooks', (t) => {
+test('the installer does not write through a link to the hooks directory', (t) => {
   const { root, command } = fixture(t);
   const external = join(root, 'external-hooks');
   mkdirSync(external);
@@ -104,7 +113,7 @@ test('установщик не пишет через ссылку на ката
   assert.equal(existsSync(join(external, 'pre-commit')), false);
 });
 
-test('существующий пользовательский хук и core.hooksPath сохраняются', (t) => {
+test('an existing user hook and core.hooksPath are preserved', (t) => {
   const { root, git, command } = fixture(t);
   mkdirSync(join(root, '.git/hooks'), { recursive: true });
   const hook = join(root, '.git/hooks/pre-commit');
@@ -119,7 +128,7 @@ test('существующий пользовательский хук и core.h
   assert.equal(existsSync(hook), false);
 });
 
-test('явно пустой core.hooksPath также сохраняется без установки', (t) => {
+test('an explicitly empty core.hooksPath is also preserved without installation', (t) => {
   const { root, git, command } = fixture(t);
   git(['config', 'core.hooksPath', '']);
   const configuration = readFileSync(join(root, '.git/config'));
@@ -130,7 +139,7 @@ test('явно пустой core.hooksPath также сохраняется б�
   assert.equal(existsSync(join(root, '.git/hooks/pre-commit')), false);
 });
 
-test('Git clean-фильтр не запускается перед сканированием', (t) => {
+test('a Git clean filter does not run before the scan', (t) => {
   const { root, git, scan } = fixture(t);
   const marker = join(root, 'executed');
   const filter = join(root, 'filter.cjs');
@@ -146,7 +155,7 @@ test('Git clean-фильтр не запускается перед сканир
   assert.equal(existsSync(marker), false);
 });
 
-test('textconv не запускается и не подменяет секрет чистым текстом', (t) => {
+test('textconv does not run and does not replace a secret with clean text', (t) => {
   const { root, git, scan } = fixture(t);
   const marker = join(root, 'executed');
   const driver = join(root, 'driver.cjs');
@@ -163,7 +172,7 @@ test('textconv не запускается и не подменяет секре
   assert.equal(scan('staged').status, 1);
 });
 
-test('реальный pre-commit пропускает чистый код и блокирует секрет без изменения индекса', (t) => {
+test('a real pre-commit accepts clean code and blocks a secret without a change to the index', (t) => {
   const { root, git, command } = fixture(t);
   const configuration = readFileSync(join(root, '.git/config'));
   const installed = command('scripts/install-hooks.mjs');
@@ -190,9 +199,22 @@ test('реальный pre-commit пропускает чистый код и б
   assert.notEqual(only.status, 0, 'Temporary-index formatting check did not block the commit.');
   assert.equal(git(['diff', '--cached', '--name-only']).trim(), '');
   assert.equal(readFileSync(join(root, 'space name.ts'), 'utf8'), 'export const value={a:1}\n');
+  writeFileSync(join(root, 'space name.ts'), 'export const value = 1;\n');
+  for (const hook of ['commit-msg', 'pre-push']) assert(existsSync(join(root, '.git/hooks', hook)), `${hook} is not installed.`);
+  const again = command('scripts/install-hooks.mjs');
+  assert.equal(again.status, 0, 'The installer did not replace its own wrapper.');
+  const session = commit(['--allow-empty', '-m', 'Claude-Session: https://claude.ai/code/session_1']);
+  assert.notEqual(session.status, 0, 'commit-msg accepted an agent session trailer.');
+  assert.match(session.stdout + session.stderr, /сессией агента/);
+  git(['checkout', '-q', '-b', 'master']);
+  writeFileSync(join(root, 'other.ts'), 'export const other = 2;\n');
+  git(['add', '--', 'other.ts']);
+  const protectedCommit = commit();
+  assert.notEqual(protectedCommit.status, 0, 'pre-commit accepted a commit on master.');
+  assert.match(protectedCommit.stdout + protectedCommit.stderr, /master запрещён/);
 });
 
-test('shallow-история и неизвестный режим не дают ложного успеха', (t) => {
+test('a shallow history and an unknown mode do not give a false success', (t) => {
   const { root, git, scan } = fixture(t);
   writeFileSync(join(root, '.git/shallow'), git(['rev-parse', 'HEAD']));
   const shallow = scan('history');
@@ -201,7 +223,7 @@ test('shallow-история и неизвестный режим не дают 
   assert.equal(scan('unknown').status, 2);
 });
 
-test('чистый индекс не блокируется секретом только в рабочем дереве', (t) => {
+test('a clean index is not blocked by a secret that is only in the working tree', (t) => {
   const { root, git, scan } = fixture(t);
   writeFileSync(join(root, 'data.txt'), 'clean\n');
   git(['add', '--', 'data.txt']);
@@ -210,7 +232,7 @@ test('чистый индекс не блокируется секретом т�
   assert.equal(result.status, 0, result.stderr);
 });
 
-test('история проверяет удалённый секрет и другую локальную ветку', (t) => {
+test('the history check finds a deleted secret and another local branch', (t) => {
   const { root, git, scan } = fixture(t);
   git(['checkout', '-q', '-b', 'other']);
   writeFileSync(join(root, 'data.txt'), secret + '\n');
@@ -225,7 +247,7 @@ test('история проверяет удалённый секрет и др�
   assert(!(result.stdout + result.stderr).includes(secret));
 });
 
-test('files-проверка включает untracked и игнорируемые исходные файлы', (t) => {
+test('the files check includes untracked and ignored source files', (t) => {
   const { root, scan } = fixture(t);
   writeFileSync(join(root, '.gitignore'), 'private.txt\n');
   writeFileSync(join(root, 'private.txt'), secret + '\n');

@@ -4,7 +4,21 @@ lefthook: node node_modules/lefthook/bin/index.js
 pre-commit:
   parallel: true
   commands:
+    branch:
+      run: node scripts/git-rules.mjs branch
     prettier:
       run: npm run pretty-quick -- --check
     gitleaks:
       run: npm run gitleaks:staged
+
+# {1} is the message file path that Git gives to the commit-msg hook.
+commit-msg:
+  commands:
+    message:
+      run: node scripts/git-rules.mjs message {1}
+
+pre-push:
+  commands:
+    branch:
+      run: node scripts/git-rules.mjs push
+      use_stdin: true
