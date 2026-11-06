@@ -1,0 +1,70 @@
+{
+  "name": "tx-rerules",
+  "version": "0.1.1",
+  "description": "Copy selected GitHub repository settings from a source repository to a target repository, with a preview and a confirmation",
+  "private": false,
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=24.12.0"
+  },
+  "bin": {
+    "tx-rerules": "dist/src/cli.js"
+  },
+  "files": [
+    "dist/src/access.js",
+    "dist/src/actions.js",
+    "dist/src/auth.js",
+    "dist/src/cli.js",
+    "dist/src/codeowners.js",
+    "dist/src/crypto.js",
+    "dist/src/environments.js",
+    "dist/src/execute.js",
+    "dist/src/extras.js",
+    "dist/src/flow.js",
+    "dist/src/github.js",
+    "dist/src/integrations.js",
+    "dist/src/plan.js",
+    "dist/src/prompts.js",
+    "dist/src/protection.js",
+    "dist/src/repo.js",
+    "dist/src/rulesets.js",
+    "dist/src/run.js",
+    "dist/src/secrets.js",
+    "dist/src/security.js",
+    "dist/src/settings.js",
+    "dist/src/state.js",
+    "dist/src/ui.js",
+    "dist/src/variables.js",
+    "README.md",
+    "SECURITY.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "npm run build && vitest run",
+    "start": "npm run build && node dist/src/cli.js",
+    "typecheck": "tsc --project tsconfig.json --noEmit",
+    "build": "node scripts/build.mjs",
+    "prepack": "npm run build",
+    "lint": "eslint . --max-warnings=0",
+    "lint:fix": "eslint . --fix --max-warnings=0",
+    "format": "prettier --ignore-path ../../.prettierignore --write .",
+    "format:check": "prettier --ignore-path ../../.prettierignore --check .",
+    "check": "npm run format:check && npm run lint && npm test"
+  },
+  "exports": {},
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/se-panfilov/toolchain.git",
+    "directory": "apps/reRules"
+  },
+  "keywords": [
+    "github",
+    "cli",
+    "rulesets",
+    "repository-settings"
+  ],
+  "dependencies": {
+    "libsodium-wrappers": "0.8.4"
+  }
+}

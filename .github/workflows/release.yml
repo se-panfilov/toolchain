@@ -19,7 +19,7 @@ on:
           - moveToRepo
           - reCast
           - reHistory
-          - repoRules
+          - reRules
       dry_run:
         description: Run all checks and npm publish --dry-run. Do not publish or create GitHub releases.
         type: boolean
