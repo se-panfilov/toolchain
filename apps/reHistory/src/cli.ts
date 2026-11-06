@@ -352,7 +352,10 @@ async function main(): Promise<void> {
     describe(options, plan);
     print(mode.destination ? 'Исходник сохранится.' : `Бекап: ${backupBranch || 'нет'}`, 'muted');
     for (const ref of plan.selected) print(`  ${ref.name}  ${ref.oid.slice(0, 12)} → ${plan.mapping.get(ref.oid)!.slice(0, 12)}`, 'muted');
-    if (plan.stripped) print(`Подписи и mergetag к удалению: ${plan.stripped}`, 'warning');
+    if (plan.stripped) {
+      print(`Подписи и mergetag к удалению: ${plan.stripped}`, 'warning');
+      print('Новые коммиты и теги нельзя подписать заново. Без удаления подписей переписывание невозможно.', 'warning');
+    }
     if (options.flow === 'dates') print('Даты условные; старые копии сохраняют исходную историю.', 'muted');
     if (!mode.destination && plan.selected.every((ref) => plan.mapping.get(ref.oid) === ref.oid)) {
       print('Изменений нет: история уже соответствует параметрам.', 'success');
@@ -362,8 +365,8 @@ async function main(): Promise<void> {
       print('Dry-run завершён. Без изменений.', 'success');
       return;
     }
-    if (plan.stripped && !(await choose('Удалить подписи и mergetag?', false))) {
-      print('Отменено.');
+    if (plan.stripped && !(await choose('Удалить подписи и продолжить?', false))) {
+      print('Отменено: подписи сохранены, история не изменена.');
       return;
     }
     if (!(await choose(mode.destination ? 'Создать экспорт?' : 'Применить изменения?', false))) {

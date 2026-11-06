@@ -352,3 +352,20 @@ test('импорт объектов использует общий катало
   assert.equal(repo.text(['rev-parse', 'HEAD']), plan.mapping.get(plan.headOid));
   assert.equal(existsSync(join(repo.path, 'apps', 'tool', '.git')), false);
 });
+
+test.skipIf(process.platform === 'win32')('CLI объясняет, что без удаления подписей переписывание невозможно', (t) => {
+  const root = temp(t);
+  const repo = fixture(t);
+  const original = repo.git(['cat-file', 'commit', 'HEAD']);
+  const split = original.indexOf(Buffer.from('\n\n'));
+  const signed = Buffer.concat([original.subarray(0, split), Buffer.from('\ngpgsig -----BEGIN PGP SIGNATURE-----\n fake\n -----END PGP SIGNATURE-----'), original.subarray(split)]);
+  const oid = repo.text(['hash-object', '-w', '-t', 'commit', '--stdin'], signed);
+  repo.git(['update-ref', 'refs/heads/main', oid]);
+  repo.git(['update-ref', 'refs/remotes/origin/main', oid]);
+  const run = runCli(root, repo, { 'Что переписать?': 2, 'Создать бекап?': false, 'Новое сообщение': 'x', 'Удалить подписи и продолжить?': false });
+  assert.equal(run.status, 0, run.output);
+  assert.match(run.output, /Без удаления подписей переписывание невозможно/);
+  assert.match(run.output, /Отменено: подписи сохранены, история не изменена/);
+  assert.equal(run.asked.at(-1), 'Удалить подписи и продолжить?');
+  assert.equal(repo.text(['rev-parse', 'HEAD']), oid);
+});

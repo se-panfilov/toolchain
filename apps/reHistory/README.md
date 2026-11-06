@@ -320,7 +320,10 @@ In the `Время коммитов` flow, a nested tag uses the date of its tar
 As an alternative, you can keep the initial tagger date and offset.
 A tag without a tagger causes the program to stop.
 
-If there are signatures, select Yes at a different question to remove them.
+A changed commit or tag gets a new object ID, so its initial signature becomes invalid.
+The program cannot make new signatures. Thus a change is possible only without signatures.
+If there are signatures, the plan shows their number and the question `Удалить подписи и продолжить?`.
+The initial answer is No. No stops the program without a change.
 It removes `gpgsig`, `gpgsig-sha256`, `mergetag`, and standard tag signature blocks.
 It does not make new signatures.
 Ambiguous, nested, or multiple signature blocks stop plan creation.
