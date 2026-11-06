@@ -94,7 +94,8 @@ Servers without atomic support are rejected.
 
 The program checks local refs and the effective configuration digest before sending.
 Refspecs use object IDs, so a later local ref change cannot change the sent commits.
-The configured upstream determines the branch destination only for its selected remote.
+The branch destination always has the current branch name, as with `push.default=simple`.
+An upstream branch with a different name, for example the default branch, is never a destination.
 Multiple upstream branches or push URLs are rejected.
 Git URL substitutions are rejected before the server read.
 
@@ -366,6 +367,20 @@ Large histories, disk limits, and Git memory use can cause an operation to stop.
 Temporary packs use private directories outside the source repository.
 A normal return or handled error removes them.
 An abrupt process termination can leave those private files.
+
+## Push destination security audit: 2026-10-30
+
+A third audit of the complete repository examined the push destination.
+A test with synthetic repositories confirmed one defect.
+
+| Defect                         | Condition                                                                                                           | Effect before the fix                                                                                                        |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Upstream with a different name | The upstream of the current branch has a different name, for example after `git checkout -b feature origin/master`. | After one confirmation, the push replaced `master` on the server with the rewritten feature branch and its unmerged commits. |
+
+The branch destination now always has the current branch name, as with `push.default=simple`.
+To send the branch to a server branch with a different name, do a manual push after you examine the result.
+
+Regression tests: [push](test/remote.test.ts).
 
 ## Server branch comparison security audit: 2026-10-30
 
