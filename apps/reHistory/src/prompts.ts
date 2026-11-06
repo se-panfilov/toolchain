@@ -1,5 +1,5 @@
-import { createInterface, emitKeypressEvents, cursorTo, moveCursor, clearScreenDown } from 'node:readline';
 import { stdin, stdout } from 'node:process';
+import { clearScreenDown,createInterface, cursorTo, emitKeypressEvents, moveCursor } from 'node:readline';
 import type { ReadStream, WriteStream } from 'node:tty';
 
 export class PromptCancelled extends Error {
@@ -13,7 +13,8 @@ function safe(value: string): string {
 }
 
 // Add ANSI colors only after text sanitization. Keep pipe output without colors.
-export function terminalStyle(output: Pick<WriteStream, 'isTTY'> = stdout) {
+export type TerminalStyle = Record<'plain' | 'accent' | 'muted' | 'strong' | 'success' | 'warning' | 'error', (text: string) => string>;
+export function terminalStyle(output: Pick<WriteStream, 'isTTY'> = stdout): TerminalStyle {
   const enabled = Boolean(output.isTTY) && process.env.TERM !== 'dumb' && !('NO_COLOR' in process.env) && process.env.FORCE_COLOR !== '0';
   const color = (code: number) => (text: string) => (enabled ? `\x1b[${code}m${text}\x1b[0m` : text);
   return { plain: (text: string) => text, accent: color(36), muted: color(2), strong: color(1), success: color(32), warning: color(33), error: color(31) };
@@ -47,7 +48,7 @@ export class TerminalPrompts {
     const wasFlowing = this.input.readableFlowing === true;
     const rl = createInterface({ input: this.input, output: this.output, terminal: true, historySize: 0 });
     let settled = false;
-    let cancel = () => {};
+    let cancel = (): void => {};
     try {
       return await new Promise<string>((resolve, reject) => {
         cancel = () => {
@@ -97,9 +98,9 @@ export class TerminalPrompts {
     let drawn = false;
     let pasting = false;
     let settled = false;
-    let cancel = () => {};
-    let keypress = (_text: string | undefined, _key: Key) => {};
-    const render = () => {
+    let cancel = (): void => {};
+    let keypress = (_text: string | undefined, _key: Key): void => {};
+    const render = (): void => {
       if (drawn) {
         moveCursor(this.output, 0, -choices.length);
         cursorTo(this.output, 0);
@@ -119,7 +120,7 @@ export class TerminalPrompts {
     };
     try {
       return await new Promise<number>((resolve, reject) => {
-        const finish = (error?: Error) => {
+        const finish = (error?: Error): void => {
           if (settled) return;
           settled = true;
           if (error) reject(error);

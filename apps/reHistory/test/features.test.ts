@@ -1,14 +1,15 @@
-import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
-import { Repository, runGit, makePlan, applyPlan } from '@reHistory/engine';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+
 import { auditRepository, stamp } from '@reHistory/audit';
-import { exportDestination, exportPlan, verifyExport, manifestName } from '@reHistory/export';
-import { runDemo, validateDemoURL } from '@reHistory/demo';
 import { parseArguments } from '@reHistory/cli';
+import { runDemo, validateDemoURL } from '@reHistory/demo';
+import { applyPlan,makePlan, Repository, runGit } from '@reHistory/engine';
+import { exportDestination, exportPlan, manifestName,verifyExport } from '@reHistory/export';
+import { test } from 'vitest';
 
 function temp(t: { onTestFinished: (fn: () => void) => void }): string {
   const path = mkdtempSync(join(tmpdir(), 'rehistory-features-'));

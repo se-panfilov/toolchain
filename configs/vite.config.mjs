@@ -1,5 +1,6 @@
-import { defineConfig } from 'vite';
 import { join } from 'node:path';
+
+import { defineConfig } from 'vite';
 
 /** Shared Node.js CLI build settings. Resolve paths from each application's root. */
 export function nodeCliConfig({ root, namespace, modules }) {

@@ -1,8 +1,32 @@
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { Repository, parts, field, readMetadataBatches } from '@reHistory/engine';
+
+import { field, parts, readMetadataBatches,type Repository } from '@reHistory/engine';
 
 export type Stamp = { identity: string; timestamp: number; timezone: string };
+export type AuditReport = {
+  version: number;
+  complete: boolean;
+  repository: string;
+  headOid: string;
+  refs: { name: string; oid: string; symbolic: string; target: string; inCurrentHistory: boolean; backup: boolean }[];
+  commits: { oid: string; author: Stamp; committer: Stamp; inCurrentHistory: boolean; reachableFromRefs: boolean; protectedByReflog: boolean }[];
+  tags: { oid: string; target: string; tagger: Stamp; reachableFromRefs: boolean }[];
+  reflog: { entries: number; refs: (string | undefined)[]; records: { oid: string; selector: string }[] };
+  unreachable: { count: number; byType: Record<string, number> };
+  metadata: {
+    partial: boolean;
+    shallow: boolean;
+    grafts: boolean;
+    alternates: boolean;
+    files: string[];
+    operations: string[];
+    submodules: boolean;
+    worktreeCount: number;
+    remoteNames: (string | undefined)[];
+  };
+  warnings: string[];
+};
 export function stamp(data: Buffer, key: string): Stamp {
   const header = parts(data).headers.find((h) => field(h) === key);
   const match = header && /^(?:author|committer|tagger) (.*) (-?\d+) ([+-]\d{4})$/.exec(header.toString('utf8'));
@@ -30,7 +54,7 @@ export function objectClosure(repo: Repository, roots: string[]): Set<string> {
 }
 
 /** Read all refs and objects, including objects outside the selected branch. */
-export function auditRepository(repo: Repository) {
+export function auditRepository(repo: Repository): AuditReport {
   const warnings: string[] = [];
   let complete = true;
   function read(args: string[]): string {
@@ -191,7 +215,6 @@ export function auditRepository(repo: Repository) {
     warnings
   };
 }
-export type AuditReport = ReturnType<typeof auditRepository>;
 export function auditText(report: AuditReport): string {
   const lines = [
     `АУДИТ: ${report.repository}`,

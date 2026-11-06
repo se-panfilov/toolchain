@@ -1,14 +1,26 @@
-import { test } from 'vitest';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync,rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Repository, makePlan, applyPlan, runGit, normalizeCommitMessage } from '@reHistory/engine';
-import { exportPlan, verifyExport, manifestName } from '@reHistory/export';
-import { preparePush, executePush, pushRemotes, validateRemoteURL, networkGit, type PushTransport } from '@reHistory/remote';
+
+import { applyPlan, makePlan, normalizeCommitMessage,Repository, runGit } from '@reHistory/engine';
+import { exportPlan, manifestName,verifyExport } from '@reHistory/export';
+import { executePush, networkGit, preparePush, pushRemotes, type PushTransport,validateRemoteURL } from '@reHistory/remote';
+import { test } from 'vitest';
 
 const settings = { start: 1700000000, interval: 1 };
-function fixture(t: { onTestFinished: (fn: () => void) => void }, format = 'sha1') {
+type Fixture = {
+  root: string;
+  repo: Repository;
+  server: string;
+  url: string;
+  before: ReturnType<Repository['refs']>;
+  first: string;
+  connection: PushTransport;
+  git: (args: string[]) => Buffer;
+  stats: () => { pushes: number; reads: number; lastArgs: string[] };
+};
+function fixture(t: { onTestFinished: (fn: () => void) => void }, format = 'sha1'): Fixture {
   const root = mkdtempSync(join(tmpdir(), 'rehistory-push-'));
   t.onTestFinished(() => rmSync(root, { recursive: true, force: true }));
   runGit(root, ['init', '-q', '--template=', '-b', 'main', `--object-format=${format}`, join(root, 'source')]);
@@ -28,7 +40,7 @@ function fixture(t: { onTestFinished: (fn: () => void) => void }, format = 'sha1
   repo.git(['init', '-q', '--bare', '--template=', `--object-format=${format}`, server]);
   const url = 'https://example.invalid/project.git';
   repo.git(['remote', 'add', 'origin', url]);
-  const git = (args: string[]) => repo.git(['-c', 'protocol.file.allow=always', ...args]);
+  const git = (args: string[]): Buffer => repo.git(['-c', 'protocol.file.allow=always', ...args]);
   git(['push', '--atomic', server, ...before.map((ref) => `${ref.oid}:${ref.name}`)]);
   let pushes = 0;
   let reads = 0;
