@@ -1,6 +1,6 @@
 {
   "name": "tx-rerules",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Copy selected GitHub repository settings from a source repository to a target repository, with a preview and a confirmation",
   "private": false,
   "type": "module",

@@ -12,7 +12,7 @@ export type LocalRepo = { ref: RepoRef; remote: string };
 /**
  * Read a small regular file. Return undefined for a missing file, a link, another file type, or a large file.
  * The checks use the open descriptor, so a file that changes after the check is not read.
- * O_NOFOLLOW refuses a final link on macOS and Linux. Windows has no such flag, so a link can be followed there. O_NONBLOCK keeps a FIFO from blocking the open.
+ * O_NOFOLLOW refuses a final link on macOS and Linux. Windows has no such flag, so a check after the open compares the path entry with the descriptor. O_NONBLOCK keeps a FIFO from blocking the open.
  */
 function readSmallFile(path: string): string | undefined {
   let fd: number | undefined;
@@ -20,6 +20,9 @@ function readSmallFile(path: string): string | undefined {
     fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
     const stat = fstatSync(fd);
     if (!stat.isFile() || stat.size > maxFileBytes) return undefined;
+    // Without O_NOFOLLOW (Windows), the open follows a link. The path entry must be the opened file itself.
+    const entry = lstatSync(path);
+    if (entry.isSymbolicLink() || entry.ino !== stat.ino || entry.dev !== stat.dev) return undefined;
     return readFileSync(fd, 'utf8');
   } catch {
     return undefined;
