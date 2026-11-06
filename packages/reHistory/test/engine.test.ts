@@ -1,15 +1,15 @@
-import { test } from 'node:test';
+import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync, readdirSync, readFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { Repository, makePlan, applyPlan, validateIdentity, runGit, defaultBackupBranch, withoutGitEnvironment, stripTagSignature } from '#rehistory/engine';
-import { parseDate, parseStart } from '#rehistory/cli';
+import { Repository, makePlan, applyPlan, validateIdentity, runGit, defaultBackupBranch, withoutGitEnvironment, stripTagSignature } from '@reHistory/engine';
+import { parseDate, parseStart } from '@reHistory/cli';
 
-function fixture(t: { after: (fn: () => void) => void }, format?: string): Repository {
+function fixture(t: { onTestFinished: (fn: () => void) => void }, format?: string): Repository {
   const dir = mkdtempSync(join(tmpdir(), 'rehistory-test-'));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.onTestFinished(() => rmSync(dir, { recursive: true, force: true }));
   // Isolate fixture creation from GIT_* variables and user templates too.
   runGit(tmpdir(), ['init', '-q', '--template=', '-b', 'main', ...(format ? [`--object-format=${format}`] : []), dir]);
   const repo = new Repository(dir);
@@ -283,7 +283,7 @@ test('переменные GIT_* не перенаправляют работу 
   const foreign = fixture(t);
   const child = join(repo.common, 'routing-check.mjs');
   writeFileSync(child, `
-    import { Repository, makePlan } from ${JSON.stringify(new URL('../src/engine.js', import.meta.url).href)};
+    import { Repository, makePlan } from ${JSON.stringify(new URL('../dist/src/engine.js', import.meta.url).href)};
     const repo = new Repository(process.argv[2]);
     const plan = makePlan(repo, { start: 1700000000, interval: 1 });
     console.log(JSON.stringify({ commits: plan.commits, common: repo.common }));
@@ -334,10 +334,10 @@ test('введённое время попадает в даты автора и
 
 test('локальное время проверяется при переходах DST; явное смещение однозначно', t => {
   const dir = mkdtempSync(join(tmpdir(), 'rehistory-time-'));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.onTestFinished(() => rmSync(dir, { recursive: true, force: true }));
   const child = join(dir, 'time-check.mjs');
   writeFileSync(child, `
-    import { parseStart } from ${JSON.stringify(new URL('../src/cli.js', import.meta.url).href)};
+    import { parseStart } from ${JSON.stringify(new URL('../dist/src/cli.js', import.meta.url).href)};
     let missing = false;
     try { parseStart('2026-03-29', '02:30'); } catch { missing = true; }
     console.log(JSON.stringify({ missing, delta: parseStart('2026-10-25', '02:30+01:00') - parseStart('2026-10-25', '02:30+02:00') }));

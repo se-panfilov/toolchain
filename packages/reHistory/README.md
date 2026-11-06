@@ -12,17 +12,20 @@ Use [SECURITY.md](SECURITY.md) for security controls and limits.
 | Path | Purpose |
 | --- | --- |
 | `src/` | TypeScript application modules. |
-| `test/` | TypeScript tests and build regression tests. |
-| `scripts/build.mjs` | Checked compilation and output publication. |
+| `test/` | Vitest unit, integration, and build regression tests. |
+| `scripts/build.mjs` | Type checking, Vite build, and output publication. |
 | `dist/src/` | Compiled runtime modules. |
-| `dist/test/` | Compiled tests. These do not enter the npm archive. |
+| `vite.config.mjs` | Node.js build target, aliases, and module output. |
+| `vitest.config.mjs` | Test isolation and shared Vite alias resolution. |
 
 The package is a CLI without a public import API.
 Its exports map is empty.
-Private module imports use `#rehistory/*` through package.json imports.
-For example, `#rehistory/engine` resolves the compiled engine module.
-The tsconfig paths mapping resolves the corresponding source during compilation.
-No custom runtime loader or alias dependency is necessary.
+Source module imports use `@reHistory/*`.
+For example, `@reHistory/engine` resolves `src/engine.ts` during the Vite build.
+Vitest shares the Vite alias configuration.
+The tsconfig paths mapping resolves the same source for type checks.
+Vite converts these aliases to relative JavaScript imports in `dist/`.
+The installed package needs no source aliases or custom loader.
 
 ## Safety
 
@@ -542,19 +545,21 @@ npx tx-rehistory --help
    npm pack --pack-destination /path/to/package-directory
    ```
 
-The build uses the locked TypeScript compiler and tsconfig.json.
-Strict type checking and compilation occur before files enter `dist/`.
-The configuration uses ES2023, NodeNext modules, and Node.js types.
+The build runs `tsc --noEmit` with tsconfig.json, then Vite.
+Both stages complete before files enter `dist/`.
+Vite alone does not check types.
+The TypeScript configuration uses ES2023, ESNext modules, Bundler resolution, and Node.js types.
+Vite targets Node.js 24 and emits ESM modules.
 It also checks unused code, implicit returns, overrides, and switch fallthrough.
 A type error prevents output changes.
 The build checks output paths before and after compilation.
 Existing symbolic links, hard links, and special files at output paths stop the build.
 
 The local start command and npm bin use the same `dist/src/cli.js` file.
-The build also compiles tests into `dist/test/`.
+Vitest transforms source tests without adding them to `dist/`.
 Unknown output files stop the build and require separate review.
 After successful compilation, the build removes known flat files from the earlier output layout.
-The package file allowlist excludes compiled tests and build tools.
+The package file allowlist excludes tests, configuration files, and build tools.
 The `prepack` script makes the build.
 There are no install lifecycle scripts.
 
@@ -579,12 +584,22 @@ npm run typecheck
 npm test
 ```
 
-Tests use different temporary repositories.
+All existing tests now use Vitest.
+The unit suite covers dates, identities, signature removal, environment isolation, and terminal interaction.
+The integration suite uses real Git commands in different temporary repositories.
+The subprocess tests also exercise the built JavaScript modules.
+
+Use `npm run test:unit` for unit and terminal tests.
+Use `npm run test:watch` to watch those source-only suites.
+Use `npm test` after changes to check the build and all integration regressions.
+Test files run sequentially in isolated workers because some checks change process state.
 The demo test uses a local test server through a transport adapter.
 A specified network URL is necessary for the product demo.
 
 ## Technical references
 
+- [Vite TypeScript and type checking](https://vite.dev/guide/features.html#typescript).
+- [Vitest configuration](https://vitest.dev/config/).
 - [TypeScript compiler configuration](https://www.typescriptlang.org/tsconfig/).
 - [Git ref transactions](https://git-scm.com/docs/git-update-ref).
 - [Git object inventory](https://git-scm.com/docs/git-cat-file).

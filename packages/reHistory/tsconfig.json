@@ -4,8 +4,8 @@
     "lib": [
       "ES2023"
     ],
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
     "rootDir": ".",
     "outDir": "dist",
     "types": [
@@ -17,7 +17,7 @@
     "verbatimModuleSyntax": true,
     "isolatedModules": true,
     "paths": {
-      "#rehistory/*": [
+      "@reHistory/*": [
         "./src/*.ts"
       ]
     },
@@ -25,7 +25,8 @@
     "noFallthroughCasesInSwitch": true,
     "noImplicitOverride": true,
     "noUnusedLocals": true,
-    "noUnusedParameters": true
+    "noUnusedParameters": true,
+    "noEmit": true
   },
   "include": [
     "src/**/*.ts",

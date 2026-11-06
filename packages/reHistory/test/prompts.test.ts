@@ -1,9 +1,9 @@
-import { test } from 'node:test';
+import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { PassThrough, Writable } from 'node:stream';
 import { stripVTControlCharacters } from 'node:util';
 import type { ReadStream, WriteStream } from 'node:tty';
-import { TerminalPrompts, PromptCancelled, terminalStyle } from '#rehistory/prompts';
+import { TerminalPrompts, PromptCancelled, terminalStyle } from '@reHistory/prompts';
 
 class Input extends PassThrough {
   isTTY = true;
@@ -16,13 +16,13 @@ class Output extends Writable {
   text = '';
   override _write(chunk: Buffer, _encoding: string, callback: () => void): void { this.text += chunk.toString(); callback(); }
 }
-function fixture(t: { after: (fn: () => void) => void }) {
+function fixture(t: { onTestFinished: (fn: () => void) => void }) {
   // Model an ANSI terminal, not the TERM=dumb shell used by CI.
   const term = process.env.TERM; process.env.TERM = 'xterm-256color';
-  t.after(() => { if (term === undefined) delete process.env.TERM; else process.env.TERM = term; });
+  t.onTestFinished(() => { if (term === undefined) delete process.env.TERM; else process.env.TERM = term; });
   const input = new Input(); const output = new Output();
   const prompts = new TerminalPrompts(input as unknown as ReadStream, output as unknown as WriteStream);
-  t.after(() => { prompts.close(); input.destroy(); output.destroy(); });
+  t.onTestFinished(() => { prompts.close(); input.destroy(); output.destroy(); });
   return { input, output, prompts };
 }
 
@@ -132,7 +132,7 @@ test('неподдерживаемый терминал отклоняется �
 
 test('цвета доступны только в TTY и отключаются NO_COLOR', t => {
   const env = { TERM: process.env.TERM, NO_COLOR: process.env.NO_COLOR, FORCE_COLOR: process.env.FORCE_COLOR };
-  t.after(() => { for (const [key, value] of Object.entries(env)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; } });
+  t.onTestFinished(() => { for (const [key, value] of Object.entries(env)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; } });
   process.env.TERM = 'xterm-256color'; delete process.env.NO_COLOR; delete process.env.FORCE_COLOR;
   assert.match(terminalStyle({ isTTY: true }).accent('текст'), /\x1b\[36mтекст\x1b\[0m/);
   assert.equal(terminalStyle({ isTTY: false }).accent('текст'), 'текст');

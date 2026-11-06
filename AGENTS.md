@@ -28,12 +28,14 @@ Keep utility-specific requirements in the relevant utility documentation.
 
 - Follow [the application package requirements](docs/PACKAGES.md) for directory structure, npm metadata, TypeScript settings, and import aliases.
 - Develop applications in TypeScript. Compile them to JavaScript before execution.
+- Use Vite to build every TypeScript application. Run a separate `tsc --noEmit` check before publishing build output.
 - Use each application's `dist/` as the single runtime artifact for both local execution and npx.
 - Local start scripts and npm bin entries must execute the same compiled entry point. Do not run TypeScript source directly.
 - Give each application a maintained `tsconfig.json`. Use `strict`, `noEmitOnError`, and `forceConsistentCasingInFileNames`.
 - Set `rootDir` explicitly and `outDir` to `dist`. Exclude generated output and dependencies from compilation inputs.
 - Match `target`, `module`, and `moduleResolution` to the supported Node.js versions and package module format.
-- For Node.js ESM applications, use compatible `NodeNext` module and resolution settings. Ensure emitted imports resolve without a TypeScript loader.
+- For Vite applications, use compatible `ESNext` modules and `Bundler` resolution. Verify the emitted code on the supported runtime.
+- Use application-specific `@<directory-name>/*` aliases, such as `@reHistory/*`. Keep Vite, Vitest, and tsconfig mappings consistent.
 - Use Bash only when TypeScript and Node.js cannot reasonably perform the task. Explain the reason.
 - Support macOS first. Prefer portable Node.js APIs and explicit platform checks.
 - Read package engine requirements before execution. The current reHistory minimum is Node.js 24.12.0.
@@ -83,6 +85,8 @@ Keep utility-specific requirements in the relevant utility documentation.
 
 ## Verification and delivery
 
+- Use Vitest for unit and integration tests in all TypeScript applications. Preserve meaningful security regressions during test migration.
+- Test source through Vitest and Vite transforms. Also verify the built CLI and installed archive without source loaders.
 - Test behavior and failure modes in isolated temporary directories with synthetic data.
 - Add regression tests for data loss, target confusion, unauthorized execution, and other confirmed security defects.
 - Run checks appropriate to the change. Do not repeat runtime suites for documentation-only edits without a reason.
@@ -120,6 +124,7 @@ npm --prefix packages/reHistory run build
 node packages/reHistory/dist/src/cli.js --help
 ```
 
-reHistory uses strict compilation with tsconfig.json and locked development dependencies.
+reHistory checks types with tsconfig.json, builds with Vite, and tests with Vitest.
+Its development dependencies are locked.
 Its local start script builds first, then runs the same dist/src/cli.js entry point as the npm bin.
 There is no repository-wide test, lint, or type-check command at present.
