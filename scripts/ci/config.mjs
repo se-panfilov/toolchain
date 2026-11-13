@@ -50,7 +50,8 @@ export const hostConfigPatterns = [
   /^\.gemini\/settings\.json$/i,
   /^\.codex\/config\.toml$/i,
   /^\.cursor\//i,
-  /^\.vscode\/(tasks|settings|mcp)\.json$/i,
+  // Toolchain uses WebStorm. All VS Code settings are rejected, including extension recommendations.
+  /^\.vscode\//i,
   /(^|\/)AGENTS\.override\.md$/i,
   /(^|\/)(CLAUDE|GEMINI)\.local\.md$/i,
   /^\.(cursorrules|windsurfrules)$/i,
