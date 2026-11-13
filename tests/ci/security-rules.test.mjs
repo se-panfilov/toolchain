@@ -85,8 +85,6 @@ test('agent host settings files are rejected', () => {
     '.vscode/tasks.json',
     '.vscode/settings.json',
     '.vscode/mcp.json',
-    '.vscode/extensions.json',
-    '.vscode/launch.json',
     'AGENTS.override.md',
     'apps/demoApp/AGENTS.override.md',
     'CLAUDE.local.md',
@@ -101,6 +99,6 @@ test('agent host settings files are rejected', () => {
 });
 
 test('agent definitions, skills, and Copilot instructions are allowed', () => {
-  const files = ['.claude/agents/security-reviewer.md', '.claude/skills/toolchain-cli/SKILL.md', '.github/copilot-instructions.md', 'AGENTS.md'];
+  const files = ['.claude/agents/security-reviewer.md', '.claude/skills/toolchain-cli/SKILL.md', '.github/copilot-instructions.md', '.vscode/extensions.json', 'AGENTS.md'];
   assert.deepEqual(structureProblems(files), []);
 });

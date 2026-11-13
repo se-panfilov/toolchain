@@ -1,4 +1,5 @@
 # Configs
+.vscode/
 .idea/
 
 # Ignore keys, tokens, secrets

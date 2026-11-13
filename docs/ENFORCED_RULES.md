@@ -43,7 +43,7 @@ The structure check rejects these tracked files. Names are not case-sensitive, b
 
 - `.claude/settings.json` and `.claude/settings.local.json`
 - `.mcp.json`, `.gemini/settings.json`, and `.codex/config.toml`
-- All files in `.cursor/` and `.vscode/`. Toolchain uses WebStorm, so VS Code settings and extension recommendations are not permitted.
+- All files in `.cursor/`, and `.vscode/tasks.json`, `.vscode/settings.json`, and `.vscode/mcp.json`
 - `AGENTS.override.md` in each directory. Codex reads it instead of AGENTS.md.
 - `CLAUDE.local.md` and `GEMINI.local.md` in each directory
 - `.cursorrules`, `.windsurfrules`, and `.clinerules` as a file or a directory

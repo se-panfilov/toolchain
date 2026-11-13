@@ -1,8 +1,8 @@
 # WebStorm setup
 
 Toolchain uses JetBrains WebStorm as its only supported editor.
-Do not add settings, extension recommendations, or instructions for VS Code.
-The structure check rejects all tracked files in `.vscode/`. See [Enforced rules](ENFORCED_RULES.md).
+Give editor settings and instructions for WebStorm only.
+The ignore files and the structure check keep their protection for files of other editors. See [Enforced rules](ENFORCED_RULES.md).
 
 ## Project settings
 

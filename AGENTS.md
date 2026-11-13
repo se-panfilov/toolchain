@@ -94,7 +94,8 @@ If unclear, keep the safer state and ask.
 ## Editor
 
 - Use JetBrains WebStorm. Follow [the WebStorm setup](docs/WEBSTORM.md) for editor settings.
-- Never mention, recommend, or configure VS Code. Do not add `.vscode/` files or VS Code instructions.
+- Do not recommend or configure VS Code. Do not add `.vscode/` files or VS Code setup instructions.
+- Keep the existing ignore entries and security checks for VS Code and Visual Studio files. Their removal requires a human decision.
 - Give editor settings and instructions for WebStorm only. Keep `.idea/` untracked unless a human decides otherwise.
 
 ## CLI behavior
