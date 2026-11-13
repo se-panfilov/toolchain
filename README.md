@@ -88,6 +88,7 @@ The CLI interface uses Russian.
 - [reRules](apps/reRules/README.md) copies selected GitHub repository settings from a source repository to a target repository after a preview and a confirmation.
 - [Agent instructions](AGENTS.md) define development and authorization rules.
 - [Workspace guide](docs/WORKSPACES.md) describes shared configuration and adding an application.
+- [WebStorm setup](docs/WEBSTORM.md) describes the editor settings for this repository.
 - [Package requirements](docs/PACKAGES.md) define workspace layout, versions, TypeScript, and distribution.
 - [GitHub Actions](docs/GITHUB_ACTIONS.md) describes the test, build, and release workflows.
 - [Agent setup](docs/AI_AGENTS.md) describes vendor integration.
