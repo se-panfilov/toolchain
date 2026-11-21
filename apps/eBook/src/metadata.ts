@@ -122,6 +122,16 @@ export function writeNewFile(path: string, content: string): void {
     /* Reported below. */
   }
   if (!directory) throw new Error(`Каталог не найден: ${dirname(path)}`);
+  // On Windows, the wx flag follows a dangling link and creates its target. This check refuses any
+  // entry at the path first. The O_EXCL write below closes the time window on macOS and Linux.
+  let entry = true;
+  try {
+    lstatSync(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    entry = false;
+  }
+  if (entry) throw new Error(`Файл уже существует: ${path}. Существующий файл не перезаписывается.`);
   // The wx flag uses O_EXCL: the call fails if a file or a link is at the path, also a dangling link.
   try {
     writeFileSync(path, content, { encoding: 'utf8', flag: 'wx', mode: 0o644 });
