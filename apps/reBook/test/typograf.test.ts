@@ -1,4 +1,5 @@
-import { linkSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, linkSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -50,12 +51,23 @@ test('DEFAULT has exactly the 85 common/ru rules that Typograf Core enables by d
   expect([...whitelist.enabledRules].sort()).toEqual(expected);
 });
 
-test('LITERARY-MARKDOWN has exactly the 9 conservative rules', () => {
+test('LITERARY-MARKDOWN has exactly the 10 conservative rules', () => {
   const whitelist = buildWhitelist('literary-markdown');
-  expect(whitelist.enabledRules.length).toBe(9);
-  expect(new Set(whitelist.enabledRules).size).toBe(9);
+  expect(whitelist.enabledRules.length).toBe(10);
+  expect(new Set(whitelist.enabledRules).size).toBe(10);
   expect([...whitelist.enabledRules].sort()).toEqual(
-    ['common/other/delBOM', 'common/punctuation/hellip', 'ru/dash/izpod', 'ru/dash/izza', 'ru/dash/ka', 'ru/dash/kakto', 'ru/dash/koe', 'ru/dash/taki', 'ru/dash/to'].sort()
+    [
+      'common/nbsp/afterShortWord',
+      'common/other/delBOM',
+      'common/punctuation/hellip',
+      'ru/dash/izpod',
+      'ru/dash/izza',
+      'ru/dash/ka',
+      'ru/dash/kakto',
+      'ru/dash/koe',
+      'ru/dash/taki',
+      'ru/dash/to'
+    ].sort()
   );
   for (const name of whitelist.enabledRules) {
     const rule = Typograf.getRule(name);
@@ -102,9 +114,9 @@ test('writeWhitelistFile writes a new file and never overwrites an existing one'
   const path = join(directory, defaultWhitelistName);
   writeWhitelistFile(path, buildWhitelist('literary-markdown'));
   const loaded = loadWhitelistFile(path);
-  expect(loaded.enabledRules.length).toBe(9);
+  expect(loaded.enabledRules.length).toBe(10);
   expect(() => writeWhitelistFile(path, buildWhitelist('default'))).toThrow(/уже существует/);
-  expect(loadWhitelistFile(path).enabledRules.length).toBe(9);
+  expect(loadWhitelistFile(path).enabledRules.length).toBe(10);
 });
 
 test('defaultWhitelistPath sits next to the manuscript', () => {
@@ -211,27 +223,31 @@ test('a Markdown manuscript keeps its structure through the LITERARY-MARKDOWN pr
   expect(formatted).toContain('из-за дерева');
 });
 
-test('LITERARY-MARKDOWN does not add unwanted non-breaking spaces or touch Markdown list markers', () => {
+test('LITERARY-MARKDOWN puts a non-breaking space only after a short word and keeps list markers', () => {
   const whitelist = buildWhitelist('literary-markdown');
-  const source = '- Пункт списка\nа у меня и так всё в порядке — подумал он.\n';
+  const source = '- Пункт списка\n1. И вот\nа у меня и так всё в порядке — подумал он.\n';
   const formatted = typografExecute(source, whitelist);
-  expect(formatted.startsWith('- Пункт списка')).toBe(true);
-  expect(formatted).not.toContain('\u00a0');
+  // U+00A0 as a character, not an HTML entity: Markdown code and attributes must not get `&nbsp;`.
+  expect(formatted).not.toContain('&nbsp;');
+  expect(formatted).toBe('- Пункт списка\n1. И\u00a0вот\nа\u00a0у\u00a0меня и\u00a0так всё в\u00a0порядке — подумал он.\n');
+  // No other space changes: removing the non-breaking spaces gives the source back.
+  expect(formatted.replaceAll('\u00a0', ' ')).toBe(source);
 });
 
 test('LITERARY-MARKDOWN keeps intentional repetitions and does not rewrite blank lines or hard breaks', () => {
   const whitelist = buildWhitelist('literary-markdown');
   const source = 'Нет, нет, нет!\n\nСтрока с принудительным переносом.  \nВторая строка.\n\n> Цитата в тексте.\n';
   const formatted = typografExecute(source, whitelist);
-  expect(formatted).toBe(source);
+  // Only the spaces after the short words become non-breaking. The hard break and blank lines stay.
+  expect(formatted).toBe(source.replace('с принудительным', 'с\u00a0принудительным').replace('Цитата в тексте', 'Цитата в\u00a0тексте'));
 });
 
-test('LITERARY-MARKDOWN removes a UTF-8 BOM and turns three dots into an ellipsis, but leaves inline and fenced code as is', () => {
+test('LITERARY-MARKDOWN removes a UTF-8 BOM and turns three dots into an ellipsis, also inside code (known limitation)', () => {
   const whitelist = buildWhitelist('literary-markdown');
   const withBom = `\ufeff# Текст\n\nМноготочие... в прозе.\n\nInline \`code...\` stays.\n\n\`\`\`\ncode...\n\`\`\`\n`;
   const formatted = typografExecute(withBom, whitelist);
   expect(formatted.startsWith('\ufeff')).toBe(false);
-  expect(formatted).toContain('Многоточие… в прозе.');
+  expect(formatted).toContain('Многоточие… в\u00a0прозе.');
   // This is a known limitation: Typograf Core is not a Markdown parser, and the rule matches dots anywhere,
   // including inside inline or fenced code. The project does not claim full Markdown safety (see README).
   expect(formatted).toContain('`code…`');
@@ -244,4 +260,39 @@ test('YAML frontmatter and Pandoc heading attributes survive the LITERARY-MARKDO
   const formatted = typografExecute(source, whitelist);
   expect(formatted).toContain('title: "Книга"');
   expect(formatted).toContain('# Глава {.chapter-title}');
+});
+
+test('known limitations: LITERARY-MARKDOWN also changes code and a YAML end marker', () => {
+  const whitelist = buildWhitelist('literary-markdown');
+  // Typograf Core is not a Markdown parser. These tests record the damage that the README documents.
+  expect(typografExecute('Код `a и b` здесь.\n', whitelist)).toBe('Код `a и\u00a0b` здесь.\n');
+  expect(typografExecute('```\nx = a и b\n```\n', whitelist)).toBe('```\nx = a и\u00a0b\n```\n');
+  // A YAML block that ends with `...` loses its end marker. End a YAML block with `---`.
+  expect(typografExecute('---\ntitle: "T"\n...\n', whitelist)).toBe('---\ntitle: "T"\n…\n');
+});
+
+test('a formatted name keeps the extension, and a name without one gets .formatted.md', () => {
+  expect(formattedManuscriptPath('/a/book.md')).toBe('/a/book.formatted.md');
+  expect(formattedManuscriptPath('/a/book.markdown')).toBe('/a/book.formatted.markdown');
+  expect(formattedManuscriptPath('/a/book')).toBe('/a/book.formatted.md');
+});
+
+test('a whitelist must be a .json file, also for a new file', (t) => {
+  const directory = workspace(t);
+  expect(() => writeWhitelistFile(join(directory, 'rules.txt'), buildWhitelist('default'))).toThrow(/\.json/);
+  expect(existsSync(join(directory, 'rules.txt'))).toBe(false);
+});
+
+const setfacl = ['/usr/bin/setfacl', '/bin/setfacl'].find((path) => existsSync(path));
+
+test.skipIf(process.platform !== 'linux' || !setfacl)('a formatted manuscript with an ACL is not replaced', (t) => {
+  const directory = workspace(t);
+  const path = join(directory, 'book.formatted.md');
+  writeFileSync(path, 'old');
+  if (spawnSync(setfacl ?? '', ['-m', 'u:nobody:r', path]).status !== 0) {
+    t.skip();
+    return;
+  }
+  expect(() => writeFormattedManuscript(path, 'new')).toThrow(/ACL/);
+  expect(readFileSync(path, 'utf8')).toBe('old');
 });

@@ -461,7 +461,8 @@ export function updateMetadataFile(path: string, expected: string, changes: Meta
 
 /** Read the metadata text for a later update check. The checks and the read use one file descriptor. */
 export function readMetadataText(path: string): string {
-  const fd = openSync(path, 'r');
+  // O_NONBLOCK keeps a FIFO at the path from blocking the open. fstat then rejects it.
+  const fd = openSync(path, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0));
   try {
     const stat = fstatSync(fd);
     if (!stat.isFile()) throw new Error(`Метаданные должны быть обычным файлом: ${path}`);

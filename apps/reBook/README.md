@@ -153,15 +153,17 @@ When the manuscript has no whitelist next to it:
 
 Two built-in profiles are available:
 
-| Profile             | Rules | Purpose                                                                                                                                                                                                                                                                   |
-| ------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `default`           | 85    | The rules that Typograf Core 7.9.1 enables by default for the `common` and `ru` locales.                                                                                                                                                                                  |
-| `literary-markdown` | 9     | A conservative set for Russian fiction: an ellipsis, a UTF-8 BOM removal, and a small, closed list of Russian dash words (`из-за`, `из-под`, `кое-`, `кто-то`, `как-то`, `-таки`, `-то`). It never touches spaces, blank lines, line breaks, or Markdown and HTML syntax. |
+| Profile             | Rules | Purpose                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ------------------- | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `default`           | 85    | The rules that Typograf Core 7.9.1 enables by default for the `common` and `ru` locales.                                                                                                                                                                                                                                                                                                                             |
+| `literary-markdown` | 10    | A conservative set for Russian fiction: an ellipsis, a UTF-8 BOM removal, a non-breaking space after a word of one or two letters (`в доме`, `и так`), and a small, closed list of Russian dash words (`из-за`, `из-под`, `кое-`, `кто-то`, `как-то`, `-таки`, `-то`). The non-breaking space replaces only one ordinary space between two words. Blank lines, line breaks, indents, and list markers do not change. |
 
 `default` is not aware of Markdown. It can change text inside a fenced or inline code block, a link
 title, or an HTML attribute, because Typograf Core matches text with regular expressions, not a
 Markdown parser. Use `literary-markdown` or a custom whitelist for a manuscript where this risk
-matters. Neither profile is a full implementation of Russian typography; both only apply the rules
+matters. `literary-markdown` has the same limit on a smaller scale: it puts non-breaking spaces into
+inline and fenced code, and it changes a YAML end marker `...` into `…`. End a YAML block with `---`.
+The non-breaking spaces are U+00A0 characters, not `&nbsp;` entities. Neither profile is a full implementation of Russian typography; both only apply the rules
 they name.
 
 The formatted file is always replaced on a successful run, independently of `--overwrite`, which

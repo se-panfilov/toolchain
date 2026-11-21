@@ -228,7 +228,7 @@ test.skipIf(!pandoc)('a book builds from Markdown with Pandoc and keeps the sour
   expect(readFileSync(join(directory, 'metadata.yaml'), 'utf8')).toBe(metadata);
   expect(existsSync(join(directory, 'book.formatted.md'))).toBe(false);
   const rules = JSON.parse(readFileSync(join(directory, 'typograf.rules.json'), 'utf8')) as { enabledRules: string[] };
-  expect(rules.enabledRules.length).toBe(9);
+  expect(rules.enabledRules.length).toBe(10);
 
   const built = run(['build', 'book.md', '--yes', '--book-version', '0.1.0', '--book-date', '2024-01-02'], directory);
   expect(built.stderr).not.toContain('Ошибка');

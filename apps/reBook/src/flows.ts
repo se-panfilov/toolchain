@@ -49,6 +49,7 @@ import type { Asker, TerminalStyle } from '@reBook/prompts';
 import { findEpubcheck, findPandoc, lastLines, type Pandoc, run, runChecked } from '@reBook/tools';
 import {
   buildWhitelist,
+  checkWhitelistName,
   defaultWhitelistPath,
   formattedManuscriptPath,
   isFormattedManuscriptName,
@@ -230,12 +231,14 @@ type Resolved = {
  */
 async function resolveTypograf(options: BuildOptions, input: string, ask: Asker | undefined, say: Say, cwd: string): Promise<{ path: string; whitelist: TypografWhitelist; generated: boolean }> {
   const path = options.typografRules !== undefined ? resolve(cwd, options.typografRules) : defaultWhitelistPath(input);
+  // Check the name and the profile before a question, so a wrong value never leads to a question that is lost.
+  checkWhitelistName(path);
+  let profile: TypografProfileName | undefined = options.typografProfile !== undefined ? parseTypografProfile(options.typografProfile) : undefined;
   if (exists(path)) {
     const whitelist = loadWhitelistFile(path);
-    if (options.typografProfile !== undefined) say(`--typograf-profile действует только при создании файла правил. Используется существующий файл: ${path}`, 'warning');
+    if (profile !== undefined) say(`--typograf-profile действует только при создании файла правил. Используется существующий файл: ${path}`, 'warning');
     return { path, whitelist, generated: false };
   }
-  let profile: TypografProfileName | undefined = options.typografProfile !== undefined ? parseTypografProfile(options.typografProfile) : undefined;
   if (profile === undefined) {
     if (!ask) throw new Error(`Нет файла правил типографирования: ${path}. Укажите --typograf-profile default или --typograf-profile literary-markdown.`);
     const index = await ask.select('Выберите правила типографирования:', [profileLabels.default, profileLabels['literary-markdown']], 0);
@@ -438,7 +441,10 @@ export async function runBuild(options: BuildOptions, ask: Asker | undefined, sa
     if (!options.dryRun) checkTargets(placements);
 
     const buildDate = localDate();
-    const input = files.mode === 'beta' ? join(work, 'beta-input.md') : formattedPath;
+    // Pandoc reads a private copy of the formatted text, not the file next to the manuscript,
+    // so a change of that file during the build cannot reach the results.
+    const formattedCopy = join(work, 'formatted-input.md');
+    const input = files.mode === 'beta' ? join(work, 'beta-input.md') : formattedCopy;
     const context: PandocContext = {
       dataDir,
       metadata: buildMetadata,
@@ -461,7 +467,7 @@ export async function runBuild(options: BuildOptions, ask: Asker | undefined, sa
     }
 
     // Typograf Core runs once over the untouched source. An error here stops the build before Pandoc
-    // runs, and the previous formatted manuscript, if any, is left on disk but never read again.
+    // runs. The previous formatted manuscript, if any, stays on disk, and the build never reads it.
     say('Типографирование…', 'accent');
     let formattedText: string;
     try {
@@ -469,9 +475,10 @@ export async function runBuild(options: BuildOptions, ask: Asker | undefined, sa
     } catch (error) {
       throw new Error(`Typograf не смог обработать манускрипт: ${errorText(error)}. Файлы результата не изменены.`, { cause: error });
     }
+    writeFileSync(formattedCopy, formattedText, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
     writeFormattedManuscript(formattedPath, formattedText);
 
-    if (files.mode === 'beta') writeBetaInput(formattedPath, betaNotice(meta.title, version, buildDate, meta.lang), work);
+    if (files.mode === 'beta') writeBetaInput(formattedCopy, betaNotice(meta.title, version, buildDate, meta.lang), work);
     for (const item of plan) {
       say(`Сборка ${item.target.label}…`, 'accent');
       const result = run(pandoc.path, pandocArguments(item.target, context, item.temporary), { cwd: dirname(files.input) });

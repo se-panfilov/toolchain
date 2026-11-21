@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { chmodSync, lstatSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, extname, join } from 'node:path';
 
 import { writeNewFile } from '@reBook/metadata';
+import { hasAccessControlList } from '@reBook/tools';
 import Typograf from 'typograf';
 
 export type TypografProfileName = 'default' | 'literary-markdown';
@@ -113,11 +114,13 @@ const defaultProfileRules: readonly string[] = [
 
 /**
  * A conservative whitelist for Russian fiction in Markdown. It fixes an ellipsis and the dash in a
- * small, closed list of Russian words, and removes a UTF-8 BOM. It never touches spaces, blank
- * lines, line breaks, Markdown or HTML syntax, or expressive punctuation, so a Markdown list marker
- * such as `- ` and an author's chosen punctuation stay untouched.
+ * small, closed list of Russian words, removes a UTF-8 BOM, and puts a non-breaking space after a
+ * short word (one or two letters), so a preposition or a conjunction does not stay at the end of a
+ * line. The non-breaking space replaces only one ordinary space between two words: line breaks,
+ * blank lines, indents, Markdown list markers, and expressive punctuation stay as they are.
  */
 const literaryMarkdownProfileRules: readonly string[] = [
+  'common/nbsp/afterShortWord',
   'common/other/delBOM',
   'common/punctuation/hellip',
   'ru/dash/izpod',
@@ -197,24 +200,39 @@ export function defaultWhitelistPath(inputPath: string): string {
   return join(dirname(inputPath), defaultWhitelistName);
 }
 
-/** Read and check a whitelist file. The file type and size are checked before the JSON parse. */
+/** A whitelist path must end with `.json`. The check runs before a read and before a new file is written. */
+export function checkWhitelistName(path: string): void {
+  if (extname(path).toLowerCase() !== '.json') throw new Error(`Файл правил типографирования должен иметь расширение .json: ${path}`);
+}
+
+/**
+ * Read and check a whitelist file. The type and size checks and the read use one file descriptor,
+ * so the checked file is the file that is read.
+ */
 export function loadWhitelistFile(path: string): TypografWhitelist {
-  let real: string;
+  checkWhitelistName(path);
+  let fd: number;
   try {
-    real = realpathSync(path);
-  } catch {
-    throw new Error(`Файл правил типографирования не найден: ${path}`);
+    // O_NONBLOCK keeps a FIFO at the path from blocking the open. fstat then rejects it.
+    fd = openSync(path, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new Error(`Файл правил типографирования не найден: ${path}`, { cause: error });
+    throw error;
   }
-  const stat = statSync(real);
-  if (!stat.isFile()) throw new Error(`Файл правил типографирования должен быть обычным файлом: ${path}`);
-  if (stat.size === 0) throw new Error(`Файл правил типографирования пустой: ${path}`);
-  if (stat.size > whitelistLimit) throw new Error(`Файл правил типографирования больше ${String(Math.round(whitelistLimit / 1024))} КБ: ${path}`);
-  if (extname(real).toLowerCase() !== '.json') throw new Error(`Файл правил типографирования должен иметь расширение .json: ${path}`);
-  return parseWhitelist(readFileSync(real, 'utf8'));
+  try {
+    const stat = fstatSync(fd);
+    if (!stat.isFile()) throw new Error(`Файл правил типографирования должен быть обычным файлом: ${path}`);
+    if (stat.size === 0) throw new Error(`Файл правил типографирования пустой: ${path}`);
+    if (stat.size > whitelistLimit) throw new Error(`Файл правил типографирования больше ${String(Math.round(whitelistLimit / 1024))} КБ: ${path}`);
+    return parseWhitelist(readFileSync(fd, 'utf8'));
+  } finally {
+    closeSync(fd);
+  }
 }
 
 /** Write a new whitelist file. Never replaces an existing file at that path. */
 export function writeWhitelistFile(path: string, whitelist: TypografWhitelist): void {
+  checkWhitelistName(path);
   writeNewFile(path, renderWhitelist(whitelist));
 }
 
@@ -244,11 +262,11 @@ export function isFormattedManuscriptName(name: string): boolean {
   return formattedSuffixPattern.test(name);
 }
 
-/** `manuscript.md` → `manuscript.formatted.md`, next to the source file. */
+/** `manuscript.md` → `manuscript.formatted.md`, next to the source file. A name without an extension gets `.formatted.md`. */
 export function formattedManuscriptPath(inputPath: string): string {
-  const extension = extname(inputPath) || '.md';
-  const stem = inputPath.slice(0, inputPath.length - extension.length);
-  return `${stem}.formatted${extension}`;
+  const extension = extname(inputPath);
+  if (extension === '') return `${inputPath}.formatted.md`;
+  return `${inputPath.slice(0, inputPath.length - extension.length)}.formatted${extension}`;
 }
 
 /**
@@ -271,6 +289,7 @@ export function writeFormattedManuscript(path: string, content: string): void {
       if (stat.isSymbolicLink()) throw new Error(`Форматированный манускрипт — символическая ссылка: ${path}. Удалите его и запустите сборку снова.`);
       if (!stat.isFile()) throw new Error(`По пути форматированного манускрипта лежит не обычный файл: ${path}.`);
       if (stat.nlink !== 1) throw new Error(`У форматированного манускрипта есть другие жёсткие ссылки: ${path}. Удалите его и запустите сборку снова.`);
+      if (hasAccessControlList(path)) throw new Error(`У форматированного манускрипта есть ACL: ${path}. Новый файл не получит эти ограничения доступа. Удалите его и запустите сборку снова.`);
       chmodSync(temporary, stat.mode & 0o777);
     }
     renameSync(temporary, path);

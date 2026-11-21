@@ -31,11 +31,15 @@ The program does not send them to a network service.
 - The whitelist JSON is parsed with `JSON.parse` and read as data. It is never evaluated or passed to a
   shell, a template engine, or `eval`.
 - A whitelist file is checked for a regular-file type, a `.json` extension, and a size limit before the
-  parse. An unresolvable path, a missing file, a directory, or a link to a missing target is rejected.
-- Writing a new whitelist file never replaces an existing file at the same path.
+  parse. The checks and the read use one file descriptor. The open does not block on a FIFO.
+  A missing file, a directory, or a link to a missing target is rejected.
+- A new whitelist file must also have a `.json` name. Writing it never replaces an existing file at the same path.
 - The formatted manuscript (`*.formatted.md`) is written through a temporary file and an atomic rename.
-  A symbolic link or a file with other hard links at the target path stops the write before any content
-  changes, so the program never follows a link or changes a file that another path also owns.
+  A symbolic link, a file with other hard links, or a file with an ACL at the target path stops the write
+  before any content changes. The program never follows a link, never changes a file that another path
+  also owns, and never drops ACL restrictions. A replaced file keeps its permission bits.
+- Pandoc reads a private copy of the formatted text in the work directory, not the `*.formatted.md` file.
+  A change of that file during the build cannot reach the results.
 - A manuscript, metadata file, cover, CSS file, reference document, or whitelist path cannot be reused as
   the formatted-manuscript target; the build stops before any file changes if such a collision is found.
 - A Typograf Core error stops the build before the formatted file changes and before Pandoc runs, so a
@@ -120,7 +124,10 @@ Questions restore the raw mode and remove their handlers after an answer, a canc
   A found EPUBCheck that cannot start, stops on a signal, or exceeds the time limit stops the build.
 - Typograf Core matches text with regular expressions, not a Markdown parser. An enabled rule can still
   change text inside a fenced or inline code block, a link title, or an HTML attribute if it matches the
-  rule's pattern. Review the formatted file with `git diff` before publishing a book.
+  rule's pattern. For example, `literary-markdown` puts non-breaking spaces into code and changes a YAML
+  end marker `...` into `…`. Review the formatted file with `git diff` before publishing a book.
+- Typograf Core runs in the CLI process without a time limit. The manuscript size limit (64 MB) bounds the work.
+  A 4 MB manuscript takes less than one second with the `default` profile.
 
 ## Distribution
 
