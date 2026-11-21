@@ -41,7 +41,7 @@ The program does not send them to a network service.
 - A result goes into a temporary file in the output directory first.
   Without `--overwrite`, a hard link creates the result name only when the name is free.
   With `--overwrite`, a rename replaces the file. A rename replaces a link, not its target.
-- `init` creates the file with `O_EXCL`. It does not follow a link and does not replace a file.
+- `init` writes a temporary file and then makes a hard link with the target name. A hard link does not follow a link at the target and does not replace an existing entry.
 - The `metadata.yaml` update refuses a link and a file with other hard links.
   It checks that the file did not change during the run, writes a temporary file, and renames it.
 - The program never deletes files in the output directory.
