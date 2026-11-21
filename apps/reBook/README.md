@@ -107,17 +107,17 @@ The build does these steps:
 
 1. It reads and checks the metadata with Pandoc.
 2. It asks for the version and the date. The current values are the defaults.
-3. It finds or builds the Typograf Core whitelist (see below).
+3. It finds the Typograf Core whitelist, or selects a profile for a new one (see below).
 4. It shows the plan and asks for confirmation.
-5. It runs Typograf Core once over the manuscript and writes the result into `*.formatted.md`.
-6. It makes each format from the formatted manuscript in a private temporary directory.
+5. It runs Typograf Core once over the manuscript in a private temporary directory.
+6. It makes each format from the formatted text in the same directory.
 7. It runs EPUBCheck on each EPUB file. An EPUBCheck error stops the build.
-8. It puts the results into the output directory.
+8. It puts the results, `*.formatted.md`, and a new whitelist into place.
 9. It writes a new `version`, `ibooks.version`, or `date` into `metadata.yaml`, if they changed.
 
-Steps 8 and 9 are one operation. If step 9 fails, the earlier result files come back.
-A failure before step 8 does not change the output directory or `metadata.yaml`.
-A Typograf Core error in step 5 stops the build before any format is made and before the formatted file changes.
+Steps 8 and 9 are one operation. If step 9 fails, the earlier files come back and new files are removed.
+A failure or a cancellation before step 8 changes no file: not the output directory, not `*.formatted.md`,
+not `metadata.yaml`, and no new whitelist is written.
 In a dry-run without `metadata.yaml`, the program shows the new file and stops. It does not write the file.
 Empty text fields in `metadata.yaml` stop the build. Fill or remove them.
 
@@ -147,8 +147,8 @@ It has no effect on an existing file; the program prints a warning instead of re
 
 When the manuscript has no whitelist next to it:
 
-- In an interactive run, the program asks the user to choose a profile and writes the file.
-- With `--yes` and `--typograf-profile`, the program writes the file without a question.
+- In an interactive run, the program asks the user to choose a profile. It writes the file with the results of a successful build.
+- With `--yes` and `--typograf-profile`, the program writes the file with the results, without a question.
 - With `--yes` and no `--typograf-profile`, the build stops with an error. It never guesses a profile.
 
 Two built-in profiles are available:
@@ -167,9 +167,9 @@ The non-breaking spaces are U+00A0 characters, not `&nbsp;` entities. Neither pr
 they name.
 
 The formatted file is always replaced on a successful run, independently of `--overwrite`, which
-only controls the EPUB, DOCX, and HTML result files. A Typograf Core error stops the build before
-the formatted file changes and before any format is made, so an old formatted file is never built
-from a newer, unrelated manuscript, and a failed run never publishes a result from a stale file.
+only controls the EPUB, DOCX, and HTML result files. It never gets wider permission bits than the
+manuscript: a manuscript with mode `0600` gives a formatted file with mode `0600`.
+A failed run does not change the formatted file, and the build never reads an old formatted file.
 
 A `*.formatted.md` or `*.formatted.markdown` name is rejected as manuscript input (`FILE` or the
 directory default), so the program cannot read its own generated output as the source by mistake.

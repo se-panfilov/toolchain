@@ -33,17 +33,20 @@ The program does not send them to a network service.
 - A whitelist file is checked for a regular-file type, a `.json` extension, and a size limit before the
   parse. The checks and the read use one file descriptor. The open does not block on a FIFO.
   A missing file, a directory, or a link to a missing target is rejected.
-- A new whitelist file must also have a `.json` name. Writing it never replaces an existing file at the same path.
-- The formatted manuscript (`*.formatted.md`) is written through a temporary file and an atomic rename.
-  A symbolic link, a file with other hard links, or a file with an ACL at the target path stops the write
-  before any content changes. The program never follows a link, never changes a file that another path
-  also owns, and never drops ACL restrictions. A replaced file keeps its permission bits.
+- A new whitelist file must also have a `.json` name. It goes to disk only with the results of a successful build,
+  after the confirmation. Writing it never replaces an existing file at the same path.
+- The formatted manuscript (`*.formatted.md`) and a new whitelist use the same placement step as the result files:
+  a temporary file in the target directory, a rename or a hard link, and a rollback when a later step fails.
+  A link, a directory, or a file with an ACL at the target path stops the build before Pandoc starts.
+- The formatted manuscript never gets wider permission bits than the manuscript. Its temporary file starts with mode `0600`.
+  A new file gets the bits of the manuscript without the execute bits. A replaced file keeps only the bits that
+  both the old file and the manuscript allow.
 - Pandoc reads a private copy of the formatted text in the work directory, not the `*.formatted.md` file.
   A change of that file during the build cannot reach the results.
-- A manuscript, metadata file, cover, CSS file, reference document, or whitelist path cannot be reused as
-  the formatted-manuscript target; the build stops before any file changes if such a collision is found.
-- A Typograf Core error stops the build before the formatted file changes and before Pandoc runs, so a
-  failed run never builds from a stale formatted file and never partially replaces build results.
+- No written file can be an input of the same build, and two written files cannot share a path. The check
+  compares real paths and, for existing files, the device and inode. Another spelling of a path, a link in a
+  directory name, or a hard link cannot hide a collision. The check runs before Pandoc starts.
+- A Typograf Core error stops the build before Pandoc runs. A failed or cancelled build changes no file.
 
 ## Subprocesses
 
