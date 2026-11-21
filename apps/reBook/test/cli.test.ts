@@ -360,3 +360,69 @@ test.skipIf(!pandoc || process.platform !== 'linux')('an EPUBCheck that cannot r
   expect(result.stderr).toContain('EPUBCheck не выполнил проверку');
   expect(existsSync(join(directory, 'build'))).toBe(false);
 });
+
+/** Answers by question text. A hook runs before an answer, to change files at that moment. */
+class Answers implements Asker {
+  asked: string[] = [];
+  constructor(
+    private answers: Record<string, string | number | boolean | number[]>,
+    private hooks: Record<string, () => void> = {}
+  ) {}
+  private next(question: string): string | number | boolean | number[] {
+    this.asked.push(question);
+    this.hooks[question]?.();
+    const answer = this.answers[question];
+    if (answer === undefined) throw new Error(`No answer for: ${question}`);
+    return answer;
+  }
+  text(question: string): Promise<string> {
+    return Promise.resolve(this.next(question) as string);
+  }
+  select(question: string): Promise<number> {
+    return Promise.resolve(this.next(question) as number);
+  }
+  checkbox(question: string, _choices: readonly Choice[]): Promise<number[]> {
+    return Promise.resolve(this.next(question) as number[]);
+  }
+  confirm(question: string): Promise<boolean> {
+    return Promise.resolve(this.next(question) as boolean);
+  }
+}
+
+test.skipIf(!pandoc)('a confirmation replaces only the files that the plan showed', async (t) => {
+  const directory = workspace(t);
+  writeFileSync(join(directory, 'book.md'), manuscript);
+  writeFileSync(join(directory, 'metadata.yaml'), plainMetadata);
+  const out = join(directory, 'build');
+  mkdirSync(out);
+  const html = join(out, 'Sample - 1_0_0.html');
+  const docx = join(out, 'Sample - 1_0_0.docx');
+  writeFileSync(html, 'old html');
+  const script = new Answers(
+    {
+      'Исходный файл Markdown': join(directory, 'book.md'),
+      Форматы: [1, 2],
+      'Тип сборки': 1,
+      Оформление: 0,
+      'Выходной каталог': out,
+      'Версия книги': '1.0.0',
+      'Дата книги (ГГГГ-ММ-ДД)': '2024-01-01',
+      'Перезаписать существующие файлы?': true,
+      'Собрать книгу?': true
+    },
+    // A DOCX file appears after the confirmation. The confirmation did not cover it.
+    { 'Собрать книгу?': () => writeFileSync(docx, 'new docx from elsewhere') }
+  );
+  await expect(
+    runBuild(
+      emptyBuild(),
+      script,
+      () => undefined,
+      () => undefined,
+      directory
+    )
+  ).rejects.toThrow(/Файл уже существует: .*docx/);
+  expect(script.asked).toContain('Перезаписать существующие файлы?');
+  expect(readFileSync(html, 'utf8')).toBe('old html');
+  expect(readFileSync(docx, 'utf8')).toBe('new docx from elsewhere');
+});

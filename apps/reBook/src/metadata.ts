@@ -328,7 +328,7 @@ function replaceValue(field: string, value: string, indent: number, change: stri
  */
 export function updateMetadataText(source: string, changes: MetadataChanges): string {
   const newline = source.includes('\r\n') ? '\r\n' : '\n';
-  const found = { version: 0, date: 0 };
+  const found = { version: 0, date: 0, ibooks: 0, ibooksVersion: 0 };
   let inIbooks = false;
   let childIndent: number | undefined;
   let scalarIndent: number | undefined;
@@ -353,6 +353,7 @@ export function updateMetadataText(source: string, changes: MetadataChanges): st
         const change = changes[key];
         if (change !== undefined) return replaceValue(key, value, 0, change);
       } else if (key === 'ibooks') {
+        found.ibooks += 1;
         // Only the block form `ibooks:` with nested lines is updated. The mismatch check reports other forms.
         inIbooks = value === '' || value.startsWith('#');
       }
@@ -360,12 +361,15 @@ export function updateMetadataText(source: string, changes: MetadataChanges): st
     }
     if (inIbooks) {
       childIndent ??= indent;
-      if (indent === childIndent && pair?.key === 'version' && changes.version !== undefined) return replaceValue('ibooks.version', value, indent, changes.version);
+      if (indent === childIndent && pair?.key === 'version') {
+        found.ibooksVersion += 1;
+        if (changes.version !== undefined) return replaceValue('ibooks.version', value, indent, changes.version);
+      }
     }
     if (opensScalar) scalarIndent = indent;
     return line;
   });
-  if (found.version > 1 || found.date > 1) throw new Error('В metadata.yaml поле version или date записано несколько раз.');
+  if (found.version > 1 || found.date > 1 || found.ibooks > 1 || found.ibooksVersion > 1) throw new Error('В metadata.yaml поле version, date, ibooks или ibooks.version записано несколько раз.');
   if (changes.version !== undefined && !found.version) throw new Error('В metadata.yaml нет строки version: на верхнем уровне. Добавьте version: "".');
   if (changes.date !== undefined && !found.date) throw new Error('В metadata.yaml нет строки date: на верхнем уровне. Добавьте date: "".');
   return out.join(newline);

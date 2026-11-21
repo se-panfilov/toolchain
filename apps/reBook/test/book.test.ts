@@ -1,4 +1,5 @@
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -7,6 +8,7 @@ import {
   betaNotice,
   checkFile,
   checkOutputDirectory,
+  checkTargets,
   createOutputDirectory,
   isCoverImage,
   outputStem,
@@ -18,6 +20,7 @@ import {
   resolveFormats,
   writerExtension
 } from '@reBook/book';
+import { hasAccessControlList } from '@reBook/tools';
 import { expect, test, type TestContext } from 'vitest';
 
 function workspace(t: TestContext): string {
@@ -164,18 +167,18 @@ test('results replace existing files only with overwrite and never through links
   const out = join(directory, 'out');
   mkdirSync(out);
   const target = join(out, 'book.epub');
-  placeFiles([{ source, target }], false);
+  placeFiles([{ source, target, replace: false }]);
   expect(readFileSync(target, 'utf8')).toBe('new');
   writeFileSync(source, 'newer');
-  expect(() => placeFiles([{ source, target }], false)).toThrow(/--overwrite/);
+  expect(() => placeFiles([{ source, target, replace: false }])).toThrow(/--overwrite/);
   expect(readFileSync(target, 'utf8')).toBe('new');
-  expect(placeFiles([{ source, target }], true)).toEqual([]);
+  expect(placeFiles([{ source, target, replace: true }])).toEqual([]);
   expect(readFileSync(target, 'utf8')).toBe('newer');
   const victim = join(directory, 'victim.txt');
   writeFileSync(victim, 'keep');
   const link = join(out, 'link.epub');
   symlinkSync(victim, link);
-  expect(() => placeFiles([{ source, target: link }], true)).toThrow(/не обычный файл/);
+  expect(() => placeFiles([{ source, target: link, replace: true }])).toThrow(/не обычный файл/);
   expect(readFileSync(victim, 'utf8')).toBe('keep');
   expect(readdirSync(out).sort()).toEqual(['book.epub', 'link.epub']);
   expect(existsSync(source)).toBe(true);
@@ -188,11 +191,11 @@ test.skipIf(process.platform === 'win32')('a replaced result keeps its permissio
   const target = join(directory, 'book.html');
   writeFileSync(target, 'old');
   chmodSync(target, 0o600);
-  placeFiles([{ source, target }], true);
+  placeFiles([{ source, target, replace: true }]);
   expect(readFileSync(target, 'utf8')).toBe('new');
   expect(statSync(target).mode & 0o777).toBe(0o600);
   chmodSync(target, 0o640);
-  placeFiles([{ source, target }], true);
+  placeFiles([{ source, target, replace: true }]);
   expect(statSync(target).mode & 0o777).toBe(0o640);
   expect(readdirSync(directory).sort()).toEqual(['book.html', 'source.html']);
 });
@@ -209,10 +212,9 @@ test('a failed last step brings the old results back and removes new names', (t)
   expect(() =>
     placeFiles(
       [
-        { source, target: replaced },
-        { source, target: created }
+        { source, target: replaced, replace: true },
+        { source, target: created, replace: true }
       ],
-      true,
       () => {
         throw new Error('metadata failed');
       }
@@ -220,4 +222,76 @@ test('a failed last step brings the old results back and removes new names', (t)
   ).toThrow(/metadata failed\nПрежние файлы результата восстановлены/);
   expect(readFileSync(replaced, 'utf8')).toBe('old');
   expect(readdirSync(out)).toEqual(['book.epub']);
+});
+
+test('a rollback keeps a newer file that another process saved at the result path', (t) => {
+  const directory = workspace(t);
+  const source = join(directory, 'source');
+  writeFileSync(source, 'new');
+  const target = join(directory, 'book.html');
+  writeFileSync(target, 'old');
+  let message = '';
+  try {
+    placeFiles([{ source, target, replace: true }], () => {
+      // Another process saves its own file at the same path before the last step fails.
+      const other = join(directory, 'other');
+      writeFileSync(other, 'newer');
+      renameSync(other, target);
+      throw new Error('metadata failed');
+    });
+  } catch (error) {
+    message = (error as Error).message;
+  }
+  expect(message).toContain('изменён другим процессом');
+  expect(readFileSync(target, 'utf8')).toBe('newer');
+  const kept = readdirSync(directory).filter((name) => name.endsWith('.old'));
+  expect(kept).toHaveLength(1);
+  expect(readFileSync(join(directory, kept[0] ?? ''), 'utf8')).toBe('old');
+});
+
+test('only a placement with replace can replace an existing file', (t) => {
+  const directory = workspace(t);
+  const source = join(directory, 'source');
+  writeFileSync(source, 'new');
+  const allowed = join(directory, 'book.html');
+  const other = join(directory, 'book.docx');
+  writeFileSync(allowed, 'old html');
+  writeFileSync(other, 'old docx');
+  expect(() =>
+    checkTargets([
+      { target: allowed, replace: true },
+      { target: other, replace: false }
+    ])
+  ).toThrow(/book\.docx/);
+  expect(() =>
+    placeFiles([
+      { source, target: allowed, replace: true },
+      { source, target: other, replace: false }
+    ])
+  ).toThrow(/--overwrite/);
+  expect(readFileSync(allowed, 'utf8')).toBe('old html');
+  expect(readFileSync(other, 'utf8')).toBe('old docx');
+});
+
+const setfacl = ['/usr/bin/setfacl', '/bin/setfacl'].find((path) => existsSync(path));
+// macOS sets ACL entries with chmod +a. On Linux, setfacl comes from the acl package.
+const aclCommand: [string, string[]] | undefined =
+  process.platform === 'darwin' ? ['/bin/chmod', ['+a', 'user:nobody deny read']] : process.platform === 'linux' && setfacl ? [setfacl, ['-m', 'u:nobody:r']] : undefined;
+
+test.skipIf(!aclCommand)('a result with an ACL is not replaced', (t) => {
+  const directory = workspace(t);
+  const source = join(directory, 'source');
+  writeFileSync(source, 'new');
+  const target = join(directory, 'book.html');
+  writeFileSync(target, 'old');
+  const [command, args] = aclCommand ?? ['', []];
+  const result = spawnSync(command, [...args, target]);
+  if (result.status !== 0) {
+    t.skip();
+    return;
+  }
+  expect(hasAccessControlList(target)).toBe(true);
+  expect(hasAccessControlList(source)).toBe(false);
+  expect(() => placeFiles([{ source, target, replace: true }])).toThrow(/ACL/);
+  expect(readFileSync(target, 'utf8')).toBe('old');
 });

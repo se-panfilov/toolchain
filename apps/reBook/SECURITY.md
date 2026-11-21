@@ -24,6 +24,7 @@ The program does not send them to a network service.
 
 - Pandoc and EPUBCheck start with argument arrays and without a shell.
 - The tool search uses only absolute `PATH` entries. On macOS, Homebrew directories come first.
+- Only a missing file means a missing tool. A found file that cannot run, such as a file without the execute permission or a broken link, stops the program.
 - Pandoc options use the `--name=value` form, and the manuscript path comes after `--`.
 - The tools get a small environment: `HOME`, locale variables, `TMPDIR`, `SOURCE_DATE_EPOCH`, `JAVA_HOME`, and a system `PATH`.
   `LUA_PATH`, `LUA_CPATH`, `JAVA_TOOL_OPTIONS`, `_JAVA_OPTIONS`, `XDG_DATA_HOME`, proxy settings, and other variables do not go to the tools.
@@ -42,15 +43,23 @@ The program does not send them to a network service.
   Without `--overwrite`, a hard link creates the result name only when the name is free.
   With `--overwrite`, a rename replaces the file. A rename replaces a link, not its target.
   The temporary file starts with mode `0600` and then gets the permission bits of the replaced file, so a private result stays private.
-  The owner, ACLs, and extended attributes of the replaced file are not copied.
+- A result file with an ACL is not replaced, because the new file would not get its access restrictions.
+  On macOS and Linux, the program reads the ACL state from the output of `/bin/ls`. A failed check stops the build.
+  On Windows, there is no ACL check. The new file gets the ACL that the output directory gives to new files.
+- The owner and extended attributes of the replaced file are not copied.
+- `--overwrite` allows the replacement of any result path. An interactive confirmation covers only the files that the plan showed as existing.
+  A result file that appears after the confirmation stops the build.
 - Until the end of the build, a hidden hard link keeps each replaced result.
   If a later step fails, the old results come back and new result names are removed.
+  A path changes back only while it holds the file of this build. A newer file from another process stays,
+  and the old result stays in the hidden copy. The error message shows its path.
 - `init` writes a temporary file and then makes a hard link with the target name. A hard link does not follow a link at the target and does not replace an existing entry.
 - The `metadata.yaml` update refuses a link and a file with other hard links.
   The build does this check before Pandoc starts, and again before each write.
   The new text goes into a temporary file before the results move. Its rename is the last step.
 - The update changes only the top-level `version` and `date` lines and the `version` line directly under a top-level `ibooks:`.
-  It skips block scalars and deeper keys. It refuses repeated keys, block scalars, anchors, aliases, tags, and flow values in these fields.
+  It skips block scalars and deeper keys. It refuses repeated `version`, `date`, `ibooks`, and `ibooks.version` keys,
+  and block scalars, anchors, aliases, tags, and flow values in these fields.
   Pandoc reads the metadata before and after the change. Any change of another field stops the build.
 - The program never deletes files in the output directory.
 
