@@ -13,7 +13,7 @@ Use [SECURITY.md](SECURITY.md) for security controls and limits.
 - Node.js 24.12 or later.
 - Pandoc 3.0 or later: `brew install pandoc`.
 - Optional: EPUBCheck: `brew install epubcheck`. Without it, the EPUB check is skipped.
-  An installed EPUBCheck that cannot start or exceeds the time limit stops the build.
+  An installed EPUBCheck that cannot start or exceeds the time limit stops the build. So does an `epubcheck` file without the execute permission.
 - An ANSI terminal for the interactive mode.
 
 macOS is the main platform. Linux also works. On Windows, the EPUB check is skipped.
@@ -190,7 +190,8 @@ The program never replaces a result file without `--overwrite`.
   Each value must be on one line. Pandoc reads the file before and after the change. A change of another field stops the build before it writes files.
   It shows the old values before the build. To go back, write the old values into the file.
 - `metadata.yaml` must be a regular file without other hard links for this update. Use version control to keep its history.
-- A result file is replaced only with `--overwrite` or after a confirmation. The new file gets the permission bits of the old file.
+- A result file is replaced only with `--overwrite` or after a confirmation. A confirmation covers only the files in the plan.
+  The new file gets the permission bits of the old file. A file with an ACL is not replaced.
   Keep copies of earlier results if you need them.
 - The program does not delete files in the output directory and does not add files to Git.
 - Ctrl+C stops the build. The temporary directory is deleted.

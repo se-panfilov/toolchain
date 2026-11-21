@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -46,8 +46,12 @@ test('tool search uses only absolute PATH entries and executable files', (t) => 
   mkdirSync(bin);
   const tool = join(bin, 'pandoc');
   writeFileSync(tool, '#!/bin/sh\n');
+  expect(findTool('missing', `${bin}`, 'linux')).toBeUndefined();
   chmodSync(tool, 0o644);
-  expect(findTool('pandoc', `${bin}`, 'linux')).toBeUndefined();
+  // A found file that cannot run is an error, not a missing tool.
+  expect(() => findTool('pandoc', `${bin}`, 'linux')).toThrow(/нельзя запустить: EACCES/);
+  symlinkSync(join(bin, 'nowhere'), join(bin, 'epubcheck'));
+  expect(() => findTool('epubcheck', `${bin}`, 'linux')).toThrow(/нельзя запустить: ENOENT/);
   chmodSync(tool, 0o755);
   expect(findTool('pandoc', `relative:${bin}`, 'linux')).toBe(tool);
   expect(findTool('pandoc', 'relative:.', 'linux')).toBeUndefined();

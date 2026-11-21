@@ -4,6 +4,7 @@ import { basename, dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { graphemes } from '@reBook/metadata';
+import { hasAccessControlList } from '@reBook/tools';
 
 export type Kind = 'epub' | 'docx' | 'html' | 'other';
 export type Target = { key: string; label: string; writer: string; extension: string; kind: Kind };
@@ -235,18 +236,24 @@ export function targetState(path: string): 'free' | 'file' {
   return 'file';
 }
 
-export type Placement = { source: string; target: string };
+/** A finished file and its result path. `replace` allows the replacement of an existing file at that path. */
+export type Placement = { source: string; target: string; replace: boolean };
 
-type Staged = { target: string; temporary: string; backup?: string; replaced?: boolean; created?: boolean };
+type Identity = { dev: number; ino: number };
+type Staged = { target: string; temporary: string; placed?: Identity | undefined; backup?: string; replaced?: boolean; created?: boolean };
 
-function sameFile(left: string, right: string): boolean {
+function identity(path: string): Identity | undefined {
   try {
-    const a = lstatSync(left);
-    const b = lstatSync(right);
-    return a.ino === b.ino && a.dev === b.dev;
+    const stat = lstatSync(path);
+    return { dev: stat.dev, ino: stat.ino };
   } catch {
-    return false;
+    return undefined;
   }
+}
+
+function isPlaced(path: string, placed: Identity | undefined): boolean {
+  const current = identity(path);
+  return placed !== undefined && current !== undefined && current.dev === placed.dev && current.ino === placed.ino;
 }
 
 function removeQuietly(path: string): boolean {
@@ -258,13 +265,22 @@ function removeQuietly(path: string): boolean {
   }
 }
 
-/** Undo the placed files in reverse order. Return the result paths that did not come back. */
+/**
+ * Undo the placed files in reverse order. A path changes back only while it still holds the file of
+ * this build: a newer file from another process stays, and the old file stays in its copy.
+ * Return the result paths that did not come back.
+ */
 function rollback(staged: readonly Staged[]): string[] {
   const failed: string[] = [];
   for (const entry of [...staged].reverse()) {
     try {
-      if (entry.replaced && entry.backup) renameSync(entry.backup, entry.target);
-      else if (entry.created && sameFile(entry.temporary, entry.target)) rmSync(entry.target);
+      if (entry.replaced && entry.backup) {
+        if (!isPlaced(entry.target, entry.placed)) {
+          failed.push(`${entry.target}: файл изменён другим процессом, прежний файл сохранён как ${entry.backup}`);
+          continue;
+        }
+        renameSync(entry.backup, entry.target);
+      } else if (entry.created && isPlaced(entry.target, entry.placed)) rmSync(entry.target);
       if (entry.backup) rmSync(entry.backup, { force: true });
     } catch {
       failed.push(entry.backup ? `${entry.target} (копия: ${entry.backup})` : entry.target);
@@ -273,32 +289,51 @@ function rollback(staged: readonly Staged[]): string[] {
   return failed;
 }
 
+/** Check that a result path may be replaced: a regular file without an ACL, which the new file would not keep. */
+function checkReplaceable(target: string): number {
+  const stat = lstatSync(target);
+  if (!stat.isFile()) throw new Error(`По пути результата лежит не обычный файл: ${target}. Удалите его или выберите другой каталог.`);
+  if (hasAccessControlList(target)) throw new Error(`У файла результата есть ACL: ${target}. Новый файл не получит эти ограничения доступа. Удалите файл или выберите другой каталог.`);
+  return stat.mode & 0o777;
+}
+
+/** Check the result paths before the build: each path is free, or may be replaced and has no ACL. */
+export function checkTargets(items: readonly { target: string; replace: boolean }[]): void {
+  for (const item of items) {
+    if (targetState(item.target) !== 'file') continue;
+    if (!item.replace) throw new Error(`Файл уже существует: ${item.target}. Используйте --overwrite.`);
+    checkReplaceable(item.target);
+  }
+}
+
 /**
  * Put finished files into the output directory as one step. Each file goes into a temporary copy in
- * the target directory first. A replaced file gives its permission bits to the new file. A hard link
- * keeps each replaced file until the end. Without overwrite, a hard link creates the target only when
- * the name is free. `finish` runs when all files are in place. When a step or `finish` fails, the old
+ * the target directory first. Only a placement with `replace` can replace an existing file, and only a
+ * regular file without an ACL. The new file gets the permission bits of the old file. A hard link
+ * keeps each replaced file until the end. A free name gets the file through a hard link, which never
+ * replaces an entry. `finish` runs when all files are in place. When a step or `finish` fails, the old
  * files come back and the new names are removed. Return the copies of old files that stayed on disk.
  */
-export function placeFiles(items: readonly Placement[], overwrite: boolean, finish: () => void = () => undefined): string[] {
+export function placeFiles(items: readonly Placement[], finish: () => void = () => undefined): string[] {
   const staged: Staged[] = [];
   const sibling = (target: string, suffix: string): string => join(dirname(target), `.${basename(target)}.${randomUUID()}.${suffix}`);
   try {
     for (const item of items) {
       const existing = targetState(item.target) === 'file';
-      if (existing && !overwrite) throw new Error(`Файл уже существует: ${item.target}. Используйте --overwrite.`);
+      if (existing && !item.replace) throw new Error(`Файл уже существует: ${item.target}. Используйте --overwrite.`);
       const temporary = sibling(item.target, 'tmp');
       // A copy for a replaced file starts private and then gets the permission bits of that file.
       writeFileSync(temporary, readFileSync(item.source), { flag: 'wx', mode: existing ? 0o600 : 0o644 });
-      staged.push({ target: item.target, temporary });
-      if (existing) {
-        const stat = lstatSync(item.target);
-        if (!stat.isFile()) throw new Error(`По пути результата лежит не обычный файл: ${item.target}. Удалите его или выберите другой каталог.`);
-        chmodSync(temporary, stat.mode & 0o777);
-      }
+      const entry: Staged = { target: item.target, temporary };
+      staged.push(entry);
+      if (existing) chmodSync(temporary, checkReplaceable(item.target));
+      entry.placed = identity(temporary);
     }
-    for (const entry of staged) {
-      if (overwrite && targetState(entry.target) === 'file') {
+    for (const [index, entry] of staged.entries()) {
+      const existing = targetState(entry.target) === 'file';
+      if (existing && items[index]?.replace) {
+        const mode = checkReplaceable(entry.target);
+        chmodSync(entry.temporary, mode);
         entry.backup = sibling(entry.target, 'old');
         linkSync(entry.target, entry.backup);
         renameSync(entry.temporary, entry.target);

@@ -148,6 +148,8 @@ test('the update leaves nested sections and block scalars unchanged', () => {
 test('the update refuses repeated keys and values that one line cannot hold', () => {
   expect(() => updateMetadataText('version: "1"\nversion: "2"\n', { version: '3.0.0' })).toThrow(/несколько раз/);
   expect(() => updateMetadataText('version: |\n  1.0.0\n', { version: '3.0.0' })).toThrow(/неподдерживаемую форму/);
+  expect(() => updateMetadataText('version: "1"\nibooks:\n  version: "1"\n  version: "1"\n', { version: '3.0.0' })).toThrow(/несколько раз/);
+  expect(() => updateMetadataText('version: "1"\nibooks:\n  version: "1"\nibooks:\n  other: "x"\n', { date: '2024-01-01' })).toThrow(/несколько раз/);
   expect(() => updateMetadataText('date: !!str 2024-01-01\n', { date: '2024-02-02' })).toThrow(/неподдерживаемую форму/);
   expect(() => updateMetadataText('version: "1"\nibooks:\n  version: &v "1"\n', { version: '3.0.0' })).toThrow(/ibooks\.version/);
 });

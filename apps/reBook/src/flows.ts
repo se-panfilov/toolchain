@@ -7,6 +7,7 @@ import {
   betaNotice,
   checkFile,
   checkOutputDirectory,
+  checkTargets,
   createOutputDirectory,
   type FileKind,
   type Mode,
@@ -370,17 +371,21 @@ export async function runBuild(options: BuildOptions, ask: Asker | undefined, sa
     for (const item of plan) say(`  ${item.target.label.padEnd(5)} → ${item.output}${existing.includes(item) ? ' (будет перезаписан)' : ''}`);
     if (changed) say('  metadata.yaml получит новые version/date после успешной сборки.', 'muted');
 
-    let overwrite = options.overwrite;
-    if (existing.length && !overwrite) {
+    // --overwrite allows the replacement of any result path. A confirmation covers only the files in the plan above.
+    let confirmed = false;
+    if (existing.length && !options.overwrite) {
       if (!ask || options.dryRun) {
         if (!options.dryRun) throw new Error('Файлы результата уже существуют. Используйте --overwrite или другой --output.');
         say('Файлы результата уже существуют. Для сборки нужен --overwrite.', 'warning');
-      } else if (await ask.confirm('Перезаписать существующие файлы?', false)) overwrite = true;
+      } else if (await ask.confirm('Перезаписать существующие файлы?', false)) confirmed = true;
       else {
         say('Отменено.');
         return [];
       }
     }
+
+    const placements = plan.map((item) => ({ source: item.temporary, target: item.output, replace: options.overwrite || (confirmed && existing.includes(item)) }));
+    if (!options.dryRun) checkTargets(placements);
 
     const buildDate = localDate();
     const input = files.mode === 'beta' ? join(work, 'beta-input.md') : files.input;
@@ -441,13 +446,9 @@ export async function runBuild(options: BuildOptions, ask: Asker | undefined, sa
       if (changed) update = prepareMetadataUpdate(files.metadata, original, changes);
       const prepared = update;
       createOutputDirectory(files.output);
-      const kept = placeFiles(
-        plan.map((item) => ({ source: item.temporary, target: item.output })),
-        overwrite,
-        () => {
-          if (prepared) commitMetadataUpdate(prepared);
-        }
-      );
+      const kept = placeFiles(placements, () => {
+        if (prepared) commitMetadataUpdate(prepared);
+      });
       for (const path of kept) say(`Не удалось удалить копию прежнего файла: ${path}`, 'warning');
     } finally {
       if (update) discardMetadataUpdate(update);

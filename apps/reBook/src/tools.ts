@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { accessSync, constants, realpathSync, statSync } from 'node:fs';
+import { accessSync, constants, lstatSync, realpathSync, statSync } from 'node:fs';
 import { dirname, isAbsolute, join } from 'node:path';
 
 /** Homebrew directories come first, as on Apple silicon and Intel Macs. */
@@ -33,18 +33,68 @@ export function toolEnvironment(tool: string, env: NodeJS.ProcessEnv = process.e
   return result;
 }
 
+/**
+ * Check a candidate path. A missing file gives undefined. A file that exists but cannot run, such as a
+ * file without the execute permission or a broken link, stops the search: it is not a missing tool.
+ */
 function executable(path: string, platform: NodeJS.Platform): string | undefined {
+  let real: string;
   try {
-    const real = realpathSync(path);
-    if (!statSync(real).isFile()) return undefined;
-    if (platform !== 'win32') accessSync(real, constants.X_OK);
-    return path;
+    real = realpathSync(path);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT' && !linkExists(path)) return undefined;
+    if (code === 'ENOTDIR') return undefined;
+    throw new Error(`Найден ${path}, но его нельзя запустить: ${code ?? String(error)}.`, { cause: error });
+  }
+  if (!statSync(real).isFile()) return undefined;
+  if (platform !== 'win32') {
+    try {
+      accessSync(real, constants.X_OK);
+    } catch (error) {
+      throw new Error(`Найден ${path}, но его нельзя запустить: ${(error as NodeJS.ErrnoException).code ?? String(error)}.`, { cause: error });
+    }
+  }
+  return path;
+}
+
+function linkExists(path: string): boolean {
+  try {
+    lstatSync(path);
+    return true;
   } catch {
-    return undefined;
+    return false;
   }
 }
 
-/** Find a tool by its name. Only absolute PATH entries count, so the current directory is never searched. */
+/**
+ * True when the file has an access control list. Node.js has no API for ACLs, so the check reads the
+ * output of the system `ls`. On macOS, `ls -le` prints ACL entries as numbered lines. On Linux, `ls -l`
+ * adds `+` after the permission bits. A failed check throws, so the caller never guesses.
+ */
+export function hasAccessControlList(path: string, platform: NodeJS.Platform = process.platform): boolean {
+  if (platform !== 'darwin' && platform !== 'linux') return false;
+  const result = spawnSync('/bin/ls', [platform === 'darwin' ? '-led' : '-ld', '--', path], {
+    encoding: 'utf8',
+    env: { LC_ALL: 'C', PATH: systemPath.join(':') },
+    stdio: ['ignore', 'pipe', 'pipe'],
+    maxBuffer: 1024 * 1024,
+    timeout: 30000,
+    shell: false
+  });
+  const mode = result.stdout.split(/\s/, 1)[0] ?? '';
+  if (result.error || result.status !== 0 || !/^-[-rwxsStT]{9}[.+@]?$/.test(mode)) throw new Error(`Не удалось проверить права доступа файла: ${path}`);
+  if (platform === 'linux') return mode.endsWith('+');
+  return result.stdout
+    .split('\n')
+    .slice(1)
+    .some((line) => /^ *\d+: /.test(line));
+}
+
+/**
+ * Find a tool by its name. Only absolute PATH entries count, so the current directory is never searched.
+ * A found file that cannot run throws an error.
+ */
 export function findTool(name: string, path = process.env.PATH ?? '', platform: NodeJS.Platform = process.platform): string | undefined {
   const separator = platform === 'win32' ? ';' : ':';
   const file = platform === 'win32' ? `${name}.exe` : name;
