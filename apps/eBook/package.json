@@ -1,0 +1,54 @@
+{
+  "name": "tx-ebook",
+  "version": "0.1.0",
+  "description": "Interactive build of EPUB, DOCX, and HTML books from a Markdown manuscript with Pandoc",
+  "private": false,
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=24.12.0"
+  },
+  "bin": {
+    "tx-ebook": "dist/src/cli.js"
+  },
+  "files": [
+    "dist/src/book.js",
+    "dist/src/cli.js",
+    "dist/src/flows.js",
+    "dist/src/metadata.js",
+    "dist/src/prompts.js",
+    "dist/src/tools.js",
+    "assets/epub.css",
+    "assets/reference.docx",
+    "assets/scene-breaks.lua",
+    "README.md",
+    "SECURITY.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "npm run build && vitest run",
+    "start": "npm run build && node dist/src/cli.js",
+    "typecheck": "tsc --project tsconfig.json --noEmit",
+    "build": "node scripts/build.mjs",
+    "prepack": "npm run build",
+    "lint": "eslint . --max-warnings=0",
+    "lint:fix": "eslint . --fix --max-warnings=0",
+    "format": "prettier --ignore-path ../../.prettierignore --write .",
+    "format:check": "prettier --ignore-path ../../.prettierignore --check .",
+    "check": "npm run format:check && npm run lint && npm test"
+  },
+  "exports": {},
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/se-panfilov/toolchain.git",
+    "directory": "apps/eBook"
+  },
+  "keywords": [
+    "pandoc",
+    "epub",
+    "docx",
+    "ebook",
+    "markdown",
+    "cli"
+  ]
+}
