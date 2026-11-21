@@ -8,6 +8,16 @@ const systemPath = ['/usr/bin', '/bin', '/usr/sbin', '/sbin'];
 const outputLimit = 64 * 1024 * 1024;
 /** Pandoc 3.0 added --split-level. The Lua filter uses the Pandoc 3 API. */
 export const minimumPandoc = [3, 0] as const;
+/**
+ * PDF uses --extract-media. Pandoc before 3.1.6 can write files outside the media directory with it
+ * (CVE-2023-35936, CVE-2023-38745). The version check reads only major.minor, so PDF needs 3.2.
+ */
+export const minimumPandocForPdf = [3, 2] as const;
+
+export function supportsPdf(version: readonly [number, number]): boolean {
+  const [major, minor] = version;
+  return major > minimumPandocForPdf[0] || (major === minimumPandocForPdf[0] && minor >= minimumPandocForPdf[1]);
+}
 
 /**
  * Variables that the tools need. Other variables stay out: LUA_PATH and LUA_CPATH change the Lua
@@ -180,4 +190,9 @@ export function findPandoc(cwd: string): Pandoc {
 export function findEpubcheck(platform: NodeJS.Platform = process.platform): string | undefined {
   if (platform === 'win32') return undefined;
   return findTool('epubcheck', process.env.PATH ?? '', platform);
+}
+
+/** typst makes PDF from the Typst markup of Pandoc. It is necessary only for PDF. */
+export function findTypst(platform: NodeJS.Platform = process.platform): string | undefined {
+  return findTool('typst', process.env.PATH ?? '', platform);
 }

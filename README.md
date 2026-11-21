@@ -84,7 +84,7 @@ The documentation and code comments use English.
 The CLI interface uses Russian.
 
 - [moveToRepo](apps/moveToRepo/README.md) copies local files into a GitHub repository through a new branch and a pull request.
-- [reBook](apps/reBook/README.md) builds EPUB, DOCX, and HTML books from a Markdown manuscript with Pandoc.
+- [reBook](apps/reBook/README.md) builds EPUB, DOCX, HTML, FB2, and PDF books from a Markdown manuscript with Pandoc.
 - [reCast](apps/reCast/README.md) converts a video file into an MP4 file for Chromecast and other streaming devices on macOS.
 - [reHistory](apps/reHistory/README.md) changes Git commit dates, authors, or messages, one flow per run, and makes a verifiable export.
 - [reRules](apps/reRules/README.md) copies selected GitHub repository settings from a source repository to a target repository after a preview and a confirmation.

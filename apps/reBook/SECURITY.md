@@ -2,6 +2,7 @@
 
 reBook reads a Markdown manuscript and local style files.
 It writes book files into an output directory and can update `metadata.yaml`.
+For PDF, it also starts typst.
 This file gives the controls, the trust assumptions, and the residual risks.
 
 ## Inputs and protected data
@@ -50,7 +51,7 @@ The program does not send them to a network service.
 
 ## Subprocesses
 
-- Pandoc and EPUBCheck start with argument arrays and without a shell.
+- Pandoc, typst, and EPUBCheck start with argument arrays and without a shell.
 - The tool search uses only absolute `PATH` entries. On macOS, Homebrew directories come first.
 - Only a missing file means a missing tool. A found file that cannot run, such as a file without the execute permission or a broken link, stops the program.
 - Pandoc options use the `--name=value` form, and the manuscript path comes after `--`.
@@ -60,6 +61,16 @@ The program does not send them to a network service.
 - Pandoc gets an empty private `--data-dir`. User templates, defaults files, filters, and `init.lua` from the Pandoc data directory are not used.
 - Only the packaged Lua filter runs. The program does not accept other filters or Pandoc defaults files.
 - Each tool run has a time limit of 10 minutes.
+- typst is found by the same search as Pandoc. It is necessary only when PDF is in the format list.
+  Without typst, the default format list has no PDF. An explicit PDF request stops the build before Pandoc starts.
+- For PDF, Pandoc writes Typst markup into a private `pdf` directory in the work directory and copies the
+  images into it (`--extract-media`). typst gets `--root` with that directory, so the markup can read only
+  the files in it and cannot read other files of the user. typst writes the PDF into the work directory.
+  The typst arguments use `--root=value`, and the input and output paths come after `--`.
+- PDF needs Pandoc 3.2 or later. In earlier versions, `--extract-media` can write files outside the media
+  directory (CVE-2023-35936 and CVE-2023-38745, fixed in Pandoc 3.1.6). The check reads only the major and
+  minor version, so the limit is 3.2. Other formats keep the Pandoc 3.0 minimum, because they do not use `--extract-media`.
+- `TYPST_ROOT`, `TYPST_FONT_PATHS`, `TYPST_PACKAGE_PATH`, and other typst variables do not go to typst.
 
 ## File system
 
@@ -115,13 +126,18 @@ Questions restore the raw mode and remove their handlers after an answer, a canc
 - Pandoc reads files that the manuscript references, such as images. It can also download images from `http` and `https` addresses.
   The `--sandbox` option of Pandoc 3.1 stops the DOCX writer, so the program does not use it.
 - `metadata.yaml` can contain Pandoc fields that read local files, such as `cover-image`.
-- The installed Pandoc and EPUBCheck are trusted. `JAVA_HOME` selects the Java runtime for EPUBCheck.
+- The installed Pandoc, typst, and EPUBCheck are trusted. `JAVA_HOME` selects the Java runtime for EPUBCheck.
 - The `typograf` npm package is trusted at the pinned version. It runs in-process; it is not a subprocess.
 
 ## Residual risks
 
 - A manuscript from another person can make Pandoc read local files that it references, or make network requests.
   Check such a manuscript before the build.
+- Raw Typst blocks in the manuscript (` ```{=typst} `) go into the PDF markup without a change.
+  Such a block can import a typst package with `@preview/…`. typst then downloads the package from the
+  typst package registry and runs it inside the typst compiler. Pandoc output without raw Typst blocks has no imports.
+  The `--root` limit still applies: a package cannot read files outside the private PDF directory.
+- typst reads the installed system fonts. A font selected with `mainfont` must be installed.
 - Another process of the same user can change files during the run. The checks make the time window small but do not remove it.
 - EPUBCheck is optional. Without it, an EPUB file is not validated.
   A found EPUBCheck that cannot start, stops on a signal, or exceeds the time limit stops the build.
@@ -134,7 +150,7 @@ Questions restore the raw mode and remove their handlers after an answer, a canc
 
 ## Distribution
 
-The package contains the compiled modules, `assets/epub.css`, `assets/reference.docx`, `assets/scene-breaks.lua`, `README.md`, `SECURITY.md`, and `LICENSE`.
+The package contains the compiled modules, `assets/epub.css`, `assets/pdf.yaml`, `assets/reference.docx`, `assets/scene-breaks.lua`, `README.md`, `SECURITY.md`, and `LICENSE`.
 The assets contain no author, title, identifier, or other book data.
 The package has one runtime dependency, `typograf`, pinned to an exact version, and no installation scripts.
 No manuscript, whitelist, or other user data is bundled into the package.

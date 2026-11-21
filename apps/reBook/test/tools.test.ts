@@ -2,7 +2,7 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync }
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { checkPandocVersion, findTool, parsePandocVersion, parseWriters, toolEnvironment } from '@reBook/tools';
+import { checkPandocVersion, findTool, parsePandocVersion, parseWriters, supportsPdf, toolEnvironment } from '@reBook/tools';
 import { expect, test, type TestContext } from 'vitest';
 
 function workspace(t: TestContext): string {
@@ -69,4 +69,11 @@ test('Pandoc versions before 3.0 are rejected', () => {
   }).toThrow(/версию Pandoc/);
   checkPandocVersion([3, 0]);
   expect(parseWriters('docx\nepub3\n\x1b[31mbad\nhtml5\r\n')).toEqual(['docx', 'epub3', 'html5']);
+});
+
+test('PDF needs Pandoc 3.2 or later because of --extract-media', () => {
+  expect(supportsPdf([3, 1])).toBe(false);
+  expect(supportsPdf([2, 19])).toBe(false);
+  expect(supportsPdf([3, 2])).toBe(true);
+  expect(supportsPdf([4, 0])).toBe(true);
 });
