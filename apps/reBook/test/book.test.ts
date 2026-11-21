@@ -156,8 +156,8 @@ test('Pandoc arguments keep paths out of option position', () => {
   expect(typstArguments('/work/pdf', '/work/typst-packages', '/work/pdf/book.typ', '/work/result.pdf')).toEqual([
     'compile',
     '--root=/work/pdf',
-    '--package-path=/work/typst-packages/local',
-    '--package-cache-path=/work/typst-packages/cache',
+    `--package-path=${join('/work/typst-packages', 'local')}`,
+    `--package-cache-path=${join('/work/typst-packages', 'cache')}`,
     '--',
     '/work/pdf/book.typ',
     '/work/result.pdf'
