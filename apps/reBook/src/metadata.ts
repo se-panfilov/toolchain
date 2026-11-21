@@ -291,12 +291,23 @@ export function parseMetadata(json: string): BookMetadata {
 
 export type MetadataChanges = { version?: string | undefined; date?: string | undefined };
 
-// A block scalar (`key: |` or `key: >-`) continues on the next lines with a larger indent.
-const blockScalar = /:[ \t]+[|>][-+0-9]*[ \t]*(?:#.*)?$/;
+// A block scalar value (`|` or `>-`) continues on the next lines with a larger indent.
+const blockScalar = /^[|>][-+0-9]*(?:[ \t]+#.*)?$/;
 // Values that the line update cannot replace safely: block scalars, anchors, aliases, tags, and flow collections.
 const unsupportedValue = /^[|>&*!{[]/;
-const topLevelKey = /^([^\s:#][^\s:]*)[ \t]*:(?:[ \t]+(.*))?$/;
-const nestedVersion = /^[ \t]+version[ \t]*:(?:[ \t]+(.*))?$/;
+
+/**
+ * Split a mapping line at the first colon that a space, a tab, or the line end follows.
+ * A plain string scan keeps the time linear for any line.
+ */
+function keyValue(line: string): { key: string; value: string } | undefined {
+  const body = line.trimStart();
+  for (let index = body.indexOf(':'); index > 0; index = body.indexOf(':', index + 1)) {
+    const next = body[index + 1];
+    if (next === undefined || next === ' ' || next === '\t') return { key: body.slice(0, index).trimEnd(), value: body.slice(index + 1).trim() };
+  }
+  return undefined;
+}
 
 function indentOf(line: string): number {
   return line.length - line.trimStart().length;
@@ -329,14 +340,14 @@ export function updateMetadataText(source: string, changes: MetadataChanges): st
       scalarIndent = undefined;
     }
     if (blank || line.trimStart().startsWith('#')) return line;
-    const opensScalar = blockScalar.test(line);
+    const pair = keyValue(line);
+    const value = pair?.value ?? '';
+    const opensScalar = blockScalar.test(value);
     if (indent === 0) {
       inIbooks = false;
       childIndent = undefined;
       if (opensScalar) scalarIndent = 0;
-      const top = topLevelKey.exec(line);
-      const key = top?.[1];
-      const value = top?.[2] ?? '';
+      const key = pair?.key;
       if (key === 'version' || key === 'date') {
         found[key] += 1;
         const change = changes[key];
@@ -349,8 +360,7 @@ export function updateMetadataText(source: string, changes: MetadataChanges): st
     }
     if (inIbooks) {
       childIndent ??= indent;
-      const nested = indent === childIndent ? nestedVersion.exec(line) : null;
-      if (nested && changes.version !== undefined) return replaceValue('ibooks.version', nested[1] ?? '', indent, changes.version);
+      if (indent === childIndent && pair?.key === 'version' && changes.version !== undefined) return replaceValue('ibooks.version', value, indent, changes.version);
     }
     if (opensScalar) scalarIndent = indent;
     return line;
