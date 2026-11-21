@@ -196,10 +196,11 @@ export function pandocArguments(target: Target, context: PandocContext, output: 
 
 /**
  * Arguments for typst. The root is the private PDF directory, so the markup can read only the Pandoc
- * output and the image copies in it, and no file of the user.
+ * output and the image copies in it. The package directories are empty private directories, so typst
+ * does not read the local packages of the user and does not write into the user package cache.
  */
-export function typstArguments(root: string, input: string, output: string): string[] {
-  return ['compile', `--root=${root}`, '--', input, output];
+export function typstArguments(root: string, packages: string, input: string, output: string): string[] {
+  return ['compile', `--root=${root}`, `--package-path=${join(packages, 'local')}`, `--package-cache-path=${join(packages, 'cache')}`, '--', input, output];
 }
 
 /** Text of the beta notice at the start of the book. The language follows the book. */

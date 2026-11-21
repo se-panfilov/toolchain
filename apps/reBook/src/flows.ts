@@ -213,15 +213,15 @@ export function printable(tool: string, args: readonly string[]): string {
   return [tool, ...args].map((part) => (/^[\w@%+=:,./-]+$/.test(part) ? part : `'${part.replaceAll("'", `'\\''`)}'`)).join(' ');
 }
 
-/** Read the manuscript and its permission bits through one file descriptor. */
-function readSource(path: string): { text: string; mode: number } {
+/** Read the manuscript through one file descriptor. */
+function readSource(path: string): { text: string } {
   // O_NONBLOCK keeps a FIFO at the path from blocking the open. fstat then rejects it.
   const fd = openSync(path, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0));
   try {
     const stat = fstatSync(fd);
     if (!stat.isFile()) throw new Error(`Исходный файл должен быть обычным файлом: ${path}`);
     if (stat.size > limits.input) throw new Error(`Исходный файл больше ${String(Math.round(limits.input / 1024 / 1024))} МБ: ${path}`);
-    return { text: readFileSync(fd, 'utf8'), mode: stat.mode & 0o777 };
+    return { text: readFileSync(fd, 'utf8') };
   } finally {
     closeSync(fd);
   }
@@ -328,34 +328,50 @@ async function resolveFiles(options: BuildOptions, ask: Asker | undefined, say: 
     metadata = created;
   }
 
-  // PDF needs typst and a Pandoc with a safe --extract-media. Without them, the default choice leaves
-  // PDF out with a warning, and an explicit choice stops the build.
-  const typst = findTypst();
-  const pdfBlocker = !typst
-    ? { short: 'нужен typst', full: `Для PDF нужен typst. Установите его: ${typstInstall}` }
-    : !supportsPdf(pandoc.version)
-      ? {
-          short: `нужен Pandoc ${minimumPandocForPdf.join('.')}+`,
-          full: `Для PDF нужен Pandoc ${minimumPandocForPdf.join('.')} или новее. Установлен ${pandoc.version.join('.')}. Обновите его: brew upgrade pandoc`
-        }
-      : undefined;
+  // PDF needs typst and a Pandoc with a safe --extract-media. The search for typst runs only when PDF
+  // can be in the build: for the default choice and when --formats lists PDF. Without typst or the new
+  // Pandoc, the default choice leaves PDF out with a warning, and an explicit choice stops the build.
+  let typst: string | undefined;
+  let pdfBlocker: { short: string; full: string } | undefined;
+  const checkPdf = (explicit: boolean): void => {
+    try {
+      typst = findTypst();
+    } catch (error) {
+      // A found typst that cannot run stops only a build that asks for PDF.
+      if (explicit) throw error;
+      pdfBlocker = { short: 'typst не запускается', full: errorText(error) };
+      return;
+    }
+    if (!typst) pdfBlocker = { short: 'нужен typst', full: `Для PDF нужен typst. Установите его: ${typstInstall}` };
+    else if (!supportsPdf(pandoc.version)) {
+      pdfBlocker = {
+        short: `нужен Pandoc ${minimumPandocForPdf.join('.')}+`,
+        full: `Для PDF нужен Pandoc ${minimumPandocForPdf.join('.')} или новее. Установлен ${pandoc.version.join('.')}. Обновите его: brew upgrade pandoc`
+      };
+    }
+  };
   let formats = options.formats;
-  if (formats === undefined && ask) {
-    const chosen = await ask.checkbox(
-      'Форматы',
-      profiles.map((item) => (item.kind === 'pdf' && pdfBlocker ? { label: `${item.label} (${pdfBlocker.short})`, checked: false } : { label: item.label, checked: true }))
-    );
-    formats = chosen.map((index) => profiles[index]?.key ?? '').join(',');
-  }
   if (formats === undefined) {
-    formats = profiles
-      .filter((item) => item.kind !== 'pdf' || !pdfBlocker)
-      .map((item) => item.key)
-      .join(',');
-    if (pdfBlocker) say(`PDF не будет собран. ${pdfBlocker.full}`, 'warning');
+    checkPdf(false);
+    if (ask) {
+      const chosen = await ask.checkbox(
+        'Форматы',
+        profiles.map((item) => (item.kind === 'pdf' && pdfBlocker ? { label: `${item.label} (${pdfBlocker.short})`, checked: false } : { label: item.label, checked: true }))
+      );
+      formats = chosen.map((index) => profiles[index]?.key ?? '').join(',');
+    } else {
+      formats = profiles
+        .filter((item) => item.kind !== 'pdf' || !pdfBlocker)
+        .map((item) => item.key)
+        .join(',');
+      if (pdfBlocker) say(`PDF не будет собран. ${pdfBlocker.full}`, 'warning');
+    }
   }
   const targets = resolveFormats(formats, pandoc.writers);
-  if (pdfBlocker && targets.some((item) => item.kind === 'pdf')) throw new Error(pdfBlocker.full);
+  if (targets.some((item) => item.kind === 'pdf')) {
+    if (options.formats !== undefined) checkPdf(true);
+    if (pdfBlocker) throw new Error(pdfBlocker.full);
+  }
 
   let modeValue = options.mode;
   if (modeValue === undefined && ask) modeValue = (await ask.select('Тип сборки', ['Beta — с пометкой черновика', 'Production — финальная'], 0)) === 0 ? 'beta' : 'production';
@@ -451,6 +467,8 @@ export async function runBuild(options: BuildOptions, ask: Asker | undefined, sa
     const dataDir = join(work, 'data');
     // Pandoc output for PDF and the image copies. typst reads files only in this directory.
     const pdfRoot = join(work, 'pdf');
+    // Empty package directories for typst, outside the root and inside the work directory.
+    const typstPackages = join(work, 'typst-packages');
     mkdirSync(dataDir, { mode: 0o700 });
 
     // Validate a copy, so that the checked text is the text that the build and the update use.
@@ -520,14 +538,15 @@ export async function runBuild(options: BuildOptions, ask: Asker | undefined, sa
 
     // The formatted manuscript and a new whitelist go to disk in the same step as the results, so a
     // cancellation or a failure leaves them unchanged. The formatted file does not depend on --overwrite.
-    // It never gets wider permission bits than the manuscript.
-    // One read gives the text for Typograf Core and the mode for the formatted copy, so both come from the same file.
+    // A new formatted file always gets mode 0600, independently of the umask and of the manuscript mode.
+    // The manuscript can have an ACL that restricts other accounts, and the copy cannot get that ACL.
+    // A replaced formatted file keeps only the bits that both the old file and 0600 allow.
     const source = readSource(files.input);
     const formattedCopy = join(work, 'formatted-input.md');
     const whitelistCopy = join(work, 'typograf.rules.json');
     const placements: Placement[] = [
       ...plan.map((item) => ({ source: item.temporary, target: item.output, replace: options.overwrite || (confirmed && existing.includes(item)) })),
-      { source: formattedCopy, target: formattedPath, replace: true, mode: source.mode & 0o666 },
+      { source: formattedCopy, target: formattedPath, replace: true, mode: 0o600 },
       ...(files.typografGenerated ? [{ source: whitelistCopy, target: files.typografPath, replace: false }] : [])
     ];
     if (!options.dryRun) checkTargets(placements);
@@ -556,7 +575,7 @@ export async function runBuild(options: BuildOptions, ask: Asker | undefined, sa
         }
         const markup = join(pdfRoot, 'book.typ');
         say(`[dry-run] ${printable('pandoc', pandocArguments(item.target, context, markup))}`, 'muted');
-        say(`[dry-run] ${printable('typst', typstArguments(pdfRoot, markup, item.output))}`, 'muted');
+        say(`[dry-run] ${printable('typst', typstArguments(pdfRoot, typstPackages, markup, item.output))}`, 'muted');
       }
       say('Dry-run: книга не собрана, файлы не изменены.', 'success');
       return [];
@@ -582,7 +601,10 @@ export async function runBuild(options: BuildOptions, ask: Asker | undefined, sa
     for (const item of plan) {
       say(`Сборка ${item.target.label}…`, 'accent');
       const pdf = item.target.kind === 'pdf';
-      if (pdf) mkdirSync(pdfRoot, { mode: 0o700 });
+      if (pdf) {
+        mkdirSync(pdfRoot, { mode: 0o700 });
+        for (const name of ['local', 'cache']) mkdirSync(join(typstPackages, name), { recursive: true, mode: 0o700 });
+      }
       const markup = join(pdfRoot, 'book.typ');
       const result = run(pandoc.path, pandocArguments(item.target, context, pdf ? markup : item.temporary), { cwd: pdf ? pdfRoot : dirname(files.input) });
       if (interrupted || result.signal) throw new Error('Сборка прервана. Файлы результата не изменены.');
@@ -592,7 +614,7 @@ export async function runBuild(options: BuildOptions, ask: Asker | undefined, sa
       if (!files.typst) throw new Error(`Для PDF нужен typst. Установите его: ${typstInstall}`);
       let compiled;
       try {
-        compiled = run(files.typst, typstArguments(pdfRoot, markup, item.temporary), { cwd: pdfRoot });
+        compiled = run(files.typst, typstArguments(pdfRoot, typstPackages, markup, item.temporary), { cwd: pdfRoot });
       } catch (error) {
         throw new Error(`typst не запустился: ${errorText(error)}. Файлы результата не изменены.`, { cause: error });
       }
