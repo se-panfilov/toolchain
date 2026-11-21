@@ -19,11 +19,11 @@ import {
   updateMetadataFile,
   updateMetadataText,
   writeNewFile
-} from '@eBook/metadata';
+} from '@reBook/metadata';
 import { expect, test, type TestContext } from 'vitest';
 
 function workspace(t: TestContext): string {
-  const directory = mkdtempSync(join(tmpdir(), 'tx-ebook-metadata-test-'));
+  const directory = mkdtempSync(join(tmpdir(), 'tx-rebook-metadata-test-'));
   t.onTestFinished(() => {
     rmSync(directory, { recursive: true, force: true });
   });

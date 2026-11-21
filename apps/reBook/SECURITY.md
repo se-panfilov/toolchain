@@ -1,6 +1,6 @@
-# eBook security notes
+# reBook security notes
 
-eBook reads a Markdown manuscript and local style files.
+reBook reads a Markdown manuscript and local style files.
 It writes book files into an output directory and can update `metadata.yaml`.
 This file gives the controls, the trust assumptions, and the residual risks.
 

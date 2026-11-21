@@ -17,11 +17,11 @@ import {
   profiles,
   resolveFormats,
   writerExtension
-} from '@eBook/book';
+} from '@reBook/book';
 import { expect, test, type TestContext } from 'vitest';
 
 function workspace(t: TestContext): string {
-  const directory = mkdtempSync(join(tmpdir(), 'tx-ebook-book-test-'));
+  const directory = mkdtempSync(join(tmpdir(), 'tx-rebook-book-test-'));
   t.onTestFinished(() => {
     rmSync(directory, { recursive: true, force: true });
   });

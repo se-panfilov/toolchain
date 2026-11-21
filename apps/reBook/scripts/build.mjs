@@ -44,7 +44,7 @@ function filesIn(directory, prefix = '') {
 async function build() {
   filesIn(out);
   // Compile into an isolated directory. A failed type check must not change dist.
-  const staging = mkdtempSync(join(tmpdir(), 'tx-ebook-build-'));
+  const staging = mkdtempSync(join(tmpdir(), 'tx-rebook-build-'));
   try {
     const require = createRequire(import.meta.url);
     const compiler = require.resolve('typescript/lib/tsc.js');

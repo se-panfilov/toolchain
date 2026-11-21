@@ -1,5 +1,5 @@
 {
-  "name": "tx-ebook",
+  "name": "tx-rebook",
   "version": "0.1.0",
   "description": "Interactive build of EPUB, DOCX, and HTML books from a Markdown manuscript with Pandoc",
   "private": false,
@@ -9,7 +9,7 @@
     "node": ">=24.12.0"
   },
   "bin": {
-    "tx-ebook": "dist/src/cli.js"
+    "tx-rebook": "dist/src/cli.js"
   },
   "files": [
     "dist/src/book.js",
@@ -41,7 +41,7 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/se-panfilov/toolchain.git",
-    "directory": "apps/eBook"
+    "directory": "apps/reBook"
   },
   "keywords": [
     "pandoc",

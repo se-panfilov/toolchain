@@ -4,10 +4,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { checkRuntime, emptyBuild, emptyInit, parseArguments, safe } from '@eBook/cli';
-import { runInit } from '@eBook/flows';
-import type { Asker, Choice } from '@eBook/prompts';
-import { findTool } from '@eBook/tools';
+import { checkRuntime, emptyBuild, emptyInit, parseArguments, safe } from '@reBook/cli';
+import { runInit } from '@reBook/flows';
+import type { Asker, Choice } from '@reBook/prompts';
+import { findTool } from '@reBook/tools';
 import { expect, test, type TestContext } from 'vitest';
 
 const cli = fileURLToPath(new URL('../dist/src/cli.js', import.meta.url));
@@ -16,7 +16,7 @@ const pandoc = findTool('pandoc');
 
 function workspace(t: TestContext): string {
   // The real path: on macOS the temporary directory is a link to /private, and the CLI prints real paths.
-  const directory = realpathSync(mkdtempSync(join(tmpdir(), 'tx-ebook-cli-test-')));
+  const directory = realpathSync(mkdtempSync(join(tmpdir(), 'tx-rebook-cli-test-')));
   t.onTestFinished(() => {
     rmSync(directory, { recursive: true, force: true });
   });
@@ -31,7 +31,7 @@ function run(args: string[], cwd = process.cwd()): { status: number | null; stdo
 test('help and version work without a TTY', () => {
   const help = run(['--help']);
   expect(help.status).toBe(0);
-  expect(help.stdout).toContain('tx-ebook build [ФАЙЛ]');
+  expect(help.stdout).toContain('tx-rebook build [ФАЙЛ]');
   expect(run(['--version']).stdout.trim()).toBe(manifest.version);
 });
 
@@ -246,7 +246,7 @@ test.skipIf(!pandoc)('a book builds from Markdown with Pandoc and keeps the sour
   const production = run(['build', 'book.md', '--yes', '--mode', 'production', '--formats', 'docx', '--output', 'out'], directory);
   expect(production.status).toBe(0);
   expect(readdirSync(join(directory, 'out'))).toEqual(['Sample book - 0_1_0.docx']);
-  expect(readdirSync(tmpdir()).filter((name) => name.startsWith('tx-ebook-') && !name.includes('test'))).toEqual([]);
+  expect(readdirSync(tmpdir()).filter((name) => name.startsWith('tx-rebook-') && !name.includes('test'))).toEqual([]);
 });
 
 test.skipIf(!pandoc)('empty metadata fields stop the build before any write', (t) => {
@@ -267,7 +267,7 @@ test.skipIf(!pandoc)('a missing metadata file stops the build without questions'
   writeFileSync(join(directory, 'book.md'), manuscript);
   const result = run(['build', 'book.md', '--yes'], directory);
   expect(result.status).toBe(1);
-  expect(result.stderr).toContain('tx-ebook init');
+  expect(result.stderr).toContain('tx-rebook init');
 });
 
 test.skipIf(!pandoc)('a result never replaces the manuscript, even with --overwrite', (t) => {

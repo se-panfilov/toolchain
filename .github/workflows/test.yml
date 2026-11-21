@@ -19,8 +19,8 @@ on:
         default: all
         options:
           - all
-          - eBook
           - moveToRepo
+          - reBook
           - reCast
           - reHistory
           - reRules

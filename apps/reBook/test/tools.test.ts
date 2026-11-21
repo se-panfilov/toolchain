@@ -2,11 +2,11 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:f
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { checkPandocVersion, findTool, parsePandocVersion, parseWriters, toolEnvironment } from '@eBook/tools';
+import { checkPandocVersion, findTool, parsePandocVersion, parseWriters, toolEnvironment } from '@reBook/tools';
 import { expect, test, type TestContext } from 'vitest';
 
 function workspace(t: TestContext): string {
-  const directory = mkdtempSync(join(tmpdir(), 'tx-ebook-tools-test-'));
+  const directory = mkdtempSync(join(tmpdir(), 'tx-rebook-tools-test-'));
   t.onTestFinished(() => {
     rmSync(directory, { recursive: true, force: true });
   });

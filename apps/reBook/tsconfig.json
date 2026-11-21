@@ -4,7 +4,7 @@
     "rootDir": ".",
     "outDir": "dist",
     "paths": {
-      "@eBook/*": ["./src/*.ts"]
+      "@reBook/*": ["./src/*.ts"]
     }
   },
   "include": ["src/**/*.ts", "test/**/*.ts"],
