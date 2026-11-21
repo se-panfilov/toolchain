@@ -70,10 +70,13 @@ export function outputStem(title: string, version: string, mode: Mode): string {
   let safe = title
     .replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}/\\:*?"<>|]/gu, '_')
     .replace(/\s+/g, ' ')
-    .trim()
-    .replace(/^[.\s]+/, '')
-    .replace(/[.\s]+$/, '');
-  safe = graphemes(safe).slice(0, 120).join('').trim();
+    .trim();
+  // Remove leading and trailing dots and spaces without a backtracking regular expression.
+  let start = 0;
+  let end = safe.length;
+  while (start < end && (safe[start] === '.' || safe[start] === ' ')) start++;
+  while (end > start && (safe[end - 1] === '.' || safe[end - 1] === ' ')) end--;
+  safe = graphemes(safe.slice(start, end)).slice(0, 120).join('').trim();
   if (!safe) safe = 'book';
   const parts = [safe];
   if (mode === 'beta') parts.push('beta');

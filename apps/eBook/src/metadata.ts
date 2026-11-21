@@ -115,14 +115,6 @@ export function renderMetadata(fields: MetadataFields, identifier: string): stri
 
 /** Create a new file. Never replace an existing file or follow a link at the target path. */
 export function writeNewFile(path: string, content: string): void {
-  let exists = true;
-  try {
-    lstatSync(path);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-    exists = false;
-  }
-  if (exists) throw new Error(`Файл уже существует: ${path}. Существующий файл не перезаписывается.`);
   let directory = false;
   try {
     directory = statSync(dirname(path)).isDirectory();
@@ -130,8 +122,13 @@ export function writeNewFile(path: string, content: string): void {
     /* Reported below. */
   }
   if (!directory) throw new Error(`Каталог не найден: ${dirname(path)}`);
-  // The wx flag uses O_EXCL: the call fails if a file or a link appears at the path.
-  writeFileSync(path, content, { encoding: 'utf8', flag: 'wx', mode: 0o644 });
+  // The wx flag uses O_EXCL: the call fails if a file or a link is at the path, also a dangling link.
+  try {
+    writeFileSync(path, content, { encoding: 'utf8', flag: 'wx', mode: 0o644 });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new Error(`Файл уже существует: ${path}. Существующий файл не перезаписывается.`, { cause: error });
+    throw error;
+  }
 }
 
 // Pandoc JSON metadata values.
@@ -357,10 +354,15 @@ export function updateMetadataFile(path: string, expected: string, changes: Meta
   }
 }
 
-/** Read the metadata text for a later update check. */
+/** Read the metadata text for a later update check. The checks and the read use one file descriptor. */
 export function readMetadataText(path: string): string {
-  const stat = statSync(path);
-  if (!stat.isFile()) throw new Error(`Метаданные должны быть обычным файлом: ${path}`);
-  if (stat.size > metadataLimit) throw new Error(`Файл метаданных больше 1 МБ: ${path}`);
-  return readFileSync(path, 'utf8');
+  const fd = openSync(path, 'r');
+  try {
+    const stat = fstatSync(fd);
+    if (!stat.isFile()) throw new Error(`Метаданные должны быть обычным файлом: ${path}`);
+    if (stat.size > metadataLimit) throw new Error(`Файл метаданных больше 1 МБ: ${path}`);
+    return readFileSync(fd, 'utf8');
+  } finally {
+    closeSync(fd);
+  }
 }

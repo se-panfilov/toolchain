@@ -57,6 +57,8 @@ test('output names cannot leave the output directory', () => {
   expect(outputStem('..', '', 'production')).toBe('book');
   expect(outputStem('a\u0000b\u001b[31mc‮:d', '', 'production')).toBe('a_b_[31mc__d');
   expect(outputStem('x'.repeat(300), '', 'production')).toHaveLength(120);
+  // Long runs of dots and spaces must not make the name check slow.
+  expect(outputStem(`${'.'.repeat(100000)}x${' .'.repeat(100000)}`, '', 'production')).toBe('x');
 });
 
 test('the default assets are in the package and contain no book data', () => {
