@@ -1,6 +1,6 @@
-import { lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 
 import {
   assetDirectory,
@@ -16,6 +16,7 @@ import {
   type PandocContext,
   parseMode,
   placeFiles,
+  type Placement,
   profiles,
   resolveFormats,
   type Target,
@@ -56,11 +57,10 @@ import {
   loadWhitelistFile,
   parseTypografProfile,
   profileLabels,
+  renderWhitelist,
   typografExecute,
   type TypografProfileName,
-  type TypografWhitelist,
-  writeFormattedManuscript,
-  writeWhitelistFile
+  type TypografWhitelist
 } from '@reBook/typograf';
 
 export type Say = (text: string, tone?: keyof TerminalStyle) => void;
@@ -210,6 +210,44 @@ export function printable(tool: string, args: readonly string[]): string {
   return [tool, ...args].map((part) => (/^[\w@%+=:,./-]+$/.test(part) ? part : `'${part.replaceAll("'", `'\\''`)}'`)).join(' ');
 }
 
+/** Real path of a file, or of its directory and name when the file does not exist yet. */
+function realTarget(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    try {
+      return join(realpathSync(dirname(path)), basename(path));
+    } catch {
+      return resolve(path);
+    }
+  }
+}
+
+function fileIdentity(path: string): string | undefined {
+  try {
+    const stat = statSync(path);
+    return `${String(stat.dev)}:${String(stat.ino)}`;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Stop when a written path is an input of the build or another written path. Nothing is written before this check. */
+export function checkCollisions(inputs: readonly string[], written: readonly string[]): void {
+  const inputPaths = new Set(inputs.map(realTarget));
+  const inputIds = new Set(inputs.map(fileIdentity).filter((id) => id !== undefined));
+  const seenPaths = new Set<string>();
+  const seenIds = new Set<string>();
+  for (const path of written) {
+    const real = realTarget(path);
+    const id = fileIdentity(path);
+    if (inputPaths.has(real) || (id !== undefined && inputIds.has(id))) throw new Error(`Записываемый файл совпадает с входным файлом: ${path}`);
+    if (seenPaths.has(real) || (id !== undefined && seenIds.has(id))) throw new Error(`Два записываемых файла совпадают: ${path}`);
+    seenPaths.add(real);
+    if (id !== undefined) seenIds.add(id);
+  }
+}
+
 type Resolved = {
   input: string;
   metadata: string;
@@ -228,6 +266,8 @@ type Resolved = {
  * Find the Typograf Core whitelist: load an existing file next to the manuscript, or build a new one
  * from the chosen profile. The profile question runs only when no whitelist exists yet, so a later
  * build with the same files never asks it again and never overwrites a reviewed configuration.
+ * A new whitelist is not written here: it goes to disk with the results, after the confirmation
+ * and a successful build.
  */
 async function resolveTypograf(options: BuildOptions, input: string, ask: Asker | undefined, say: Say, cwd: string): Promise<{ path: string; whitelist: TypografWhitelist; generated: boolean }> {
   const path = options.typografRules !== undefined ? resolve(cwd, options.typografRules) : defaultWhitelistPath(input);
@@ -244,9 +284,7 @@ async function resolveTypograf(options: BuildOptions, input: string, ask: Asker 
     const index = await ask.select('Выберите правила типографирования:', [profileLabels.default, profileLabels['literary-markdown']], 0);
     profile = index === 0 ? 'default' : 'literary-markdown';
   }
-  const whitelist = buildWhitelist(profile);
-  if (!options.dryRun) writeWhitelistFile(path, whitelist);
-  return { path, whitelist, generated: true };
+  return { path, whitelist: buildWhitelist(profile), generated: true };
 }
 
 async function resolveFiles(options: BuildOptions, ask: Asker | undefined, say: Say, emit: Emit, cwd: string, pandoc: Pandoc): Promise<Resolved | undefined> {
@@ -402,18 +440,20 @@ export async function runBuild(options: BuildOptions, ask: Asker | undefined, sa
       output: join(files.output, `${stem}.${target.extension}`),
       temporary: join(work, `result-${target.key.replace(/[^a-z0-9]/g, '_')}.${target.extension}`)
     }));
-    // A result must never replace an input of the same build.
-    const protectedInputs = [files.input, files.metadata, files.css, files.referenceDoc, files.cover, files.typografPath].filter((path): path is string => path !== undefined);
-    if (protectedInputs.includes(formattedPath)) throw new Error(`Форматированный манускрипт совпадает с защищённым входным файлом: ${formattedPath}`);
-    const inputs = new Set(protectedInputs.filter((path) => exists(path)).map((path) => realpathSync(path)));
-    for (const item of plan)
-      if (inputs.has(item.output) || (exists(item.output) && inputs.has(realpathSync(item.output)))) throw new Error(`Файл результата совпадает с входным файлом: ${item.output}`);
+    // A written file must never replace an input of the same build, and two written files must not share a path.
+    // The check compares real paths and, for existing files, the device and inode, so another spelling of a
+    // path, a link in a directory name, or a hard link cannot hide a collision.
+    const protectedInputs = [files.input, files.metadata, files.css, files.referenceDoc, files.cover, files.typografGenerated ? undefined : files.typografPath].filter(
+      (path): path is string => path !== undefined
+    );
+    const writtenPaths = [...plan.map((item) => item.output), formattedPath, ...(files.typografGenerated ? [files.typografPath] : [])];
+    checkCollisions(protectedInputs, writtenPaths);
     const existing = plan.filter((item) => targetState(item.output) === 'file');
 
     say('');
     say(meta.title, 'strong');
     say(`  Исходник:   ${files.input}`);
-    say(`  Типограф:   ${files.typografPath}${files.typografGenerated ? ' (создан)' : ''}, правил: ${String(files.typografWhitelist.enabledRules.length)}`);
+    say(`  Типограф:   ${files.typografPath}${files.typografGenerated ? ' (будет создан после сборки)' : ''}, правил: ${String(files.typografWhitelist.enabledRules.length)}`);
     say(`  Манускрипт: ${formattedPath}`, 'muted');
     say(`  Метаданные: ${files.metadata}`);
     say(`  Версия:     ${version}${changes.version !== undefined ? ` (было: ${before.version || 'пусто'})` : ''}`);
@@ -437,13 +477,21 @@ export async function runBuild(options: BuildOptions, ask: Asker | undefined, sa
       }
     }
 
-    const placements = plan.map((item) => ({ source: item.temporary, target: item.output, replace: options.overwrite || (confirmed && existing.includes(item)) }));
+    // The formatted manuscript and a new whitelist go to disk in the same step as the results, so a
+    // cancellation or a failure leaves them unchanged. The formatted file does not depend on --overwrite.
+    // It never gets wider permission bits than the manuscript.
+    const formattedCopy = join(work, 'formatted-input.md');
+    const whitelistCopy = join(work, 'typograf.rules.json');
+    const placements: Placement[] = [
+      ...plan.map((item) => ({ source: item.temporary, target: item.output, replace: options.overwrite || (confirmed && existing.includes(item)) })),
+      { source: formattedCopy, target: formattedPath, replace: true, mode: statSync(files.input).mode & 0o666 },
+      ...(files.typografGenerated ? [{ source: whitelistCopy, target: files.typografPath, replace: false }] : [])
+    ];
     if (!options.dryRun) checkTargets(placements);
 
     const buildDate = localDate();
     // Pandoc reads a private copy of the formatted text, not the file next to the manuscript,
     // so a change of that file during the build cannot reach the results.
-    const formattedCopy = join(work, 'formatted-input.md');
     const input = files.mode === 'beta' ? join(work, 'beta-input.md') : formattedCopy;
     const context: PandocContext = {
       dataDir,
@@ -476,7 +524,7 @@ export async function runBuild(options: BuildOptions, ask: Asker | undefined, sa
       throw new Error(`Typograf не смог обработать манускрипт: ${errorText(error)}. Файлы результата не изменены.`, { cause: error });
     }
     writeFileSync(formattedCopy, formattedText, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
-    writeFormattedManuscript(formattedPath, formattedText);
+    if (files.typografGenerated) writeFileSync(whitelistCopy, renderWhitelist(files.typografWhitelist), { encoding: 'utf8', flag: 'wx', mode: 0o600 });
 
     if (files.mode === 'beta') writeBetaInput(formattedCopy, betaNotice(meta.title, version, buildDate, meta.lang), work);
     for (const item of plan) {

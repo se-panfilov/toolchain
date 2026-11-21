@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, linkSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -221,21 +221,25 @@ test.skipIf(!pandoc)('a book builds from Markdown with Pandoc and keeps the sour
   expect(missingVersion.status).toBe(1);
   expect(missingVersion.stderr).toContain('пустое поле version');
 
-  const dry = run(['build', 'book.md', '--yes', '--dry-run', '--book-version', '0.1.0', '--book-date', '2024-01-02'], directory);
+  // A failed build does not write the new whitelist.
+  expect(existsSync(join(directory, 'typograf.rules.json'))).toBe(false);
+
+  const dry = run(['build', 'book.md', '--yes', '--dry-run', '--book-version', '0.1.0', '--book-date', '2024-01-02', '--typograf-profile', 'literary-markdown'], directory);
   expect(dry.status).toBe(0);
   expect(dry.stdout).toBe('');
   expect(existsSync(join(directory, 'build'))).toBe(false);
   expect(readFileSync(join(directory, 'metadata.yaml'), 'utf8')).toBe(metadata);
   expect(existsSync(join(directory, 'book.formatted.md'))).toBe(false);
-  const rules = JSON.parse(readFileSync(join(directory, 'typograf.rules.json'), 'utf8')) as { enabledRules: string[] };
-  expect(rules.enabledRules.length).toBe(10);
+  expect(existsSync(join(directory, 'typograf.rules.json'))).toBe(false);
 
-  const built = run(['build', 'book.md', '--yes', '--book-version', '0.1.0', '--book-date', '2024-01-02'], directory);
+  const built = run(['build', 'book.md', '--yes', '--book-version', '0.1.0', '--book-date', '2024-01-02', '--typograf-profile', 'literary-markdown'], directory);
   expect(built.stderr).not.toContain('Ошибка');
   expect(built.status).toBe(0);
   const names = ['Sample book - beta - 0_1_0.epub', 'Sample book - beta - 0_1_0.docx', 'Sample book - beta - 0_1_0.html'];
   expect(built.stdout.trim().split('\n')).toEqual(names.map((name) => join(directory, 'build', name)));
   expect(readdirSync(join(directory, 'build')).sort()).toEqual([...names].sort());
+  const rules = JSON.parse(readFileSync(join(directory, 'typograf.rules.json'), 'utf8')) as { enabledRules: string[] };
+  expect(rules.enabledRules.length).toBe(10);
   const updated = readFileSync(join(directory, 'metadata.yaml'), 'utf8');
   expect(updated).toContain('version: "0.1.0"');
   expect(updated).toContain('date: "2024-01-02"');
@@ -479,4 +483,86 @@ test.skipIf(!pandoc)('a confirmation replaces only the files that the plan showe
   expect(script.asked).toContain('Перезаписать существующие файлы?');
   expect(readFileSync(html, 'utf8')).toBe('old html');
   expect(readFileSync(docx, 'utf8')).toBe('new docx from elsewhere');
+});
+
+test.skipIf(!pandoc || process.platform === 'win32')('the formatted manuscript never gets wider permission bits than the source', (t) => {
+  const directory = workspace(t);
+  writeFileSync(join(directory, 'book.md'), manuscript);
+  chmodSync(join(directory, 'book.md'), 0o600);
+  writeFileSync(join(directory, 'metadata.yaml'), plainMetadata);
+  const args = ['build', 'book.md', '--yes', '--mode', 'production', '--formats', 'html', '--overwrite', '--typograf-profile', 'literary-markdown'];
+  expect(run(args, directory).status).toBe(0);
+  const formatted = join(directory, 'book.formatted.md');
+  expect(statSync(formatted).mode & 0o777).toBe(0o600);
+  // A replaced copy keeps only the bits that both the old copy and the source allow.
+  chmodSync(formatted, 0o644);
+  expect(run(args, directory).status).toBe(0);
+  expect(statSync(formatted).mode & 0o777).toBe(0o600);
+});
+
+test.skipIf(!pandoc || process.platform === 'win32')('another spelling of the formatted path for --metadata stops the build', (t) => {
+  const directory = workspace(t);
+  mkdirSync(join(directory, 'sub'));
+  writeFileSync(join(directory, 'book.md'), manuscript);
+  // The metadata file is the formatted path of the manuscript, given through a parent directory.
+  const metadata = join(directory, 'book.formatted.md');
+  writeFileSync(metadata, plainMetadata);
+  const result = run(['build', 'book.md', '--yes', '--formats', 'html', '--metadata', 'sub/../book.formatted.md', '--typograf-profile', 'literary-markdown'], directory);
+  expect(result.status).toBe(1);
+  expect(result.stderr).toContain('совпадает с входным файлом');
+  expect(readFileSync(metadata, 'utf8')).toBe(plainMetadata);
+  expect(existsSync(join(directory, 'typograf.rules.json'))).toBe(false);
+  // A hard link with another name is the same file too.
+  linkSync(metadata, join(directory, 'meta.yaml'));
+  rmSync(metadata);
+  linkSync(join(directory, 'meta.yaml'), metadata);
+  const linked = run(['build', 'book.md', '--yes', '--formats', 'html', '--metadata', 'meta.yaml', '--typograf-profile', 'literary-markdown'], directory);
+  expect(linked.status).toBe(1);
+  expect(linked.stderr).toContain('совпадает с входным файлом');
+  expect(readFileSync(join(directory, 'meta.yaml'), 'utf8')).toBe(plainMetadata);
+});
+
+test.skipIf(!pandoc)('a failed or stopped build writes no whitelist and keeps the old formatted manuscript', (t) => {
+  const directory = workspace(t);
+  writeFileSync(join(directory, 'book.md'), 'Он посмотрел из за дерева...\n');
+  writeFileSync(join(directory, 'metadata.yaml'), plainMetadata);
+  writeFileSync(join(directory, 'book.formatted.md'), 'old formatted');
+  const badVersion = run(['build', 'book.md', '--yes', '--formats', 'html', '--book-version', 'x', '--typograf-profile', 'default'], directory);
+  expect(badVersion.status).toBe(1);
+  // A reference document with a ZIP signature but no ZIP content makes Pandoc fail on DOCX.
+  writeFileSync(join(directory, 'bad.docx'), 'PK\u0003\u0004 not a zip');
+  const failed = run(['build', 'book.md', '--yes', '--formats', 'html,docx', '--reference-doc', 'bad.docx', '--typograf-profile', 'default'], directory);
+  expect(failed.status).toBe(1);
+  expect(failed.stderr).toContain('Pandoc');
+  expect(existsSync(join(directory, 'typograf.rules.json'))).toBe(false);
+  expect(readFileSync(join(directory, 'book.formatted.md'), 'utf8')).toBe('old formatted');
+  expect(existsSync(join(directory, 'build'))).toBe(false);
+});
+
+test.skipIf(!pandoc)('an interactive build that the user stops writes no whitelist', async (t) => {
+  const directory = workspace(t);
+  writeFileSync(join(directory, 'book.md'), manuscript);
+  writeFileSync(join(directory, 'metadata.yaml'), plainMetadata);
+  const script = new Answers({
+    'Исходный файл Markdown': join(directory, 'book.md'),
+    Форматы: [2],
+    'Тип сборки': 1,
+    Оформление: 0,
+    'Выходной каталог': join(directory, 'build'),
+    'Выберите правила типографирования:': 1,
+    'Версия книги': '1.0.0',
+    'Дата книги (ГГГГ-ММ-ДД)': '2024-01-01',
+    'Собрать книгу?': false
+  });
+  expect(
+    await runBuild(
+      emptyBuild(),
+      script,
+      () => undefined,
+      () => undefined,
+      directory
+    )
+  ).toEqual([]);
+  expect(script.asked).toContain('Выберите правила типографирования:');
+  expect(readdirSync(directory).sort()).toEqual(['book.md', 'metadata.yaml']);
 });

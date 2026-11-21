@@ -239,7 +239,13 @@ export function targetState(path: string): 'free' | 'file' {
 }
 
 /** A finished file and its result path. `replace` allows the replacement of an existing file at that path. */
-export type Placement = { source: string; target: string; replace: boolean };
+/**
+ * A finished file and its target path. `replace` allows the replacement of an existing file at that
+ * path. `mode` limits the permission bits: a new file gets exactly `mode`, and a replaced file keeps
+ * only the bits that both the old file and `mode` allow. Without `mode`, a new file gets 0644 minus
+ * the umask, and a replaced file keeps its bits.
+ */
+export type Placement = { source: string; target: string; replace: boolean; mode?: number | undefined };
 
 type Identity = { dev: number; ino: number };
 type Staged = { target: string; temporary: string; placed?: Identity | undefined; backup?: string; replaced?: boolean; created?: boolean };
@@ -299,6 +305,10 @@ function checkReplaceable(target: string): number {
   return stat.mode & 0o777;
 }
 
+function limitMode(existing: number, limit: number | undefined): number {
+  return limit === undefined ? existing : existing & limit;
+}
+
 /** Check the result paths before the build: each path is free, or may be replaced and has no ACL. */
 export function checkTargets(items: readonly { target: string; replace: boolean }[]): void {
   for (const item of items) {
@@ -325,17 +335,18 @@ export function placeFiles(items: readonly Placement[], finish: () => void = () 
       if (existing && !item.replace) throw new Error(`Файл уже существует: ${item.target}. Используйте --overwrite.`);
       const temporary = sibling(item.target, 'tmp');
       // A copy for a replaced file starts private and then gets the permission bits of that file.
-      writeFileSync(temporary, readFileSync(item.source), { flag: 'wx', mode: existing ? 0o600 : 0o644 });
+      // A copy that gets limited bits starts private, so it is never readable by others before chmod.
+      writeFileSync(temporary, readFileSync(item.source), { flag: 'wx', mode: existing || item.mode !== undefined ? 0o600 : 0o644 });
       const entry: Staged = { target: item.target, temporary };
       staged.push(entry);
-      if (existing) chmodSync(temporary, checkReplaceable(item.target));
+      if (existing) chmodSync(temporary, limitMode(checkReplaceable(item.target), item.mode));
+      else if (item.mode !== undefined) chmodSync(temporary, item.mode);
       entry.placed = identity(temporary);
     }
     for (const [index, entry] of staged.entries()) {
       const existing = targetState(entry.target) === 'file';
       if (existing && items[index]?.replace) {
-        const mode = checkReplaceable(entry.target);
-        chmodSync(entry.temporary, mode);
+        chmodSync(entry.temporary, limitMode(checkReplaceable(entry.target), items[index]?.mode));
         entry.backup = sibling(entry.target, 'old');
         linkSync(entry.target, entry.backup);
         renameSync(entry.temporary, entry.target);

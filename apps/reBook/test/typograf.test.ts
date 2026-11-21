@@ -1,10 +1,10 @@
-import { spawnSync } from 'node:child_process';
-import { existsSync, linkSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import {
   buildWhitelist,
+  checkWhitelistName,
   defaultLocale,
   defaultWhitelistName,
   defaultWhitelistPath,
@@ -16,9 +16,7 @@ import {
   parseWhitelist,
   renderWhitelist,
   schemaVersion,
-  typografExecute,
-  writeFormattedManuscript,
-  writeWhitelistFile
+  typografExecute
 } from '@reBook/typograf';
 import Typograf from 'typograf';
 import { expect, test, type TestContext } from 'vitest';
@@ -109,16 +107,6 @@ test('loadWhitelistFile checks file type, size, and extension before parsing', (
   expect(() => loadWhitelistFile(huge)).toThrow(/больше/);
 });
 
-test('writeWhitelistFile writes a new file and never overwrites an existing one', (t) => {
-  const directory = workspace(t);
-  const path = join(directory, defaultWhitelistName);
-  writeWhitelistFile(path, buildWhitelist('literary-markdown'));
-  const loaded = loadWhitelistFile(path);
-  expect(loaded.enabledRules.length).toBe(10);
-  expect(() => writeWhitelistFile(path, buildWhitelist('default'))).toThrow(/уже существует/);
-  expect(loadWhitelistFile(path).enabledRules.length).toBe(10);
-});
-
 test('defaultWhitelistPath sits next to the manuscript', () => {
   expect(defaultWhitelistPath('/a/b/manuscript.md')).toBe(join('/a/b', defaultWhitelistName));
 });
@@ -144,33 +132,6 @@ test('isFormattedManuscriptName and formattedManuscriptPath recognize the genera
   expect(isFormattedManuscriptName('book.formatted.txt')).toBe(false);
   expect(formattedManuscriptPath('/a/book.md')).toBe('/a/book.formatted.md');
   expect(formattedManuscriptPath('/a/book.markdown')).toBe('/a/book.formatted.markdown');
-});
-
-test('writeFormattedManuscript creates and then atomically replaces the formatted file', (t) => {
-  const directory = workspace(t);
-  const path = join(directory, 'book.formatted.md');
-  writeFormattedManuscript(path, 'first');
-  expect(readFileSync(path, 'utf8')).toBe('first');
-  writeFormattedManuscript(path, 'second');
-  expect(readFileSync(path, 'utf8')).toBe('second');
-});
-
-test.skipIf(process.platform === 'win32')('writeFormattedManuscript refuses to write through a symbolic link or onto a file with other hard links', (t) => {
-  const directory = workspace(t);
-  const real = join(directory, 'real.md');
-  writeFileSync(real, 'protected');
-  const link = join(directory, 'book.formatted.md');
-  symlinkSync(real, link);
-  expect(() => writeFormattedManuscript(link, 'new text')).toThrow(/символическая ссылка/);
-  expect(readFileSync(real, 'utf8')).toBe('protected');
-
-  const hardLinked = join(directory, 'hardlinked.formatted.md');
-  writeFileSync(hardLinked, 'original');
-  const otherName = join(directory, 'other-name.md');
-  // linkSync creates a second hard link, so nlink becomes 2.
-  linkSync(hardLinked, otherName);
-  expect(() => writeFormattedManuscript(hardLinked, 'new text')).toThrow(/жёсткие ссылки/);
-  expect(readFileSync(hardLinked, 'utf8')).toBe('original');
 });
 
 test('a Markdown manuscript keeps its structure through the LITERARY-MARKDOWN profile', () => {
@@ -277,22 +238,7 @@ test('a formatted name keeps the extension, and a name without one gets .formatt
   expect(formattedManuscriptPath('/a/book')).toBe('/a/book.formatted.md');
 });
 
-test('a whitelist must be a .json file, also for a new file', (t) => {
-  const directory = workspace(t);
-  expect(() => writeWhitelistFile(join(directory, 'rules.txt'), buildWhitelist('default'))).toThrow(/\.json/);
-  expect(existsSync(join(directory, 'rules.txt'))).toBe(false);
-});
-
-const setfacl = ['/usr/bin/setfacl', '/bin/setfacl'].find((path) => existsSync(path));
-
-test.skipIf(process.platform !== 'linux' || !setfacl)('a formatted manuscript with an ACL is not replaced', (t) => {
-  const directory = workspace(t);
-  const path = join(directory, 'book.formatted.md');
-  writeFileSync(path, 'old');
-  if (spawnSync(setfacl ?? '', ['-m', 'u:nobody:r', path]).status !== 0) {
-    t.skip();
-    return;
-  }
-  expect(() => writeFormattedManuscript(path, 'new')).toThrow(/ACL/);
-  expect(readFileSync(path, 'utf8')).toBe('old');
+test('a whitelist must be a .json file', () => {
+  expect(() => checkWhitelistName('/a/rules.txt')).toThrow(/\.json/);
+  checkWhitelistName('/a/rules.JSON');
 });

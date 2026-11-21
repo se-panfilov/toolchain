@@ -1,9 +1,6 @@
-import { randomUUID } from 'node:crypto';
-import { chmodSync, closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
-import { basename, dirname, extname, join } from 'node:path';
+import { closeSync, constants, fstatSync, openSync, readFileSync } from 'node:fs';
+import { dirname, extname, join } from 'node:path';
 
-import { writeNewFile } from '@reBook/metadata';
-import { hasAccessControlList } from '@reBook/tools';
 import Typograf from 'typograf';
 
 export type TypografProfileName = 'default' | 'literary-markdown';
@@ -230,12 +227,6 @@ export function loadWhitelistFile(path: string): TypografWhitelist {
   }
 }
 
-/** Write a new whitelist file. Never replaces an existing file at that path. */
-export function writeWhitelistFile(path: string, whitelist: TypografWhitelist): void {
-  checkWhitelistName(path);
-  writeNewFile(path, renderWhitelist(whitelist));
-}
-
 export type TypografLineEnding = 'LF' | 'CR' | 'CRLF';
 
 /** The line ending that the source text already uses, so the formatted text keeps the same style. */
@@ -267,34 +258,4 @@ export function formattedManuscriptPath(inputPath: string): string {
   const extension = extname(inputPath);
   if (extension === '') return `${inputPath}.formatted.md`;
   return `${inputPath.slice(0, inputPath.length - extension.length)}.formatted${extension}`;
-}
-
-/**
- * Replace the formatted manuscript with the new text. The write is atomic: a temporary file next to
- * the target gets renamed over it. A symbolic link or a file with other hard links at the target
- * stops the write, so the command never changes a file through a link or a file that another path
- * also owns. Unlike a build result, this file is always replaced and does not depend on `--overwrite`.
- */
-export function writeFormattedManuscript(path: string, content: string): void {
-  const temporary = join(dirname(path), `.${basename(path)}.${randomUUID()}.tmp`);
-  writeFileSync(temporary, content, { encoding: 'utf8', flag: 'wx', mode: 0o644 });
-  try {
-    let stat;
-    try {
-      stat = lstatSync(path);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-    }
-    if (stat) {
-      if (stat.isSymbolicLink()) throw new Error(`Форматированный манускрипт — символическая ссылка: ${path}. Удалите его и запустите сборку снова.`);
-      if (!stat.isFile()) throw new Error(`По пути форматированного манускрипта лежит не обычный файл: ${path}.`);
-      if (stat.nlink !== 1) throw new Error(`У форматированного манускрипта есть другие жёсткие ссылки: ${path}. Удалите его и запустите сборку снова.`);
-      if (hasAccessControlList(path)) throw new Error(`У форматированного манускрипта есть ACL: ${path}. Новый файл не получит эти ограничения доступа. Удалите его и запустите сборку снова.`);
-      chmodSync(temporary, stat.mode & 0o777);
-    }
-    renameSync(temporary, path);
-  } catch (error) {
-    rmSync(temporary, { force: true });
-    throw error;
-  }
 }
