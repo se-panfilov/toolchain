@@ -286,4 +286,4 @@ npm run build --workspace tx-rebook
 node apps/reBook/dist/src/cli.js --help
 ```
 
-Tests that start Pandoc are skipped when Pandoc is not installed.
+Tests that start Pandoc are skipped when Pandoc isn't installed.
