@@ -20,7 +20,7 @@ import {
   type Target,
   targetState,
   writeBetaInput
-} from '@eBook/book';
+} from '@reBook/book';
 import {
   type BookMetadata,
   defaultLanguage,
@@ -38,9 +38,9 @@ import {
   updateMetadataFile,
   updateMetadataText,
   writeNewFile
-} from '@eBook/metadata';
-import type { Asker, TerminalStyle } from '@eBook/prompts';
-import { findEpubcheck, findPandoc, lastLines, type Pandoc, run, runChecked } from '@eBook/tools';
+} from '@reBook/metadata';
+import type { Asker, TerminalStyle } from '@reBook/prompts';
+import { findEpubcheck, findPandoc, lastLines, type Pandoc, run, runChecked } from '@reBook/tools';
 
 export type Say = (text: string, tone?: keyof TerminalStyle) => void;
 /** Result lines for stdout. In the mode without questions, stdout has only result paths. */
@@ -201,7 +201,7 @@ async function resolveFiles(options: BuildOptions, ask: Asker | undefined, say: 
 
   let metadata = resolve(cwd, options.metadata ?? defaultMetadata);
   if (!exists(metadata)) {
-    if (!ask) throw new Error(`Нет файла метаданных: ${metadata}. Создайте его командой tx-ebook init или укажите --metadata.`);
+    if (!ask) throw new Error(`Нет файла метаданных: ${metadata}. Создайте его командой tx-rebook init или укажите --metadata.`);
     say(`Нет файла метаданных: ${metadata}`, 'warning');
     if (!(await ask.confirm('Создать metadata.yaml сейчас?', true))) return undefined;
     const created = await runInit({ metadata, title: undefined, author: undefined, lang: undefined, description: undefined, rights: undefined, yes: false, dryRun: false }, ask, say, emit, cwd);
@@ -284,7 +284,7 @@ async function resolveChanges(options: BuildOptions, ask: Asker | undefined, say
 
 function checkMetadata(meta: BookMetadata): void {
   if (!meta.title) throw new Error('В metadata.yaml нет title.');
-  if (!meta.identifiers.length) throw new Error('В metadata.yaml нет identifier. Добавьте его, например urn:uuid:… (tx-ebook init создаёт его сам).');
+  if (!meta.identifiers.length) throw new Error('В metadata.yaml нет identifier. Добавьте его, например urn:uuid:… (tx-rebook init создаёт его сам).');
   if (meta.empty.length) throw new Error(`Пустые поля в metadata.yaml: ${meta.empty.join(', ')}. Заполните их или удалите.`);
 }
 
@@ -298,7 +298,7 @@ export async function runBuild(options: BuildOptions, ask: Asker | undefined, sa
     return [];
   }
   // A private directory keeps the temporary input, metadata copies, and unfinished results.
-  const work = mkdtempSync(join(tmpdir(), 'tx-ebook-'));
+  const work = mkdtempSync(join(tmpdir(), 'tx-rebook-'));
   // Ctrl+C reaches Pandoc too. Without this handler, Node.js would stop before the cleanup.
   let interrupted = false;
   const onSignal = (): void => {

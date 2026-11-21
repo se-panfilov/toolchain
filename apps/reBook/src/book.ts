@@ -3,7 +3,7 @@ import { closeSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, read
 import { basename, dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { graphemes } from '@eBook/metadata';
+import { graphemes } from '@reBook/metadata';
 
 export type Kind = 'epub' | 'docx' | 'html' | 'other';
 export type Target = { key: string; label: string; writer: string; extension: string; kind: Kind };

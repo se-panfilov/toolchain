@@ -4,8 +4,8 @@ import { resolve } from 'node:path';
 import { stdin, stdout } from 'node:process';
 import { pathToFileURL } from 'node:url';
 
-import { type BuildOptions, defaultMetadata, type InitOptions, runBuild, runInit, type Say } from '@eBook/flows';
-import { PromptCancelled, TerminalPrompts, terminalStyle } from '@eBook/prompts';
+import { type BuildOptions, defaultMetadata, type InitOptions, runBuild, runInit, type Say } from '@reBook/flows';
+import { PromptCancelled, TerminalPrompts, terminalStyle } from '@reBook/prompts';
 
 // Paths, titles, and Pandoc messages can contain terminal control characters.
 export function safe(value: unknown): string {
@@ -16,13 +16,13 @@ function print(value: unknown, tone: keyof ReturnType<typeof terminalStyle> = 'p
   console.log(style[tone](safe(value)));
 }
 
-export const helpText = `eBook — сборка электронной книги из Markdown через Pandoc.
+export const helpText = `reBook — сборка электронной книги из Markdown через Pandoc.
 Node.js 24.12+, Pandoc 3.0+ (brew install pandoc). EPUBCheck — по желанию.
 
 Запуск:
-  tx-ebook                           Меню: сборка или создание metadata.yaml.
-  tx-ebook build [ФАЙЛ] [параметры]  Собрать книгу из ФАЙЛА Markdown.
-  tx-ebook init [параметры]          Создать metadata.yaml.
+  tx-rebook                           Меню: сборка или создание metadata.yaml.
+  tx-rebook build [ФАЙЛ] [параметры]  Собрать книгу из ФАЙЛА Markdown.
+  tx-rebook init [параметры]          Создать metadata.yaml.
 
 Параметры build:
   ФАЙЛ                      Исходный файл Markdown.
@@ -61,7 +61,7 @@ function version(): string {
     const url = new URL(relative, import.meta.url);
     if (!existsSync(url)) continue;
     const manifest = JSON.parse(readFileSync(url, 'utf8')) as { name?: unknown; version?: unknown };
-    if (manifest.name === 'tx-ebook' && typeof manifest.version === 'string') return manifest.version;
+    if (manifest.name === 'tx-rebook' && typeof manifest.version === 'string') return manifest.version;
   }
   return 'неизвестно';
 }
@@ -189,7 +189,7 @@ async function main(): Promise<void> {
   };
   const prompts = unattended ? undefined : new TerminalPrompts();
   try {
-    say('eBook · сборка книги', 'accent');
+    say('reBook · сборка книги', 'accent');
     if (command.name === 'init') {
       await runInit(command.options, prompts, say, emit);
       return;

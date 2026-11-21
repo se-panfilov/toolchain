@@ -1,6 +1,6 @@
-# eBook
+# reBook
 
-eBook builds an electronic book from one Markdown manuscript.
+reBook builds an electronic book from one Markdown manuscript.
 It runs Pandoc and makes EPUB, DOCX, and HTML files.
 It also makes a new `metadata.yaml` file for a book.
 The manuscript does not change. The results go into an output directory.
@@ -22,17 +22,17 @@ macOS is the main platform. Linux also works. On Windows, the EPUB check is skip
 Run the published package:
 
 ```sh
-npx tx-ebook
-npx tx-ebook init
-npx tx-ebook build "book.md"
+npx tx-rebook
+npx tx-rebook init
+npx tx-rebook build "book.md"
 ```
 
 Run the local build from the Toolchain root:
 
 ```sh
 npm ci --ignore-scripts
-npm run start --workspace tx-ebook
-npm run start --workspace tx-ebook -- build "/path/to/book.md"
+npm run start --workspace tx-rebook
+npm run start --workspace tx-rebook -- build "/path/to/book.md"
 ```
 
 The start script builds the application before it starts `dist/src/cli.js`.
@@ -43,7 +43,7 @@ When `metadata.yaml` is not in the current directory, the menu selects the secon
 
 ## Make metadata.yaml
 
-`tx-ebook init` asks for these values:
+`tx-rebook init` asks for these values:
 
 | Field          | Default                                        | Rule                                     |
 | -------------- | ---------------------------------------------- | ---------------------------------------- |
@@ -75,7 +75,7 @@ The program never replaces an existing file.
 
 ## Build a book
 
-`tx-ebook build` asks only for the values that the options do not give.
+`tx-rebook build` asks only for the values that the options do not give.
 
 | Option                 | Purpose                                                                            |
 | ---------------------- | ---------------------------------------------------------------------------------- |
@@ -170,8 +170,8 @@ The interlude.
 ## Use without questions
 
 ```sh
-tx-ebook init --yes --title "Title" --author "Author"
-tx-ebook build book.md --yes --book-version 0.1.0 --book-date 2024-01-02 --cover cover.png
+tx-rebook init --yes --title "Title" --author "Author"
+tx-rebook build book.md --yes --book-version 0.1.0 --book-date 2024-01-02 --cover cover.png
 ```
 
 Without questions, stdout contains only the paths of the results, one in each line.
@@ -204,9 +204,9 @@ The program never replaces a result file without `--overwrite`.
 ## Checks
 
 ```sh
-npm test --workspace tx-ebook
-npm run build --workspace tx-ebook
-node apps/eBook/dist/src/cli.js --help
+npm test --workspace tx-rebook
+npm run build --workspace tx-rebook
+node apps/reBook/dist/src/cli.js --help
 ```
 
 Tests that start Pandoc are skipped when Pandoc is not installed.
