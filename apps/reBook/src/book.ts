@@ -7,14 +7,17 @@ import { graphemes } from '@reBook/metadata';
 import { hasAccessControlList } from '@reBook/tools';
 import { isFormattedManuscriptName } from '@reBook/typograf';
 
-export type Kind = 'epub' | 'docx' | 'html' | 'other';
+export type Kind = 'epub' | 'docx' | 'html' | 'fb2' | 'pdf' | 'other';
 export type Target = { key: string; label: string; writer: string; extension: string; kind: Kind };
 export type Mode = 'beta' | 'production';
 
 export const profiles: readonly Target[] = [
   { key: 'epub', label: 'EPUB', writer: 'epub3', extension: 'epub', kind: 'epub' },
   { key: 'docx', label: 'DOCX', writer: 'docx', extension: 'docx', kind: 'docx' },
-  { key: 'html', label: 'HTML', writer: 'html5', extension: 'html', kind: 'html' }
+  { key: 'html', label: 'HTML', writer: 'html5', extension: 'html', kind: 'html' },
+  { key: 'fb2', label: 'FB2', writer: 'fb2', extension: 'fb2', kind: 'fb2' },
+  // Pandoc writes Typst markup, and the typst program makes the PDF from it.
+  { key: 'pdf', label: 'PDF', writer: 'typst', extension: 'pdf', kind: 'pdf' }
 ];
 const aliases: Record<string, string> = { word: 'docx' };
 const writerPattern = /^[a-z0-9][a-z0-9+.-]{0,31}$/;
@@ -40,7 +43,8 @@ export function resolveFormats(raw: string, writers: readonly string[]): Target[
     const name = token.trim().toLowerCase();
     if (!name) continue;
     const normalized = aliases[name] ?? name;
-    const profile = profiles.find((item) => item.key === normalized || item.writer === normalized);
+    // The PDF profile is found only by its key: the name typst selects the Pandoc writer that makes Typst markup.
+    const profile = profiles.find((item) => item.key === normalized || (item.kind !== 'pdf' && item.writer === normalized));
     if (profile) {
       if (!available.has(profile.writer)) unknown.push(name);
       else if (!targets.some((item) => item.key === profile.key)) targets.push(profile);
@@ -53,7 +57,7 @@ export function resolveFormats(raw: string, writers: readonly string[]): Target[
     }
     if (!targets.some((item) => item.key === normalized)) targets.push({ key: normalized, label: normalized, writer: normalized, extension, kind: 'other' });
   }
-  if (unknown.length) throw new Error(`Неизвестный формат: ${unknown.join(', ')}. Доступно: epub, docx, html и другие форматы Pandoc.`);
+  if (unknown.length) throw new Error(`Неизвестный формат: ${unknown.join(', ')}. Доступно: epub, docx, html, fb2, pdf и другие форматы Pandoc.`);
   if (!targets.length) throw new Error('Не выбран ни один формат.');
   const extensions = targets.map((item) => item.extension);
   if (new Set(extensions).size !== extensions.length) throw new Error('Два формата дают файлы с одинаковым расширением. Выберите один из них.');
@@ -151,6 +155,8 @@ export type PandocContext = {
   filter: string;
   css: string;
   referenceDoc: string;
+  /** Page settings for PDF. The book metadata comes later on the command line, so its values win. */
+  pdfDefaults: string;
   cover: string | undefined;
   mode: Mode;
   resourcePath: string;
@@ -163,7 +169,8 @@ export type PandocContext = {
  * and init.lua out of the build.
  */
 export function pandocArguments(target: Target, context: PandocContext, output: string): string[] {
-  const args = [`--data-dir=${context.dataDir}`, `--metadata-file=${context.metadata}`, `--resource-path=${context.resourcePath}`, `--lua-filter=${context.filter}`];
+  const metadata = target.kind === 'pdf' ? [`--metadata-file=${context.pdfDefaults}`, `--metadata-file=${context.metadata}`] : [`--metadata-file=${context.metadata}`];
+  const args = [`--data-dir=${context.dataDir}`, ...metadata, `--resource-path=${context.resourcePath}`, `--lua-filter=${context.filter}`];
   if (target.kind === 'epub') {
     args.push('--to=epub3', '--split-level=1', `--css=${context.css}`);
     if (context.cover) args.push(`--epub-cover-image=${context.cover}`);
@@ -172,11 +179,27 @@ export function pandocArguments(target: Target, context: PandocContext, output: 
     args.push('--to=docx', `--reference-doc=${context.referenceDoc}`);
   } else if (target.kind === 'html') {
     args.push('--to=html5', '--standalone', '--embed-resources', `--css=${context.css}`);
+  } else if (target.kind === 'fb2') {
+    args.push('--to=fb2');
+    // FB2 has no option for the cover. The writer reads the cover-image field. The value stays a string.
+    if (context.cover) args.push(`--metadata=cover-image:${context.cover}`);
+  } else if (target.kind === 'pdf') {
+    // The output is Typst markup for typst. Pandoc runs in the PDF directory, so the copies of images go to
+    // media/ in it, and the image paths in the markup are relative to that directory.
+    args.push('--to=typst', '--standalone', '--extract-media=media');
   } else {
     args.push(`--to=${target.writer}`);
   }
   args.push(`--output=${output}`, '--', context.input);
   return args;
+}
+
+/**
+ * Arguments for typst. The root is the private PDF directory, so the markup can read only the Pandoc
+ * output and the image copies in it, and no file of the user.
+ */
+export function typstArguments(root: string, input: string, output: string): string[] {
+  return ['compile', `--root=${root}`, '--', input, output];
 }
 
 /** Text of the beta notice at the start of the book. The language follows the book. */

@@ -1,0 +1,6 @@
+# Page settings for PDF. A field with the same name in metadata.yaml replaces a value here.
+papersize: a5
+margin:
+  x: 2cm
+  y: 2cm
+fontsize: 11pt

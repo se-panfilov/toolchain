@@ -18,6 +18,7 @@ import {
   placeFiles,
   profiles,
   resolveFormats,
+  typstArguments,
   writerExtension
 } from '@reBook/book';
 import { hasAccessControlList } from '@reBook/tools';
@@ -31,14 +32,17 @@ function workspace(t: TestContext): string {
   return directory;
 }
 
-const writers = ['docx', 'epub2', 'epub3', 'html5', 'json', 'markdown', 'odt'];
+const writers = ['docx', 'epub2', 'epub3', 'fb2', 'html5', 'json', 'markdown', 'odt', 'typst'];
 const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
 
 test('formats accept profiles, aliases, and listed Pandoc writers', () => {
   expect(resolveFormats('epub,docx,html', writers).map((item) => item.key)).toEqual(['epub', 'docx', 'html']);
   expect(resolveFormats(' Word , EPUB3, epub ', writers).map((item) => item.key)).toEqual(['docx', 'epub']);
   expect(resolveFormats('odt', writers)).toEqual([{ key: 'odt', label: 'odt', writer: 'odt', extension: 'odt', kind: 'other' }]);
-  expect(() => resolveFormats('pdf', writers)).toThrow(/Неизвестный формат: pdf/);
+  expect(resolveFormats('fb2, PDF', writers).map((item) => item.kind)).toEqual(['fb2', 'pdf']);
+  // The name typst selects the Typst writer, not the PDF profile.
+  expect(resolveFormats('typst', writers)).toEqual([{ key: 'typst', label: 'typst', writer: 'typst', extension: 'typst', kind: 'other' }]);
+  expect(() => resolveFormats('pdf', ['epub3'])).toThrow(/Неизвестный формат: pdf/);
   expect(() => resolveFormats('../../x', writers)).toThrow(/Неизвестный формат/);
   expect(() => resolveFormats(',,', writers)).toThrow(/Не выбран/);
   expect(() => resolveFormats('epub,epub2', writers)).toThrow(/одинаковым расширением/);
@@ -66,10 +70,16 @@ test('output names cannot leave the output directory', () => {
 
 test('the default assets are in the package and contain no book data', () => {
   const directory = assetDirectory();
-  expect(readdirSync(directory).sort()).toEqual(['epub.css', 'reference.docx', 'scene-breaks.lua']);
+  expect(readdirSync(directory).sort()).toEqual(['epub.css', 'pdf.yaml', 'reference.docx', 'scene-breaks.lua']);
   const docx = readFileSync(join(directory, 'reference.docx')).toString('latin1');
   expect(docx.startsWith('PK\x03\x04')).toBe(true);
-  for (const name of ['epub.css', 'scene-breaks.lua']) expect(readFileSync(join(directory, name), 'utf8')).not.toMatch(/urn:uuid|@|https?:/);
+  for (const name of ['epub.css', 'pdf.yaml', 'scene-breaks.lua']) expect(readFileSync(join(directory, name), 'utf8')).not.toMatch(/urn:uuid|@|https?:/);
+  // The PDF page settings have only layout fields, no book data.
+  const keys = readFileSync(join(directory, 'pdf.yaml'), 'utf8')
+    .split('\n')
+    .filter((line) => /^[a-z]/.test(line))
+    .map((line) => line.split(':')[0]);
+  expect(keys).toEqual(['papersize', 'margin', 'fontsize']);
 });
 
 test('file checks accept real files of the expected type only', (t) => {
@@ -108,6 +118,7 @@ const context: PandocContext = {
   filter: '/assets/scene-breaks.lua',
   css: '/assets/epub.css',
   referenceDoc: '/assets/reference.docx',
+  pdfDefaults: '/assets/pdf.yaml',
   cover: '/book/cover.png',
   mode: 'beta',
   resourcePath: '/book',
@@ -135,6 +146,14 @@ test('Pandoc arguments keep paths out of option position', () => {
   const production = pandocArguments(profiles[0] ?? { key: '', label: '', writer: '', extension: '', kind: 'epub' }, { ...context, mode: 'production', cover: undefined }, '/o');
   expect(production).not.toContain('--epub-title-page=false');
   expect(production.some((arg) => arg.startsWith('--epub-cover-image'))).toBe(false);
+  const [, , , fb2, pdf] = profiles.map((target) => pandocArguments(target, context, '/work/out'));
+  expect(fb2).toEqual(expect.arrayContaining(['--to=fb2', '--metadata=cover-image:/book/cover.png']));
+  expect(pandocArguments(profiles[3] ?? { key: '', label: '', writer: '', extension: '', kind: 'fb2' }, { ...context, cover: undefined }, '/o').some((arg) => arg.includes('cover-image'))).toBe(false);
+  // The book metadata comes after the PDF defaults, so its values win.
+  expect(pdf?.slice(0, 3)).toEqual(['--data-dir=/work/data', '--metadata-file=/assets/pdf.yaml', '--metadata-file=/work/metadata.yaml']);
+  expect(pdf).toEqual(expect.arrayContaining(['--to=typst', '--standalone', '--extract-media=media']));
+  expect(pdf?.some((arg) => arg.startsWith('--pdf-engine'))).toBe(false);
+  expect(typstArguments('/work/pdf', '/work/pdf/book.typ', '/work/result.pdf')).toEqual(['compile', '--root=/work/pdf', '--', '/work/pdf/book.typ', '/work/result.pdf']);
   expect(pandocArguments({ key: 'odt', label: 'odt', writer: 'odt', extension: 'odt', kind: 'other' }, context, '/o')).toContain('--to=odt');
 });
 

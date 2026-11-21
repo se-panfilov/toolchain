@@ -17,7 +17,8 @@ function print(value: unknown, tone: keyof ReturnType<typeof terminalStyle> = 'p
 }
 
 export const helpText = `reBook — сборка электронной книги из Markdown через Pandoc.
-Node.js 24.12+, Pandoc 3.0+ (brew install pandoc). EPUBCheck — по желанию.
+Node.js 24.12+, Pandoc 3.0+ (brew install pandoc). Для PDF — typst (brew install typst) и Pandoc 3.2+.
+EPUBCheck — по желанию.
 
 Запуск:
   tx-rebook                           Меню: сборка или создание metadata.yaml.
@@ -28,10 +29,11 @@ Node.js 24.12+, Pandoc 3.0+ (brew install pandoc). EPUBCheck — по желан
   ФАЙЛ                      Исходный файл Markdown.
   --metadata ПУТЬ           Файл метаданных (по умолчанию metadata.yaml).
   --output КАТАЛОГ          Выходной каталог (по умолчанию build).
-  --cover ПУТЬ              Обложка EPUB: JPEG, PNG, GIF или WebP.
+  --cover ПУТЬ              Обложка EPUB и FB2: JPEG, PNG, GIF или WebP.
   --css ПУТЬ                Свой CSS для EPUB и HTML вместо встроенного.
   --reference-doc ПУТЬ      Свой шаблон стилей DOCX вместо встроенного.
-  --formats СПИСОК          Форматы через запятую: epub,docx,html (по умолчанию все три).
+  --formats СПИСОК          Форматы через запятую: epub,docx,html,fb2,pdf (по умолчанию все;
+                            без typst — все, кроме pdf).
   --mode РЕЖИМ              beta (по умолчанию) или production.
   --book-version ВЕРСИЯ     Версия книги SemVer. Записывается в metadata.yaml.
   --book-date ДАТА          Дата книги ГГГГ-ММ-ДД. Записывается в metadata.yaml.
@@ -57,7 +59,7 @@ Node.js 24.12+, Pandoc 3.0+ (brew install pandoc). EPUBCheck — по желан
 С --yes вопросов нет, TTY не нужен, пути результатов выводятся в stdout.
 Исходный файл не изменяется. Существующий metadata.yaml не перезаписывается.
 Перед сборкой build типографирует ФАЙЛ через Typograf Core и сохраняет результат
-рядом с ним как ФАЙЛ.formatted.md; этот файл и используется для EPUB/DOCX/HTML.
+рядом с ним как ФАЙЛ.formatted.md; этот файл и используется для EPUB/DOCX/HTML/FB2/PDF.
 Он перезаписывается при каждой сборке и не зависит от --overwrite.
 Подробности: README.md пакета.`;
 

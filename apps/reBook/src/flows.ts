@@ -22,6 +22,7 @@ import {
   resolveFormats,
   type Target,
   targetState,
+  typstArguments,
   writeBetaInput
 } from '@reBook/book';
 import {
@@ -48,7 +49,7 @@ import {
   writeNewFile
 } from '@reBook/metadata';
 import type { Asker, TerminalStyle } from '@reBook/prompts';
-import { findEpubcheck, findPandoc, lastLines, type Pandoc, run, runChecked } from '@reBook/tools';
+import { findEpubcheck, findPandoc, findTypst, lastLines, minimumPandocForPdf, type Pandoc, run, runChecked, supportsPdf } from '@reBook/tools';
 import {
   buildWhitelist,
   checkWhitelistName,
@@ -99,6 +100,7 @@ export type BuildOptions = {
 
 export const defaultMetadata = 'metadata.yaml';
 export const defaultOutput = 'build';
+const typstInstall = 'brew install typst';
 
 /** Ask until the check accepts the answer. The rejected answer stays in the field for editing. */
 async function askValid(ask: Asker, question: string, initial: string, check: (value: string) => string | undefined, say: Say): Promise<string> {
@@ -275,6 +277,7 @@ type Resolved = {
   typografPath: string;
   typografWhitelist: TypografWhitelist;
   typografGenerated: boolean;
+  typst: string | undefined;
 };
 
 /**
@@ -325,25 +328,46 @@ async function resolveFiles(options: BuildOptions, ask: Asker | undefined, say: 
     metadata = created;
   }
 
+  // PDF needs typst and a Pandoc with a safe --extract-media. Without them, the default choice leaves
+  // PDF out with a warning, and an explicit choice stops the build.
+  const typst = findTypst();
+  const pdfBlocker = !typst
+    ? { short: 'нужен typst', full: `Для PDF нужен typst. Установите его: ${typstInstall}` }
+    : !supportsPdf(pandoc.version)
+      ? {
+          short: `нужен Pandoc ${minimumPandocForPdf.join('.')}+`,
+          full: `Для PDF нужен Pandoc ${minimumPandocForPdf.join('.')} или новее. Установлен ${pandoc.version.join('.')}. Обновите его: brew upgrade pandoc`
+        }
+      : undefined;
   let formats = options.formats;
   if (formats === undefined && ask) {
     const chosen = await ask.checkbox(
       'Форматы',
-      profiles.map((item) => ({ label: item.label, checked: true }))
+      profiles.map((item) => (item.kind === 'pdf' && pdfBlocker ? { label: `${item.label} (${pdfBlocker.short})`, checked: false } : { label: item.label, checked: true }))
     );
     formats = chosen.map((index) => profiles[index]?.key ?? '').join(',');
   }
-  const targets = resolveFormats(formats ?? profiles.map((item) => item.key).join(','), pandoc.writers);
+  if (formats === undefined) {
+    formats = profiles
+      .filter((item) => item.kind !== 'pdf' || !pdfBlocker)
+      .map((item) => item.key)
+      .join(',');
+    if (pdfBlocker) say(`PDF не будет собран. ${pdfBlocker.full}`, 'warning');
+  }
+  const targets = resolveFormats(formats, pandoc.writers);
+  if (pdfBlocker && targets.some((item) => item.kind === 'pdf')) throw new Error(pdfBlocker.full);
 
   let modeValue = options.mode;
   if (modeValue === undefined && ask) modeValue = (await ask.select('Тип сборки', ['Beta — с пометкой черновика', 'Production — финальная'], 0)) === 0 ? 'beta' : 'production';
   const mode = parseMode(modeValue ?? 'beta');
 
-  const epub = targets.some((item) => item.kind === 'epub');
+  const covered = targets.filter((item) => item.kind === 'epub' || item.kind === 'fb2').map((item) => item.label);
+  const coverFormats = covered.join(' и ');
   let coverValue = options.cover;
-  if (coverValue === undefined && ask && epub) coverValue = await askValid(ask, 'Обложка EPUB (пусто — без обложки)', defaultCover(cwd), fileCheck('cover', true), say);
+  if (coverValue === undefined && ask && covered.length) coverValue = await askValid(ask, `Обложка ${coverFormats} (пусто — без обложки)`, defaultCover(cwd), fileCheck('cover', true), say);
   const cover = coverValue ? checkFile(resolve(cwd, coverValue), 'cover') : undefined;
-  if (!cover && epub) say('Обложка не указана. EPUB будет без обложки.', 'warning');
+  if (!cover && covered.length) say(`Обложка не указана. ${coverFormats} ${covered.length > 1 ? 'будут' : 'будет'} без обложки.`, 'warning');
+  if (cover && targets.some((item) => item.kind === 'fb2') && !/\.(?:jpe?g|png)$/i.test(cover)) say('Читалки FB2 обычно показывают обложку только в JPEG или PNG.', 'warning');
 
   const assets = assetDirectory();
   const usesCss = targets.some((item) => item.kind === 'epub' || item.kind === 'html');
@@ -364,7 +388,7 @@ async function resolveFiles(options: BuildOptions, ask: Asker | undefined, say: 
   const output = resolve(cwd, outputValue ?? defaultOutput);
   checkOutputDirectory(output);
   const typograf = await resolveTypograf(options, input, ask, say, cwd);
-  return { input, metadata, output, cover, css, referenceDoc, targets, mode, typografPath: typograf.path, typografWhitelist: typograf.whitelist, typografGenerated: typograf.generated };
+  return { input, metadata, output, cover, css, referenceDoc, targets, mode, typografPath: typograf.path, typografWhitelist: typograf.whitelist, typografGenerated: typograf.generated, typst };
 }
 
 function readMetadata(pandoc: Pandoc, path: string, dataDir: string): BookMetadata {
@@ -425,6 +449,8 @@ export async function runBuild(options: BuildOptions, ask: Asker | undefined, sa
   process.on('SIGINT', onSignal);
   try {
     const dataDir = join(work, 'data');
+    // Pandoc output for PDF and the image copies. typst reads files only in this directory.
+    const pdfRoot = join(work, 'pdf');
     mkdirSync(dataDir, { mode: 0o700 });
 
     // Validate a copy, so that the checked text is the text that the build and the update use.
@@ -516,13 +542,22 @@ export async function runBuild(options: BuildOptions, ask: Asker | undefined, sa
       filter: join(assetDirectory(), 'scene-breaks.lua'),
       css: files.css,
       referenceDoc: files.referenceDoc,
+      pdfDefaults: join(assetDirectory(), 'pdf.yaml'),
       cover: files.cover,
       mode: files.mode,
       resourcePath: dirname(files.input),
       input
     };
     if (options.dryRun) {
-      for (const item of plan) say(`[dry-run] ${printable('pandoc', pandocArguments(item.target, context, item.output))}`, 'muted');
+      for (const item of plan) {
+        if (item.target.kind !== 'pdf') {
+          say(`[dry-run] ${printable('pandoc', pandocArguments(item.target, context, item.output))}`, 'muted');
+          continue;
+        }
+        const markup = join(pdfRoot, 'book.typ');
+        say(`[dry-run] ${printable('pandoc', pandocArguments(item.target, context, markup))}`, 'muted');
+        say(`[dry-run] ${printable('typst', typstArguments(pdfRoot, markup, item.output))}`, 'muted');
+      }
       say('Dry-run: книга не собрана, файлы не изменены.', 'success');
       return [];
     }
@@ -546,10 +581,24 @@ export async function runBuild(options: BuildOptions, ask: Asker | undefined, sa
     if (files.mode === 'beta') writeBetaInput(formattedCopy, betaNotice(meta.title, version, buildDate, meta.lang), work);
     for (const item of plan) {
       say(`Сборка ${item.target.label}…`, 'accent');
-      const result = run(pandoc.path, pandocArguments(item.target, context, item.temporary), { cwd: dirname(files.input) });
+      const pdf = item.target.kind === 'pdf';
+      if (pdf) mkdirSync(pdfRoot, { mode: 0o700 });
+      const markup = join(pdfRoot, 'book.typ');
+      const result = run(pandoc.path, pandocArguments(item.target, context, pdf ? markup : item.temporary), { cwd: pdf ? pdfRoot : dirname(files.input) });
       if (interrupted || result.signal) throw new Error('Сборка прервана. Файлы результата не изменены.');
       if (result.stderr.trim()) say(lastLines(result.stderr, 20), 'muted');
       if (result.status !== 0) throw new Error(`Pandoc завершился с кодом ${String(result.status)} для ${item.target.label}. Файлы результата не изменены.`);
+      if (!pdf) continue;
+      if (!files.typst) throw new Error(`Для PDF нужен typst. Установите его: ${typstInstall}`);
+      let compiled;
+      try {
+        compiled = run(files.typst, typstArguments(pdfRoot, markup, item.temporary), { cwd: pdfRoot });
+      } catch (error) {
+        throw new Error(`typst не запустился: ${errorText(error)}. Файлы результата не изменены.`, { cause: error });
+      }
+      if (interrupted || compiled.signal) throw new Error('Сборка прервана. Файлы результата не изменены.');
+      if (compiled.status !== 0) throw new Error(`typst завершился с кодом ${String(compiled.status)}. Файлы результата не изменены.\n${lastLines(compiled.stderr, 20)}`);
+      if (compiled.stderr.trim()) say(lastLines(compiled.stderr, 20), 'muted');
     }
 
     const epubcheck = plan.some((item) => item.target.extension === 'epub') ? findEpubcheck() : undefined;

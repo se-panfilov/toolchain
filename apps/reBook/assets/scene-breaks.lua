@@ -28,7 +28,14 @@ local function paragraph_text(block)
 end
 
 local function is_scene_break_marker(block)
-  if not block or (block.t ~= "Para" and block.t ~= "Plain") then
+  if not block then
+    return false
+  end
+  -- FB2 shows a horizontal rule as an empty line, so a rule becomes a visible scene break there.
+  if block.t == "HorizontalRule" and FORMAT:match("fb2") then
+    return true
+  end
+  if block.t ~= "Para" and block.t ~= "Plain" then
     return false
   end
   local compact = pandoc.utils.stringify(block):gsub("%s+", "")
@@ -198,7 +205,36 @@ local function style_semantic_title_header(header, interlude_counter, label)
   return header
 end
 
+-- EPUB reads authors from creator entries. The FB2 and Typst writers read only author, so
+-- creator entries with the author role (or no role) become author when author is not set.
+local function authors_from_creators(meta)
+  if meta.author ~= nil or meta.creator == nil then
+    return meta
+  end
+  if not (FORMAT:match("fb2") or FORMAT:match("typst")) then
+    return meta
+  end
+  local creators = meta.creator
+  if pandoc.utils.type(creators) ~= "List" then
+    creators = { creators }
+  end
+  local authors = {}
+  for _, creator in ipairs(creators) do
+    local is_entry = pandoc.utils.type(creator) == "table"
+    local role = is_entry and creator.role and pandoc.utils.stringify(creator.role) or "author"
+    local name = is_entry and creator.text or (not is_entry and creator or nil)
+    if name ~= nil and (role == "author" or role == "aut") then
+      table.insert(authors, name)
+    end
+  end
+  if #authors > 0 then
+    meta.author = authors
+  end
+  return meta
+end
+
 function Pandoc(doc)
+  doc.meta = authors_from_creators(doc.meta)
   local out = {}
   local first_after_scene_break_pending = false
   local first_after_title_pending = false

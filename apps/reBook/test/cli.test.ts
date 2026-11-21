@@ -1,18 +1,22 @@
 import { spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, linkSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { checkRuntime, emptyBuild, emptyInit, parseArguments, safe } from '@reBook/cli';
 import { printable, runBuild, runInit } from '@reBook/flows';
 import type { Asker, Choice } from '@reBook/prompts';
-import { findTool } from '@reBook/tools';
+import { findTool, parsePandocVersion, supportsPdf } from '@reBook/tools';
 import { expect, test, type TestContext } from 'vitest';
 
 const cli = fileURLToPath(new URL('../dist/src/cli.js', import.meta.url));
 const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string };
 const pandoc = findTool('pandoc');
+const typst = findTool('typst');
+const pandocVersion = pandoc ? parsePandocVersion(spawnSync(pandoc, ['--version'], { encoding: 'utf8' }).stdout) : undefined;
+// PDF needs Pandoc 3.2 or later. With an older Pandoc, the PDF tests are skipped.
+const pdfPandoc = pandocVersion !== undefined && supportsPdf(pandocVersion);
 
 function workspace(t: TestContext): string {
   // The real path: on macOS the temporary directory is a link to /private, and the CLI prints real paths.
@@ -23,8 +27,8 @@ function workspace(t: TestContext): string {
   return directory;
 }
 
-function run(args: string[], cwd = process.cwd()): { status: number | null; stdout: string; stderr: string } {
-  const result = spawnSync(process.execPath, [cli, ...args], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, NO_COLOR: '1' }, timeout: 120000 });
+function run(args: string[], cwd = process.cwd(), env: NodeJS.ProcessEnv = {}): { status: number | null; stdout: string; stderr: string } {
+  const result = spawnSync(process.execPath, [cli, ...args], { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, NO_COLOR: '1', ...env }, timeout: 120000 });
   return { status: result.status, stdout: result.stdout, stderr: result.stderr };
 }
 
@@ -235,7 +239,8 @@ test.skipIf(!pandoc)('a book builds from Markdown with Pandoc and keeps the sour
   const built = run(['build', 'book.md', '--yes', '--book-version', '0.1.0', '--book-date', '2024-01-02', '--typograf-profile', 'literary-markdown'], directory);
   expect(built.stderr).not.toContain('Ошибка');
   expect(built.status).toBe(0);
-  const names = ['Sample book - beta - 0_1_0.epub', 'Sample book - beta - 0_1_0.docx', 'Sample book - beta - 0_1_0.html'];
+  // All formats are selected by default. PDF is left out when typst is not installed.
+  const names = ['epub', 'docx', 'html', 'fb2', ...(typst && pdfPandoc ? ['pdf'] : [])].map((extension) => `Sample book - beta - 0_1_0.${extension}`);
   expect(built.stdout.trim().split('\n')).toEqual(names.map((name) => join(directory, 'build', name)));
   expect(readdirSync(join(directory, 'build')).sort()).toEqual([...names].sort());
   const rules = JSON.parse(readFileSync(join(directory, 'typograf.rules.json'), 'utf8')) as { enabledRules: string[] };
@@ -565,4 +570,141 @@ test.skipIf(!pandoc)('an interactive build that the user stops writes no whiteli
   ).toEqual([]);
   expect(script.asked).toContain('Выберите правила типографирования:');
   expect(readdirSync(directory).sort()).toEqual(['book.md', 'metadata.yaml']);
+});
+
+/** A synthetic typst: it records its arguments and writes a small PDF file to the output path. */
+function fakeTypst(directory: string, status = 0): { bin: string; log: string } {
+  const bin = join(directory, 'tools');
+  mkdirSync(bin);
+  const log = join(directory, 'typst.log');
+  const script = [
+    `#!${process.execPath}`,
+    "const { appendFileSync, readFileSync, writeFileSync } = require('node:fs');",
+    'const args = process.argv.slice(2);',
+    `appendFileSync(${JSON.stringify(log)}, JSON.stringify(args) + '\\n');`,
+    `if (${String(status)} !== 0) { process.stderr.write('typst failure'); process.exit(${String(status)}); }`,
+    'const input = args[args.length - 2], output = args[args.length - 1];',
+    "writeFileSync(output, '%PDF-1.7\\n' + readFileSync(input, 'utf8'));"
+  ].join('\n');
+  writeFileSync(join(bin, 'typst'), `${script}\n`, { mode: 0o755 });
+  return { bin, log };
+}
+
+// On macOS the CLI also looks in the Homebrew directories, so a real typst there cannot be hidden.
+const homebrewTypst = process.platform === 'darwin' && ['/opt/homebrew/bin/typst', '/usr/local/bin/typst'].some((path) => existsSync(path));
+
+test.skipIf(!pandoc)('FB2 gets the cover, the metadata, and a visible scene break', (t) => {
+  const directory = workspace(t);
+  writeFileSync(join(directory, 'book.md'), '# Глава\n\nТекст.\n\n***\n\nДальше.\n');
+  writeFileSync(join(directory, 'cover.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]));
+  writeFileSync(
+    join(directory, 'metadata.yaml'),
+    `${plainMetadata.replace('lang: "en"', 'lang: "ru-RU"')}creator:\n  - role: author\n    text: "Иван Петров"\n  - role: editor\n    text: "Редактор"\n`
+  );
+  const built = run(['build', 'book.md', '--yes', '--formats', 'fb2', '--cover', 'cover.png', '--mode', 'production', '--typograf-profile', 'literary-markdown'], directory);
+  expect(built.stderr).not.toContain('Ошибка');
+  expect(built.status).toBe(0);
+  const fb2 = readFileSync(join(directory, 'build', 'Sample - 1_0_0.fb2'), 'utf8');
+  expect(fb2).toContain('<FictionBook');
+  expect(fb2).toContain('<book-title>Sample</book-title>');
+  expect(fb2).toContain('<coverpage>');
+  // The creator with the author role becomes the FB2 author. The editor does not.
+  expect(fb2).toContain('<author><first-name>Иван</first-name><last-name>Петров</last-name></author>');
+  expect(fb2).not.toContain('Редактор');
+  expect(fb2).toContain('<p>* * *</p>');
+  expect(fb2).toContain('Дальше.');
+});
+
+test.skipIf(!pdfPandoc || process.platform === 'win32')('PDF uses typst with the private directory as the root', (t) => {
+  const directory = workspace(t);
+  const { bin, log } = fakeTypst(directory);
+  mkdirSync(join(directory, 'images'));
+  writeFileSync(join(directory, 'images', 'picture.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]));
+  writeFileSync(join(directory, 'book.md'), '# Глава\n\nТекст.\n\n![Рисунок](images/picture.png)\n');
+  writeFileSync(join(directory, 'metadata.yaml'), plainMetadata);
+  const env = { PATH: `${bin}:${process.env.PATH ?? ''}` };
+  const dry = run(['build', 'book.md', '--yes', '--dry-run', '--formats', 'pdf', '--typograf-profile', 'literary-markdown'], directory, env);
+  expect(dry.status).toBe(0);
+  expect(dry.stderr).toMatch(/\[dry-run\] typst compile --root=/);
+  expect(existsSync(log)).toBe(false);
+
+  const built = run(['build', 'book.md', '--yes', '--formats', 'pdf', '--typograf-profile', 'literary-markdown'], directory, env);
+  expect(built.stderr).not.toContain('Ошибка');
+  expect(built.status).toBe(0);
+  const pdf = readFileSync(join(directory, 'build', 'Sample - beta - 1_0_0.pdf'), 'utf8');
+  expect(pdf.startsWith('%PDF-')).toBe(true);
+  // The markup comes from the Pandoc Typst writer: page settings from pdf.yaml, a relative image copy, and the beta notice.
+  expect(pdf).toContain('paper: "a5"');
+  expect(pdf).toContain('image("media/');
+  expect(pdf).toContain('Please do not distribute.');
+  const [args] = readFileSync(log, 'utf8')
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line) as string[]);
+  const root = (args?.[1] ?? '').replace('--root=', '');
+  expect(args?.slice(0, 1)).toEqual(['compile']);
+  expect(args?.[2]).toBe('--');
+  expect(args?.[3]).toBe(join(root, 'book.typ'));
+  expect(root.startsWith(directory)).toBe(false);
+  // The private directory is gone after the build.
+  expect(existsSync(root)).toBe(false);
+  expect(readdirSync(directory).sort()).toEqual(['book.formatted.md', 'book.md', 'build', 'images', 'metadata.yaml', 'tools', 'typograf.rules.json', 'typst.log']);
+});
+
+test.skipIf(!pdfPandoc || process.platform === 'win32')('a failed typst run replaces no result', (t) => {
+  const directory = workspace(t);
+  const { bin } = fakeTypst(directory, 3);
+  writeFileSync(join(directory, 'book.md'), '# Глава\n\nТекст.\n');
+  writeFileSync(join(directory, 'metadata.yaml'), plainMetadata);
+  const built = run(['build', 'book.md', '--yes', '--formats', 'html,pdf', '--typograf-profile', 'literary-markdown'], directory, { PATH: `${bin}:${process.env.PATH ?? ''}` });
+  expect(built.status).toBe(1);
+  expect(built.stderr).toContain('typst завершился с кодом 3');
+  expect(built.stderr).toContain('typst failure');
+  expect(existsSync(join(directory, 'build'))).toBe(false);
+  expect(existsSync(join(directory, 'book.formatted.md'))).toBe(false);
+});
+
+test.skipIf(!pandoc || process.platform === 'win32' || homebrewTypst)('without typst the default leaves PDF out, and an explicit PDF stops the build', (t) => {
+  const directory = workspace(t);
+  writeFileSync(join(directory, 'book.md'), '# Глава\n\nТекст.\n');
+  writeFileSync(join(directory, 'metadata.yaml'), plainMetadata);
+  // Only the Pandoc directory stays in PATH, so typst is not found there.
+  const env = { PATH: dirname(pandoc ?? '') };
+  const explicit = run(['build', 'book.md', '--yes', '--formats', 'pdf', '--typograf-profile', 'literary-markdown'], directory, env);
+  expect(explicit.status).toBe(1);
+  expect(explicit.stderr).toContain('Для PDF нужен typst. Установите его: brew install typst');
+  expect(readdirSync(directory).sort()).toEqual(['book.md', 'metadata.yaml']);
+
+  const fallback = run(['build', 'book.md', '--yes', '--typograf-profile', 'literary-markdown'], directory, env);
+  expect(fallback.status).toBe(0);
+  expect(fallback.stderr).toContain('PDF не будет собран. Для PDF нужен typst');
+  expect(readdirSync(join(directory, 'build')).sort()).toEqual(['epub', 'docx', 'html', 'fb2'].map((extension) => `Sample - beta - 1_0_0.${extension}`).sort());
+});
+
+test.skipIf(!pdfPandoc || !typst)('a real typst makes a PDF from a Cyrillic book', (t) => {
+  const directory = workspace(t);
+  writeFileSync(join(directory, 'book.md'), '# Глава\n\nТекст «в кавычках» — с тире.\n\n***\n\nДальше.\n');
+  writeFileSync(join(directory, 'metadata.yaml'), plainMetadata.replace('lang: "en"', 'lang: "ru-RU"'));
+  const built = run(['build', 'book.md', '--yes', '--formats', 'pdf', '--mode', 'production', '--typograf-profile', 'literary-markdown'], directory);
+  expect(built.stderr).not.toContain('Ошибка');
+  expect(built.status).toBe(0);
+  expect(
+    readFileSync(join(directory, 'build', 'Sample - 1_0_0.pdf'))
+      .subarray(0, 5)
+      .toString('latin1')
+  ).toBe('%PDF-');
+});
+
+test.skipIf(!pandoc || pdfPandoc || process.platform === 'win32')('an old Pandoc cannot build PDF, even with typst', (t) => {
+  const directory = workspace(t);
+  const { bin, log } = fakeTypst(directory);
+  writeFileSync(join(directory, 'book.md'), '# Глава\n\nТекст.\n');
+  writeFileSync(join(directory, 'metadata.yaml'), plainMetadata);
+  const env = { PATH: `${bin}:${process.env.PATH ?? ''}` };
+  const explicit = run(['build', 'book.md', '--yes', '--formats', 'pdf', '--typograf-profile', 'literary-markdown'], directory, env);
+  expect(explicit.status).toBe(1);
+  expect(explicit.stderr).toContain('Для PDF нужен Pandoc 3.2 или новее');
+  const fallback = run(['build', 'book.md', '--yes', '--formats', 'fb2', '--typograf-profile', 'literary-markdown'], directory, env);
+  expect(fallback.status).toBe(0);
+  expect(existsSync(log)).toBe(false);
 });
