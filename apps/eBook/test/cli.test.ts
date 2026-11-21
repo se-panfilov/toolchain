@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -15,7 +15,8 @@ const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.
 const pandoc = findTool('pandoc');
 
 function workspace(t: TestContext): string {
-  const directory = mkdtempSync(join(tmpdir(), 'tx-ebook-cli-test-'));
+  // The real path: on macOS the temporary directory is a link to /private, and the CLI prints real paths.
+  const directory = realpathSync(mkdtempSync(join(tmpdir(), 'tx-ebook-cli-test-')));
   t.onTestFinished(() => {
     rmSync(directory, { recursive: true, force: true });
   });
