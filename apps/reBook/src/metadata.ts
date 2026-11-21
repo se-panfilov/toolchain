@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { closeSync, constants, fstatSync, linkSync, lstatSync, openSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, closeSync, constants, fstatSync, linkSync, lstatSync, openSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 
 export const defaultLanguage = 'ru-RU';
@@ -239,6 +239,8 @@ export type BookMetadata = {
   lang: string;
   identifiers: Identifier[];
   empty: string[];
+  /** The Pandoc metadata map, for a comparison before and after an update. */
+  raw: Record<string, unknown>;
 };
 
 function identifiers(value: unknown): Identifier[] {
@@ -282,49 +284,103 @@ export function parseMetadata(json: string): BookMetadata {
     date: metaText(meta.date),
     lang: metaText(meta.lang ?? meta.language),
     identifiers: identifiers(meta.identifier),
-    empty: emptyFields(meta)
+    empty: emptyFields(meta),
+    raw: meta
   };
 }
 
 export type MetadataChanges = { version?: string | undefined; date?: string | undefined };
 
+// A block scalar (`key: |` or `key: >-`) continues on the next lines with a larger indent.
+const blockScalar = /:[ \t]+[|>][-+0-9]*[ \t]*(?:#.*)?$/;
+// Values that the line update cannot replace safely: block scalars, anchors, aliases, tags, and flow collections.
+const unsupportedValue = /^[|>&*!{[]/;
+const topLevelKey = /^([^\s:#][^\s:]*)[ \t]*:(?:[ \t]+(.*))?$/;
+const nestedVersion = /^[ \t]+version[ \t]*:(?:[ \t]+(.*))?$/;
+
+function indentOf(line: string): number {
+  return line.length - line.trimStart().length;
+}
+
+function replaceValue(field: string, value: string, indent: number, change: string): string {
+  if (unsupportedValue.test(value.trim())) throw new Error(`Поле ${field} в metadata.yaml имеет неподдерживаемую форму YAML. Запишите его значение в одну строку, например "".`);
+  const key = field.slice(field.lastIndexOf('.') + 1);
+  return `${' '.repeat(indent)}${key}: ${quote(change)}`;
+}
+
 /**
- * Replace the top-level version and date lines, and ibooks.version, in the YAML text.
- * The other lines and comments do not change. Throw when a required line is missing.
+ * Replace the top-level version and date lines, and the direct ibooks.version line, in the YAML text.
+ * Lines in block scalars, deeper keys, and other sections do not change. Comments stay, except a comment
+ * on a replaced line. Throw when a required line is missing or repeated, or has an unsupported form.
+ * The caller compares the Pandoc metadata before and after the change, because a line scan cannot
+ * see all YAML forms.
  */
 export function updateMetadataText(source: string, changes: MetadataChanges): string {
   const newline = source.includes('\r\n') ? '\r\n' : '\n';
-  const lines = source.split(/\r?\n/);
-  let version = false;
-  let date = false;
+  const found = { version: 0, date: 0 };
   let inIbooks = false;
-  let ibooksIndent = 0;
-  const out = lines.map((line) => {
-    if (changes.version !== undefined && /^version\s*:/.test(line)) {
-      version = true;
-      return `version: ${quote(changes.version)}`;
+  let childIndent: number | undefined;
+  let scalarIndent: number | undefined;
+  const out = source.split(/\r?\n/).map((line) => {
+    const blank = line.trim() === '';
+    const indent = indentOf(line);
+    if (scalarIndent !== undefined) {
+      if (blank || indent > scalarIndent) return line;
+      scalarIndent = undefined;
     }
-    if (changes.date !== undefined && /^date\s*:/.test(line)) {
-      date = true;
-      return `date: ${quote(changes.date)}`;
-    }
-    const start = /^(\s*)ibooks\s*:\s*(#.*)?$/.exec(line);
-    if (start) {
-      inIbooks = true;
-      ibooksIndent = start[1]?.length ?? 0;
+    if (blank || line.trimStart().startsWith('#')) return line;
+    const opensScalar = blockScalar.test(line);
+    if (indent === 0) {
+      inIbooks = false;
+      childIndent = undefined;
+      if (opensScalar) scalarIndent = 0;
+      const top = topLevelKey.exec(line);
+      const key = top?.[1];
+      const value = top?.[2] ?? '';
+      if (key === 'version' || key === 'date') {
+        found[key] += 1;
+        const change = changes[key];
+        if (change !== undefined) return replaceValue(key, value, 0, change);
+      } else if (key === 'ibooks') {
+        // Only the block form `ibooks:` with nested lines is updated. The mismatch check reports other forms.
+        inIbooks = value === '' || value.startsWith('#');
+      }
       return line;
     }
     if (inIbooks) {
-      const indent = /^(\s*)/.exec(line)?.[1]?.length ?? 0;
-      if (line.trim() !== '' && !/^\s*#/.test(line) && indent <= ibooksIndent) inIbooks = false;
+      childIndent ??= indent;
+      const nested = indent === childIndent ? nestedVersion.exec(line) : null;
+      if (nested && changes.version !== undefined) return replaceValue('ibooks.version', nested[1] ?? '', indent, changes.version);
     }
-    const nested = inIbooks ? /^(\s+)version\s*:/.exec(line) : null;
-    if (nested && changes.version !== undefined) return `${nested[1] ?? ''}version: ${quote(changes.version)}`;
+    if (opensScalar) scalarIndent = indent;
     return line;
   });
-  if (changes.version !== undefined && !version) throw new Error('В metadata.yaml нет строки version: на верхнем уровне. Добавьте version: "".');
-  if (changes.date !== undefined && !date) throw new Error('В metadata.yaml нет строки date: на верхнем уровне. Добавьте date: "".');
+  if (found.version > 1 || found.date > 1) throw new Error('В metadata.yaml поле version или date записано несколько раз.');
+  if (changes.version !== undefined && !found.version) throw new Error('В metadata.yaml нет строки version: на верхнем уровне. Добавьте version: "".');
+  if (changes.date !== undefined && !found.date) throw new Error('В metadata.yaml нет строки date: на верхнем уровне. Добавьте date: "".');
   return out.join(newline);
+}
+
+/**
+ * Top-level metadata fields that differ between two Pandoc metadata maps. The fields that the update
+ * changes on purpose (version, date, and ibooks.version) are not compared.
+ */
+export function changedFields(before: Record<string, unknown>, after: Record<string, unknown>): string[] {
+  const strip = (meta: Record<string, unknown>): Record<string, unknown> => {
+    const copy = { ...meta };
+    delete copy.version;
+    delete copy.date;
+    const ibooks = mapOf(copy.ibooks);
+    if (ibooks) {
+      const inner = { ...ibooks };
+      delete inner.version;
+      copy.ibooks = { t: 'MetaMap', c: inner };
+    }
+    return copy;
+  };
+  const left = strip(before);
+  const right = strip(after);
+  return [...new Set([...Object.keys(left), ...Object.keys(right)])].filter((key) => JSON.stringify(left[key]) !== JSON.stringify(right[key])).sort();
 }
 
 /** Read a metadata file for an update. Refuse links, because a rename would replace the link, not its target. */
@@ -342,21 +398,50 @@ function readForUpdate(path: string): { text: string; mode: number } {
 }
 
 /**
- * Write new version or date values atomically. A temporary file in the same directory replaces the
- * original after a check that nobody changed the file during the run.
+ * Check that the update can replace the file: a regular file, not a link, without other hard links,
+ * and with the text that the build read. The build runs this check before it makes results.
  */
-export function updateMetadataFile(path: string, expected: string, changes: MetadataChanges): void {
+export function checkMetadataUpdate(path: string, expected: string): { text: string; mode: number } {
   if (lstatSync(path).isSymbolicLink()) throw new Error(`Файл метаданных — символическая ссылка: ${path}. Обновите версию и дату в исходном файле вручную.`);
   const current = readForUpdate(path);
   if (current.text !== expected) throw new Error(`Файл метаданных изменился во время работы: ${path}. Запустите программу снова.`);
+  return current;
+}
+
+export type PreparedUpdate = { path: string; expected: string; temporary: string };
+
+/** Write the new metadata text into a temporary file next to the original. The original does not change. */
+export function prepareMetadataUpdate(path: string, expected: string, changes: MetadataChanges): PreparedUpdate {
+  const current = checkMetadataUpdate(path, expected);
   const next = updateMetadataText(current.text, changes);
   const temporary = join(dirname(path), `.${basename(path)}.${randomUUID()}.tmp`);
-  writeFileSync(temporary, next, { encoding: 'utf8', flag: 'wx', mode: current.mode });
+  writeFileSync(temporary, next, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
   try {
-    if (readForUpdate(path).text !== expected) throw new Error(`Файл метаданных изменился во время работы: ${path}. Запустите программу снова.`);
-    renameSync(temporary, path);
-  } finally {
+    chmodSync(temporary, current.mode);
+  } catch (error) {
     rmSync(temporary, { force: true });
+    throw error;
+  }
+  return { path, expected, temporary };
+}
+
+/** Replace the original atomically after a check that nobody changed it during the run. */
+export function commitMetadataUpdate(update: PreparedUpdate): void {
+  checkMetadataUpdate(update.path, update.expected);
+  renameSync(update.temporary, update.path);
+}
+
+export function discardMetadataUpdate(update: PreparedUpdate): void {
+  rmSync(update.temporary, { force: true });
+}
+
+/** Write new version or date values atomically. */
+export function updateMetadataFile(path: string, expected: string, changes: MetadataChanges): void {
+  const update = prepareMetadataUpdate(path, expected, changes);
+  try {
+    commitMetadataUpdate(update);
+  } finally {
+    discardMetadataUpdate(update);
   }
 }
 

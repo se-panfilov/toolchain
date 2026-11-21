@@ -3,6 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import {
+  changedFields,
+  checkMetadataUpdate,
   defaultLanguage,
   defaultRights,
   emptyFields,
@@ -15,6 +17,7 @@ import {
   type MetadataFields,
   newIdentifier,
   parseMetadata,
+  prepareMetadataUpdate,
   renderMetadata,
   updateMetadataFile,
   updateMetadataText,
@@ -112,6 +115,64 @@ test('the update changes only top-level version, date, and ibooks.version', () =
   expect(() => updateMetadataText('title: "a"\n', { date: '2024-01-01' })).toThrow(/date/);
   // A nested key outside ibooks stays as it is.
   expect(updateMetadataText('other:\n  version: "x"\nversion: ""\n', { version: '1.0.0' })).toBe('other:\n  version: "x"\nversion: "1.0.0"\n');
+});
+
+test('the update leaves nested sections and block scalars unchanged', () => {
+  const source = [
+    'title: "Book"',
+    'version: "1.0.0"',
+    'date: "2024-01-01"',
+    'description: |',
+    '  Text.',
+    '  ibooks:',
+    '    version: "1.0.0"',
+    'version-notes: >-',
+    '  version: "1.0.0"',
+    'custom:',
+    '  ibooks:',
+    '    version: "1.0.0"',
+    'ibooks:',
+    '  version: "1.0.0"',
+    '  nested:',
+    '    version: "1.0.0"',
+    '  text: |',
+    '    version: "1.0.0"',
+    ''
+  ].join('\n');
+  const next = updateMetadataText(source, { version: '1.1.0' });
+  const changed = next.split('\n').filter((line, index) => line !== source.split('\n')[index]);
+  expect(changed).toEqual(['version: "1.1.0"', '  version: "1.1.0"']);
+  expect(next.split('\n')[13]).toBe('  version: "1.1.0"');
+});
+
+test('the update refuses repeated keys and values that one line cannot hold', () => {
+  expect(() => updateMetadataText('version: "1"\nversion: "2"\n', { version: '3.0.0' })).toThrow(/несколько раз/);
+  expect(() => updateMetadataText('version: |\n  1.0.0\n', { version: '3.0.0' })).toThrow(/неподдерживаемую форму/);
+  expect(() => updateMetadataText('date: !!str 2024-01-01\n', { date: '2024-02-02' })).toThrow(/неподдерживаемую форму/);
+  expect(() => updateMetadataText('version: "1"\nibooks:\n  version: &v "1"\n', { version: '3.0.0' })).toThrow(/ibooks\.version/);
+});
+
+const metaString = (text: string): { t: string; c: unknown[] } => ({ t: 'MetaInlines', c: [{ t: 'Str', c: text }] });
+
+test('the Pandoc comparison ignores only version, date, and ibooks.version', () => {
+  const before = { title: metaString('T'), version: metaString('1'), date: metaString('a'), ibooks: { t: 'MetaMap', c: { version: metaString('1'), x: metaString('y') } } };
+  const after = { title: metaString('T'), version: metaString('2'), date: metaString('b'), ibooks: { t: 'MetaMap', c: { version: metaString('2'), x: metaString('y') } } };
+  expect(changedFields(before, after)).toEqual([]);
+  expect(changedFields(before, { ...after, title: metaString('U') })).toEqual(['title']);
+  expect(changedFields(before, { ...after, ibooks: { t: 'MetaMap', c: { version: metaString('2'), x: metaString('z') } } })).toEqual(['ibooks']);
+  expect(changedFields(before, { ...after, extra: metaString('e') })).toEqual(['extra']);
+});
+
+test('a prepared update leaves the original until the commit', (t) => {
+  const directory = workspace(t);
+  const path = join(directory, 'metadata.yaml');
+  writeFileSync(path, sample);
+  const update = prepareMetadataUpdate(path, sample, { version: '0.5.0' });
+  expect(readFileSync(path, 'utf8')).toBe(sample);
+  expect(readFileSync(update.temporary, 'utf8')).toContain('version: "0.5.0"');
+  rmSync(update.temporary);
+  expect(checkMetadataUpdate(path, sample).text).toBe(sample);
+  expect(() => checkMetadataUpdate(path, 'other')).toThrow(/изменился/);
 });
 
 test('the file update is atomic, keeps the mode, and stops after a concurrent change', (t) => {

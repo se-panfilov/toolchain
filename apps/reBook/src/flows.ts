@@ -14,7 +14,7 @@ import {
   pandocArguments,
   type PandocContext,
   parseMode,
-  placeFile,
+  placeFiles,
   profiles,
   resolveFormats,
   type Target,
@@ -23,8 +23,12 @@ import {
 } from '@reBook/book';
 import {
   type BookMetadata,
+  changedFields,
+  checkMetadataUpdate,
+  commitMetadataUpdate,
   defaultLanguage,
   defaultRights,
+  discardMetadataUpdate,
   fieldProblem,
   isIsoDate,
   isSemver,
@@ -33,9 +37,10 @@ import {
   type MetadataFields,
   newIdentifier,
   parseMetadata,
+  type PreparedUpdate,
+  prepareMetadataUpdate,
   readMetadataText,
   renderMetadata,
-  updateMetadataFile,
   updateMetadataText,
   writeNewFile
 } from '@reBook/metadata';
@@ -177,9 +182,12 @@ export function defaultCover(cwd: string): string {
   return ['cover.jpg', 'cover.jpeg', 'cover.png', 'cover.webp'].find((name) => exists(join(cwd, name))) ?? '';
 }
 
-/** Show a command for the user. Arguments are quoted, so spaces and quotes stay visible. */
+/**
+ * Show a command for the user in POSIX shell quoting. Single quotes stop all expansions, so a title
+ * with `$(…)` or backticks stays text when the user copies the command into a shell.
+ */
 export function printable(tool: string, args: readonly string[]): string {
-  return [tool, ...args].map((part) => (/^[\w@%+=:,./-]+$/.test(part) ? part : JSON.stringify(part))).join(' ');
+  return [tool, ...args].map((part) => (/^[\w@%+=:,./-]+$/.test(part) ? part : `'${part.replaceAll("'", `'\\''`)}'`)).join(' ');
 }
 
 type Resolved = {
@@ -203,8 +211,15 @@ async function resolveFiles(options: BuildOptions, ask: Asker | undefined, say: 
   if (!exists(metadata)) {
     if (!ask) throw new Error(`Нет файла метаданных: ${metadata}. Создайте его командой tx-rebook init или укажите --metadata.`);
     say(`Нет файла метаданных: ${metadata}`, 'warning');
-    if (!(await ask.confirm('Создать metadata.yaml сейчас?', true))) return undefined;
-    const created = await runInit({ metadata, title: undefined, author: undefined, lang: undefined, description: undefined, rights: undefined, yes: false, dryRun: false }, ask, say, emit, cwd);
+    if (!(await ask.confirm(options.dryRun ? 'Показать metadata.yaml, который будет создан?' : 'Создать metadata.yaml сейчас?', true))) return undefined;
+    // A dry-run shows the file and stops: the build plan needs a real metadata file.
+    const created = await runInit(
+      { metadata, title: undefined, author: undefined, lang: undefined, description: undefined, rights: undefined, yes: false, dryRun: options.dryRun },
+      ask,
+      say,
+      emit,
+      cwd
+    );
     if (!created) return undefined;
     metadata = created;
   }
@@ -294,7 +309,7 @@ export async function runBuild(options: BuildOptions, ask: Asker | undefined, sa
   say(`Pandoc ${pandoc.version.join('.')}: ${pandoc.path}`, 'muted');
   const files = await resolveFiles(options, ask, say, emit, cwd, pandoc);
   if (!files) {
-    say('Отменено.');
+    say(options.dryRun ? 'Dry-run: книга не собрана, файлы не изменены.' : 'Отменено.', options.dryRun ? 'success' : undefined);
     return [];
   }
   // A private directory keeps the temporary input, metadata copies, and unfinished results.
@@ -320,6 +335,14 @@ export async function runBuild(options: BuildOptions, ask: Asker | undefined, sa
     const buildMetadata = join(work, 'metadata.yaml');
     writeFileSync(buildMetadata, changed ? updateMetadataText(original, changes) : original, { flag: 'wx', mode: 0o600 });
     const meta = changed ? readMetadata(pandoc, buildMetadata, dataDir) : before;
+    if (changed) {
+      // The line update must change only version, date, and ibooks.version. Pandoc reads both texts for the comparison.
+      const other = changedFields(before.raw, meta.raw);
+      if (other.length) throw new Error(`Замена version или date изменила бы другие поля metadata.yaml: ${other.join(', ')}. Измените version и date вручную.`);
+      if (meta.version !== version || meta.date !== date) throw new Error('Не удалось записать version или date в metadata.yaml. Измените их вручную.');
+      // Check before the build that the update can replace the file, so a refusal does not come after the results.
+      checkMetadataUpdate(files.metadata, original);
+    }
     checkMetadata(meta);
     if (meta.ibooksVersion !== undefined && meta.ibooksVersion !== version) throw new Error(`ibooks.version (${meta.ibooksVersion}) не совпадает с version (${version}).`);
 
@@ -402,9 +425,8 @@ export async function runBuild(options: BuildOptions, ask: Asker | undefined, sa
       try {
         result = run(epubcheck, [item.temporary], { cwd: work });
       } catch (error) {
-        // EPUBCheck is optional. A tool that cannot start gives a warning, as a missing tool does.
-        say(`${errorText(error)}\nПроверка EPUB пропущена.`, 'warning');
-        break;
+        // Only a missing EPUBCheck skips the check. A found tool that fails to start or exceeds the time limit stops the build.
+        throw new Error(`EPUBCheck не выполнил проверку: ${errorText(error)}. Файлы результата не изменены.`, { cause: error });
       }
       if (interrupted || result.signal) throw new Error('Проверка прервана. Файлы результата не изменены.');
       const report = lastLines(`${result.stdout}\n${result.stderr}`, 30);
@@ -412,10 +434,25 @@ export async function runBuild(options: BuildOptions, ask: Asker | undefined, sa
       if (report) say(report, 'muted');
     }
 
-    createOutputDirectory(files.output);
-    for (const item of plan) placeFile(item.temporary, item.output, overwrite);
+    // The new metadata text is ready before the results move. The rename of metadata.yaml is the last step,
+    // and its failure brings the old results back.
+    let update: PreparedUpdate | undefined;
+    try {
+      if (changed) update = prepareMetadataUpdate(files.metadata, original, changes);
+      const prepared = update;
+      createOutputDirectory(files.output);
+      const kept = placeFiles(
+        plan.map((item) => ({ source: item.temporary, target: item.output })),
+        overwrite,
+        () => {
+          if (prepared) commitMetadataUpdate(prepared);
+        }
+      );
+      for (const path of kept) say(`Не удалось удалить копию прежнего файла: ${path}`, 'warning');
+    } finally {
+      if (update) discardMetadataUpdate(update);
+    }
     if (changed) {
-      updateMetadataFile(files.metadata, original, changes);
       say(`metadata.yaml обновлён: ${[changes.version !== undefined ? `version ${version}` : '', changes.date !== undefined ? `date ${date}` : ''].filter(Boolean).join(', ')}.`, 'muted');
     }
     say('✓ Готово', 'success');

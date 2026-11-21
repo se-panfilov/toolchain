@@ -1,11 +1,11 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { checkRuntime, emptyBuild, emptyInit, parseArguments, safe } from '@reBook/cli';
-import { runInit } from '@reBook/flows';
+import { printable, runBuild, runInit } from '@reBook/flows';
 import type { Asker, Choice } from '@reBook/prompts';
 import { findTool } from '@reBook/tools';
 import { expect, test, type TestContext } from 'vitest';
@@ -282,4 +282,81 @@ test.skipIf(!pandoc)('a result never replaces the manuscript, even with --overwr
   expect(result.status).toBe(1);
   expect(result.stderr).toContain('совпадает с входным файлом');
   expect(readFileSync(join(directory, name), 'utf8')).toBe(manuscript);
+});
+
+test.skipIf(process.platform === 'win32')('dry-run commands stay text when they are copied into a shell', () => {
+  const title = `$(echo X) \`echo Y\` it's "q" \\n`;
+  const line = printable('printf', ['%s', title]);
+  expect(line).toBe(`printf %s '$(echo X) \`echo Y\` it'\\''s "q" \\n'`);
+  const result = spawnSync('/bin/sh', ['-c', line], { encoding: 'utf8' });
+  expect(result.stdout).toBe(title);
+});
+
+const plainMetadata = 'title: "Sample"\ndate: "2024-01-01"\nversion: "1.0.0"\nlang: "en"\nidentifier:\n  - scheme: URN\n    text: "urn:uuid:2ec0dbf3-baf9-419d-b7e4-525e7d2af23f"\n';
+
+test.skipIf(!pandoc)('an interactive dry-run shows new metadata but does not write it', async (t) => {
+  const directory = workspace(t);
+  writeFileSync(join(directory, 'book.md'), manuscript);
+  const messages: string[] = [];
+  const script = new Script([join(directory, 'book.md'), true, 'T', 'A', 'en', '', 'R']);
+  const result = await runBuild(
+    { ...emptyBuild(), dryRun: true },
+    script,
+    (text) => messages.push(text),
+    () => undefined,
+    directory
+  );
+  expect(result).toEqual([]);
+  expect(script.asked[1]).toBe('Показать metadata.yaml, который будет создан?');
+  expect(messages).toContain('Dry-run: файл не создан. Содержимое:');
+  expect(messages.at(-1)).toBe('Dry-run: книга не собрана, файлы не изменены.');
+  expect(readdirSync(directory)).toEqual(['book.md']);
+});
+
+test.skipIf(!pandoc || process.platform === 'win32')('a metadata link stops a version change before results are replaced', (t) => {
+  const directory = workspace(t);
+  writeFileSync(join(directory, 'book.md'), manuscript);
+  writeFileSync(join(directory, 'real.yaml'), plainMetadata);
+  symlinkSync(join(directory, 'real.yaml'), join(directory, 'metadata.yaml'));
+  mkdirSync(join(directory, 'build'));
+  const result = join(directory, 'build', 'Sample - 1_1_0.html');
+  writeFileSync(result, 'old');
+  const build = run(['build', 'book.md', '--yes', '--mode', 'production', '--formats', 'html', '--book-version', '1.1.0', '--overwrite'], directory);
+  expect(build.status).toBe(1);
+  expect(build.stderr).toContain('символическая ссылка');
+  expect(readFileSync(result, 'utf8')).toBe('old');
+  expect(readFileSync(join(directory, 'real.yaml'), 'utf8')).toBe(plainMetadata);
+});
+
+test.skipIf(!pandoc)('a version change keeps unrelated YAML fields', (t) => {
+  const directory = workspace(t);
+  writeFileSync(join(directory, 'book.md'), manuscript);
+  const metadata = `${plainMetadata}description: |\n  Notes.\n  version: "1.0.0"\ncustom:\n  ibooks:\n    version: "1.0.0"\nibooks:\n  version: "1.0.0"\n  extra:\n    version: "1.0.0"\n`;
+  writeFileSync(join(directory, 'metadata.yaml'), metadata);
+  const build = run(['build', 'book.md', '--yes', '--mode', 'production', '--formats', 'html', '--book-version', '1.1.0'], directory);
+  expect(build.stderr).not.toContain('Ошибка');
+  expect(build.status).toBe(0);
+  const lines = readFileSync(join(directory, 'metadata.yaml'), 'utf8').split('\n');
+  const changed = lines.filter((line, index) => line !== metadata.split('\n')[index]);
+  expect(changed).toEqual(['version: "1.1.0"', '  version: "1.1.0"']);
+});
+
+test.skipIf(!pandoc || process.platform !== 'linux')('an EPUBCheck that cannot run stops the build', (t) => {
+  const directory = workspace(t);
+  writeFileSync(join(directory, 'book.md'), manuscript);
+  writeFileSync(join(directory, 'metadata.yaml'), plainMetadata);
+  const tools = join(directory, 'tools');
+  mkdirSync(tools);
+  // An interpreter that does not exist makes the start fail, as a broken installation does.
+  writeFileSync(join(tools, 'epubcheck'), '#!/nonexistent/interpreter\n');
+  chmodSync(join(tools, 'epubcheck'), 0o755);
+  const result = spawnSync(process.execPath, [cli, 'build', 'book.md', '--yes', '--formats', 'epub'], {
+    cwd: directory,
+    encoding: 'utf8',
+    env: { ...process.env, NO_COLOR: '1', PATH: `${tools}:${process.env.PATH ?? ''}` },
+    timeout: 120000
+  });
+  expect(result.status).toBe(1);
+  expect(result.stderr).toContain('EPUBCheck не выполнил проверку');
+  expect(existsSync(join(directory, 'build'))).toBe(false);
 });

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -13,7 +13,7 @@ import {
   pandocArguments,
   type PandocContext,
   parseMode,
-  placeFile,
+  placeFiles,
   profiles,
   resolveFormats,
   writerExtension
@@ -164,23 +164,60 @@ test('results replace existing files only with overwrite and never through links
   const out = join(directory, 'out');
   mkdirSync(out);
   const target = join(out, 'book.epub');
-  placeFile(source, target, false);
+  placeFiles([{ source, target }], false);
   expect(readFileSync(target, 'utf8')).toBe('new');
   writeFileSync(source, 'newer');
-  expect(() => {
-    placeFile(source, target, false);
-  }).toThrow(/--overwrite/);
+  expect(() => placeFiles([{ source, target }], false)).toThrow(/--overwrite/);
   expect(readFileSync(target, 'utf8')).toBe('new');
-  placeFile(source, target, true);
+  expect(placeFiles([{ source, target }], true)).toEqual([]);
   expect(readFileSync(target, 'utf8')).toBe('newer');
   const victim = join(directory, 'victim.txt');
   writeFileSync(victim, 'keep');
   const link = join(out, 'link.epub');
   symlinkSync(victim, link);
-  expect(() => {
-    placeFile(source, link, true);
-  }).toThrow(/не обычный файл/);
+  expect(() => placeFiles([{ source, target: link }], true)).toThrow(/не обычный файл/);
   expect(readFileSync(victim, 'utf8')).toBe('keep');
   expect(readdirSync(out).sort()).toEqual(['book.epub', 'link.epub']);
   expect(existsSync(source)).toBe(true);
+});
+
+test.skipIf(process.platform === 'win32')('a replaced result keeps its permission bits', (t) => {
+  const directory = workspace(t);
+  const source = join(directory, 'source.html');
+  writeFileSync(source, 'new');
+  const target = join(directory, 'book.html');
+  writeFileSync(target, 'old');
+  chmodSync(target, 0o600);
+  placeFiles([{ source, target }], true);
+  expect(readFileSync(target, 'utf8')).toBe('new');
+  expect(statSync(target).mode & 0o777).toBe(0o600);
+  chmodSync(target, 0o640);
+  placeFiles([{ source, target }], true);
+  expect(statSync(target).mode & 0o777).toBe(0o640);
+  expect(readdirSync(directory).sort()).toEqual(['book.html', 'source.html']);
+});
+
+test('a failed last step brings the old results back and removes new names', (t) => {
+  const directory = workspace(t);
+  const source = join(directory, 'source');
+  writeFileSync(source, 'new');
+  const out = join(directory, 'out');
+  mkdirSync(out);
+  const replaced = join(out, 'book.epub');
+  writeFileSync(replaced, 'old');
+  const created = join(out, 'book.docx');
+  expect(() =>
+    placeFiles(
+      [
+        { source, target: replaced },
+        { source, target: created }
+      ],
+      true,
+      () => {
+        throw new Error('metadata failed');
+      }
+    )
+  ).toThrow(/metadata failed\nПрежние файлы результата восстановлены/);
+  expect(readFileSync(replaced, 'utf8')).toBe('old');
+  expect(readdirSync(out)).toEqual(['book.epub']);
 });
