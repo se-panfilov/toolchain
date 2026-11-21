@@ -41,15 +41,28 @@ The program does not send them to a network service.
 - A result goes into a temporary file in the output directory first.
   Without `--overwrite`, a hard link creates the result name only when the name is free.
   With `--overwrite`, a rename replaces the file. A rename replaces a link, not its target.
+  The temporary file starts with mode `0600` and then gets the permission bits of the replaced file, so a private result stays private.
+  The owner, ACLs, and extended attributes of the replaced file are not copied.
+- Until the end of the build, a hidden hard link keeps each replaced result.
+  If a later step fails, the old results come back and new result names are removed.
 - `init` writes a temporary file and then makes a hard link with the target name. A hard link does not follow a link at the target and does not replace an existing entry.
 - The `metadata.yaml` update refuses a link and a file with other hard links.
-  It checks that the file did not change during the run, writes a temporary file, and renames it.
+  The build does this check before Pandoc starts, and again before each write.
+  The new text goes into a temporary file before the results move. Its rename is the last step.
+- The update changes only the top-level `version` and `date` lines and the `version` line directly under a top-level `ibooks:`.
+  It skips block scalars and deeper keys. It refuses repeated keys, block scalars, anchors, aliases, tags, and flow values in these fields.
+  Pandoc reads the metadata before and after the change. Any change of another field stops the build.
 - The program never deletes files in the output directory.
 
 ## Output without questions
 
 With `--yes`, stdout contains only result paths. Messages and tool output go to stderr.
 Without a TTY and without `--yes`, the program stops before it reads files.
+
+## Dry-run
+
+A dry-run writes no files. Without `metadata.yaml`, it shows the text of a new file and stops.
+The Pandoc commands use POSIX single quotes, so `$(…)` and backticks in a title stay text in a copied command.
 
 ## Terminal
 
@@ -72,6 +85,7 @@ Questions restore the raw mode and remove their handlers after an answer, a canc
   Check such a manuscript before the build.
 - Another process of the same user can change files during the run. The checks make the time window small but do not remove it.
 - EPUBCheck is optional. Without it, an EPUB file is not validated.
+  A found EPUBCheck that cannot start, stops on a signal, or exceeds the time limit stops the build.
 
 ## Distribution
 

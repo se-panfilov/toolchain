@@ -13,6 +13,7 @@ Use [SECURITY.md](SECURITY.md) for security controls and limits.
 - Node.js 24.12 or later.
 - Pandoc 3.0 or later: `brew install pandoc`.
 - Optional: EPUBCheck: `brew install epubcheck`. Without it, the EPUB check is skipped.
+  An installed EPUBCheck that cannot start or exceeds the time limit stops the build.
 - An ANSI terminal for the interactive mode.
 
 macOS is the main platform. Linux also works. On Windows, the EPUB check is skipped.
@@ -90,7 +91,7 @@ The program never replaces an existing file.
 | `--book-version X`     | The book version in SemVer form.                                                   |
 | `--book-date DATE`     | The book date in `YYYY-MM-DD` form.                                                |
 | `--overwrite`          | Replaces result files that exist.                                                  |
-| `--dry-run`            | Shows the plan and the Pandoc commands. No file is written.                        |
+| `--dry-run`            | Shows the plan and the Pandoc commands in shell quoting. No file is written.       |
 | `-y`, `--yes`          | Runs without questions. `FILE` is necessary.                                       |
 | `--`                   | Ends the options. Use it for a file name that starts with `-`.                     |
 
@@ -108,7 +109,9 @@ The build does these steps:
 6. It puts the results into the output directory.
 7. It writes a new `version`, `ibooks.version`, or `date` into `metadata.yaml`, if they changed.
 
+Steps 6 and 7 are one operation. If step 7 fails, the earlier result files come back.
 A failure before step 6 does not change the output directory or `metadata.yaml`.
+In a dry-run without `metadata.yaml`, the program shows the new file and stops. It does not write the file.
 Empty text fields in `metadata.yaml` stop the build. Fill or remove them.
 
 File names have the form `<title> - beta - <version>.<extension>`.
@@ -183,9 +186,12 @@ The program never replaces a result file without `--overwrite`.
 
 - The manuscript, the cover, and the style files do not change.
 - The program writes into `metadata.yaml` only `version`, `ibooks.version`, and `date`, and only after a successful build.
+  It changes only the top-level `version` and `date` lines and the `version` line directly under a top-level `ibooks:`.
+  Each value must be on one line. Pandoc reads the file before and after the change. A change of another field stops the build before it writes files.
   It shows the old values before the build. To go back, write the old values into the file.
 - `metadata.yaml` must be a regular file without other hard links for this update. Use version control to keep its history.
-- A result file is replaced only with `--overwrite` or after a confirmation. Keep copies of earlier results if you need them.
+- A result file is replaced only with `--overwrite` or after a confirmation. The new file gets the permission bits of the old file.
+  Keep copies of earlier results if you need them.
 - The program does not delete files in the output directory and does not add files to Git.
 - Ctrl+C stops the build. The temporary directory is deleted.
 

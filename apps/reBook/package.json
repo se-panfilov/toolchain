@@ -1,6 +1,6 @@
 {
   "name": "tx-rebook",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Interactive build of EPUB, DOCX, and HTML books from a Markdown manuscript with Pandoc",
   "private": false,
   "type": "module",

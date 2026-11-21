@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { closeSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, closeSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -235,27 +235,94 @@ export function targetState(path: string): 'free' | 'file' {
   return 'file';
 }
 
-/**
- * Put a finished file into the output directory. A temporary copy in the same directory makes the
- * last step atomic. Without overwrite, a hard link creates the target only when the name is free.
- */
-export function placeFile(source: string, target: string, overwrite: boolean): void {
-  if (targetState(target) === 'file' && !overwrite) throw new Error(`Файл уже существует: ${target}. Используйте --overwrite.`);
-  const temporary = join(dirname(target), `.${basename(target)}.${randomUUID()}.tmp`);
-  writeFileSync(temporary, readFileSync(source), { flag: 'wx', mode: 0o644 });
+export type Placement = { source: string; target: string };
+
+type Staged = { target: string; temporary: string; backup?: string; replaced?: boolean; created?: boolean };
+
+function sameFile(left: string, right: string): boolean {
   try {
-    if (overwrite) {
-      targetState(target);
-      renameSync(temporary, target);
-    } else {
-      try {
-        linkSync(temporary, target);
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new Error(`Файл появился во время сборки: ${target}. Запустите сборку снова.`, { cause: error });
-        throw error;
+    const a = lstatSync(left);
+    const b = lstatSync(right);
+    return a.ino === b.ino && a.dev === b.dev;
+  } catch {
+    return false;
+  }
+}
+
+function removeQuietly(path: string): boolean {
+  try {
+    rmSync(path, { force: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Undo the placed files in reverse order. Return the result paths that did not come back. */
+function rollback(staged: readonly Staged[]): string[] {
+  const failed: string[] = [];
+  for (const entry of [...staged].reverse()) {
+    try {
+      if (entry.replaced && entry.backup) renameSync(entry.backup, entry.target);
+      else if (entry.created && sameFile(entry.temporary, entry.target)) rmSync(entry.target);
+      if (entry.backup) rmSync(entry.backup, { force: true });
+    } catch {
+      failed.push(entry.backup ? `${entry.target} (копия: ${entry.backup})` : entry.target);
+    }
+  }
+  return failed;
+}
+
+/**
+ * Put finished files into the output directory as one step. Each file goes into a temporary copy in
+ * the target directory first. A replaced file gives its permission bits to the new file. A hard link
+ * keeps each replaced file until the end. Without overwrite, a hard link creates the target only when
+ * the name is free. `finish` runs when all files are in place. When a step or `finish` fails, the old
+ * files come back and the new names are removed. Return the copies of old files that stayed on disk.
+ */
+export function placeFiles(items: readonly Placement[], overwrite: boolean, finish: () => void = () => undefined): string[] {
+  const staged: Staged[] = [];
+  const sibling = (target: string, suffix: string): string => join(dirname(target), `.${basename(target)}.${randomUUID()}.${suffix}`);
+  try {
+    for (const item of items) {
+      const existing = targetState(item.target) === 'file';
+      if (existing && !overwrite) throw new Error(`Файл уже существует: ${item.target}. Используйте --overwrite.`);
+      const temporary = sibling(item.target, 'tmp');
+      // A copy for a replaced file starts private and then gets the permission bits of that file.
+      writeFileSync(temporary, readFileSync(item.source), { flag: 'wx', mode: existing ? 0o600 : 0o644 });
+      staged.push({ target: item.target, temporary });
+      if (existing) {
+        const stat = lstatSync(item.target);
+        if (!stat.isFile()) throw new Error(`По пути результата лежит не обычный файл: ${item.target}. Удалите его или выберите другой каталог.`);
+        chmodSync(temporary, stat.mode & 0o777);
       }
     }
+    for (const entry of staged) {
+      if (overwrite && targetState(entry.target) === 'file') {
+        entry.backup = sibling(entry.target, 'old');
+        linkSync(entry.target, entry.backup);
+        renameSync(entry.temporary, entry.target);
+        entry.replaced = true;
+      } else {
+        try {
+          linkSync(entry.temporary, entry.target);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new Error(`Файл появился во время сборки: ${entry.target}. Запустите сборку снова.`, { cause: error });
+          throw error;
+        }
+        entry.created = true;
+      }
+    }
+    finish();
+  } catch (error) {
+    const touched = staged.some((entry) => entry.replaced || entry.created);
+    const failed = rollback(staged);
+    const message = error instanceof Error ? error.message : String(error);
+    if (failed.length) throw new Error(`${message}\nНе удалось вернуть прежнее состояние файлов результата:\n${failed.join('\n')}`, { cause: error });
+    if (touched) throw new Error(`${message}\nПрежние файлы результата восстановлены.`, { cause: error });
+    throw error;
   } finally {
-    rmSync(temporary, { force: true });
+    for (const entry of staged) removeQuietly(entry.temporary);
   }
+  return staged.flatMap((entry) => (entry.backup && !removeQuietly(entry.backup) ? [entry.backup] : []));
 }
