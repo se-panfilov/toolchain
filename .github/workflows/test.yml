@@ -19,6 +19,7 @@ on:
         default: all
         options:
           - all
+          - eBook
           - moveToRepo
           - reCast
           - reHistory

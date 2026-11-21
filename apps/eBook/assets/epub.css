@@ -1,0 +1,130 @@
+body {
+  line-height: 1.45;
+}
+
+p {
+  margin: 0;
+  text-indent: 1.25em;
+}
+
+h1,
+h2 {
+  margin: 1.6em 0 0.8em 0;
+  text-align: center;
+  font-weight: 600;
+}
+
+h1.story-title {
+  break-before: page;
+  page-break-before: always;
+  margin: 2.4em 0 1.2em 0;
+  font-size: 1.8em;
+}
+
+h1.book-page-title {
+  margin: 2.4em 0 1.2em 0;
+  font-size: 1.8em;
+}
+
+h1.interlude-title {
+  break-before: page;
+  page-break-before: always;
+  margin: 2.4em 0 1.2em 0;
+  font-size: 2.2em;
+}
+
+h2.story-title,
+h2.book-page-title {
+  margin: 2em 0 1em 0;
+  font-size: 1.45em;
+}
+
+h3.story-title,
+h3.book-page-title,
+h4.story-title,
+h4.book-page-title,
+h5.story-title,
+h5.book-page-title,
+h6.story-title,
+h6.book-page-title {
+  margin: 1.8em 0 0.9em 0;
+  font-size: 1.2em;
+}
+
+h1 + p,
+h2 + p {
+  text-indent: 0;
+}
+
+h1.story-title + p,
+h2.story-title + p,
+h3.story-title + p,
+h4.story-title + p,
+h5.story-title + p,
+h6.story-title + p,
+h1.book-page-title + p,
+h2.book-page-title + p,
+h3.book-page-title + p,
+h4.book-page-title + p,
+h5.book-page-title + p,
+h6.book-page-title + p {
+  text-indent: 0;
+}
+
+p.first-after-title {
+  text-indent: 0;
+}
+
+.interlude-nav-label {
+  display: none;
+}
+
+.scene-break {
+  margin: 1.4em 0;
+}
+
+.scene-break p {
+  text-indent: 0;
+  text-align: center;
+  letter-spacing: 0.2em;
+}
+
+div.scene-break + p,
+p.first-after-scene-break {
+  text-indent: 0;
+}
+
+blockquote {
+  margin: 1em 1.2em;
+}
+
+blockquote p {
+  text-indent: 1.25em;
+}
+
+blockquote p:first-child {
+  text-indent: 0;
+}
+
+.beta-notice {
+  margin: 0 0 1.4em 0;
+}
+
+.beta-notice p {
+  text-indent: 0;
+}
+
+.book-page {
+  break-before: page;
+  break-after: page;
+  page-break-before: always;
+  page-break-after: always;
+  margin: 0;
+}
+
+.book-page p,
+p.book-page-text {
+  text-indent: 0;
+  text-align: center;
+  margin: 0.4em 0;
+}
