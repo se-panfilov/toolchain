@@ -35,6 +35,8 @@ Node.js 24.12+, Pandoc 3.0+ (brew install pandoc). EPUBCheck — по желан
   --mode РЕЖИМ              beta (по умолчанию) или production.
   --book-version ВЕРСИЯ     Версия книги SemVer. Записывается в metadata.yaml.
   --book-date ДАТА          Дата книги ГГГГ-ММ-ДД. Записывается в metadata.yaml.
+  --typograf-rules ПУТЬ     Файл правил типографирования (по умолчанию typograf.rules.json рядом с ФАЙЛОМ).
+  --typograf-profile ПРОФИЛЬ  default или literary-markdown — профиль для нового файла правил.
   --overwrite               Перезаписать существующие файлы результата.
 
 Параметры init:
@@ -54,6 +56,9 @@ Node.js 24.12+, Pandoc 3.0+ (brew install pandoc). EPUBCheck — по желан
 Без --yes программа спрашивает то, что не задано параметрами.
 С --yes вопросов нет, TTY не нужен, пути результатов выводятся в stdout.
 Исходный файл не изменяется. Существующий metadata.yaml не перезаписывается.
+Перед сборкой build типографирует ФАЙЛ через Typograf Core и сохраняет результат
+рядом с ним как ФАЙЛ.formatted.md; этот файл и используется для EPUB/DOCX/HTML.
+Он перезаписывается при каждой сборке и не зависит от --overwrite.
 Подробности: README.md пакета.`;
 
 function version(): string {
@@ -77,7 +82,9 @@ const buildValues = {
   '--formats': 'formats',
   '--mode': 'mode',
   '--book-version': 'bookVersion',
-  '--book-date': 'bookDate'
+  '--book-date': 'bookDate',
+  '--typograf-rules': 'typografRules',
+  '--typograf-profile': 'typografProfile'
 } as const;
 const initValues = { '--metadata': 'metadata', '--title': 'title', '--author': 'author', '--lang': 'lang', '--description': 'description', '--rights': 'rights' } as const;
 
@@ -93,6 +100,8 @@ export function emptyBuild(): BuildOptions {
     mode: undefined,
     bookVersion: undefined,
     bookDate: undefined,
+    typografRules: undefined,
+    typografProfile: undefined,
     overwrite: false,
     yes: false,
     dryRun: false

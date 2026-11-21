@@ -6,19 +6,44 @@ This file gives the controls, the trust assumptions, and the residual risks.
 
 ## Inputs and protected data
 
-| Input            | Check                                                                                       |
-| ---------------- | ------------------------------------------------------------------------------------------- |
-| Manuscript       | A regular text file, not empty, 64 MB or less. A link is accepted, because it is only read. |
-| `metadata.yaml`  | A regular file, 1 MB or less. Pandoc reads a private copy.                                  |
-| Cover            | JPEG, PNG, GIF, or WebP by extension and by file signature. 32 MB or less.                  |
-| CSS              | A `.css` text file, 1 MB or less.                                                           |
-| `reference.docx` | A `.docx` file with a ZIP signature, 32 MB or less.                                         |
-| Formats          | Known profiles or writers that the installed Pandoc lists.                                  |
-| Version and date | SemVer and a real `YYYY-MM-DD` date.                                                        |
-| `init` values    | No control, format, or line separator characters. Length limits.                            |
+| Input                   | Check                                                                                                                                                                |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Manuscript              | A regular text file, not empty, 64 MB or less. A link is accepted, because it is only read.                                                                          |
+| `metadata.yaml`         | A regular file, 1 MB or less. Pandoc reads a private copy.                                                                                                           |
+| Typograf Core whitelist | A regular `.json` file, not empty, 256 KB or less. Every rule name must exist in the installed Typograf Core and match the whitelist locale. `*` masks are rejected. |
+| Cover                   | JPEG, PNG, GIF, or WebP by extension and by file signature. 32 MB or less.                                                                                           |
+| CSS                     | A `.css` text file, 1 MB or less.                                                                                                                                    |
+| `reference.docx`        | A `.docx` file with a ZIP signature, 32 MB or less.                                                                                                                  |
+| Formats                 | Known profiles or writers that the installed Pandoc lists.                                                                                                           |
+| Version and date        | SemVer and a real `YYYY-MM-DD` date.                                                                                                                                 |
+| `init` values           | No control, format, or line separator characters. Length limits.                                                                                                     |
 
-The book text and the metadata are the protected data.
+The book text, the metadata, and the Typograf Core whitelist are the protected data.
 The program does not send them to a network service.
+
+## Typograf Core
+
+- Typograf Core is a local, in-process library. The program does not start a subprocess, a shell command,
+  or a network request to apply typography rules.
+- Every Typograf Core rule starts disabled. Only the rule names listed in the whitelist turn on.
+  The program never passes `*` or another mask as an enabled rule; only the whitelist loader can expand a
+  profile into its full, explicit rule list.
+- The whitelist JSON is parsed with `JSON.parse` and read as data. It is never evaluated or passed to a
+  shell, a template engine, or `eval`.
+- A whitelist file is checked for a regular-file type, a `.json` extension, and a size limit before the
+  parse. The checks and the read use one file descriptor. The open does not block on a FIFO.
+  A missing file, a directory, or a link to a missing target is rejected.
+- A new whitelist file must also have a `.json` name. Writing it never replaces an existing file at the same path.
+- The formatted manuscript (`*.formatted.md`) is written through a temporary file and an atomic rename.
+  A symbolic link, a file with other hard links, or a file with an ACL at the target path stops the write
+  before any content changes. The program never follows a link, never changes a file that another path
+  also owns, and never drops ACL restrictions. A replaced file keeps its permission bits.
+- Pandoc reads a private copy of the formatted text in the work directory, not the `*.formatted.md` file.
+  A change of that file during the build cannot reach the results.
+- A manuscript, metadata file, cover, CSS file, reference document, or whitelist path cannot be reused as
+  the formatted-manuscript target; the build stops before any file changes if such a collision is found.
+- A Typograf Core error stops the build before the formatted file changes and before Pandoc runs, so a
+  failed run never builds from a stale formatted file and never partially replaces build results.
 
 ## Subprocesses
 
@@ -70,7 +95,8 @@ Without a TTY and without `--yes`, the program stops before it reads files.
 
 ## Dry-run
 
-A dry-run writes no files. Without `metadata.yaml`, it shows the text of a new file and stops.
+A dry-run writes no files: no result file, no `*.formatted.md` file, and no new whitelist file.
+Without `metadata.yaml`, it shows the text of a new file and stops.
 The Pandoc commands use POSIX single quotes, so `$(…)` and backticks in a title stay text in a copied command.
 
 ## Terminal
@@ -82,11 +108,12 @@ Questions restore the raw mode and remove their handlers after an answer, a canc
 
 ## Trust assumptions
 
-- The manuscript, `metadata.yaml`, the cover, and the style files come from the user.
+- The manuscript, `metadata.yaml`, the cover, the style files, and the Typograf Core whitelist come from the user.
 - Pandoc reads files that the manuscript references, such as images. It can also download images from `http` and `https` addresses.
   The `--sandbox` option of Pandoc 3.1 stops the DOCX writer, so the program does not use it.
 - `metadata.yaml` can contain Pandoc fields that read local files, such as `cover-image`.
 - The installed Pandoc and EPUBCheck are trusted. `JAVA_HOME` selects the Java runtime for EPUBCheck.
+- The `typograf` npm package is trusted at the pinned version. It runs in-process; it is not a subprocess.
 
 ## Residual risks
 
@@ -95,9 +122,16 @@ Questions restore the raw mode and remove their handlers after an answer, a canc
 - Another process of the same user can change files during the run. The checks make the time window small but do not remove it.
 - EPUBCheck is optional. Without it, an EPUB file is not validated.
   A found EPUBCheck that cannot start, stops on a signal, or exceeds the time limit stops the build.
+- Typograf Core matches text with regular expressions, not a Markdown parser. An enabled rule can still
+  change text inside a fenced or inline code block, a link title, or an HTML attribute if it matches the
+  rule's pattern. For example, `literary-markdown` puts non-breaking spaces into code and changes a YAML
+  end marker `...` into `…`. Review the formatted file with `git diff` before publishing a book.
+- Typograf Core runs in the CLI process without a time limit. The manuscript size limit (64 MB) bounds the work.
+  A 4 MB manuscript takes less than one second with the `default` profile.
 
 ## Distribution
 
 The package contains the compiled modules, `assets/epub.css`, `assets/reference.docx`, `assets/scene-breaks.lua`, `README.md`, `SECURITY.md`, and `LICENSE`.
 The assets contain no author, title, identifier, or other book data.
-The package has no runtime dependencies and no installation scripts.
+The package has one runtime dependency, `typograf`, pinned to an exact version, and no installation scripts.
+No manuscript, whitelist, or other user data is bundled into the package.

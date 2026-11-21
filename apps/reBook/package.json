@@ -1,6 +1,6 @@
 {
   "name": "tx-rebook",
-  "version": "0.1.2",
+  "version": "1.0.0",
   "description": "Interactive build of EPUB, DOCX, and HTML books from a Markdown manuscript with Pandoc",
   "private": false,
   "type": "module",
@@ -18,6 +18,7 @@
     "dist/src/metadata.js",
     "dist/src/prompts.js",
     "dist/src/tools.js",
+    "dist/src/typograf.js",
     "assets/epub.css",
     "assets/reference.docx",
     "assets/scene-breaks.lua",
@@ -50,5 +51,8 @@
     "ebook",
     "markdown",
     "cli"
-  ]
+  ],
+  "dependencies": {
+    "typograf": "7.9.1"
+  }
 }

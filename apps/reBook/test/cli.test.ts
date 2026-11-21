@@ -80,6 +80,10 @@ test('arguments select the command and accept both value forms', () => {
       'r.docx',
       '--metadata',
       'm.yaml',
+      '--typograf-rules',
+      't.json',
+      '--typograf-profile',
+      'literary-markdown',
       '--overwrite',
       '-y',
       '--dry-run'
@@ -97,6 +101,8 @@ test('arguments select the command and accept both value forms', () => {
       css: 's.css',
       referenceDoc: 'r.docx',
       metadata: 'm.yaml',
+      typografRules: 't.json',
+      typografProfile: 'literary-markdown',
       overwrite: true,
       yes: true,
       dryRun: true
@@ -211,7 +217,7 @@ test.skipIf(!pandoc)('a book builds from Markdown with Pandoc and keeps the sour
   expect(run(['init', '--yes', '--title', 'Sample book', '--author', 'Someone', '--lang', 'en-US'], directory).status).toBe(0);
   const metadata = readFileSync(join(directory, 'metadata.yaml'), 'utf8');
 
-  const missingVersion = run(['build', 'book.md', '--yes'], directory);
+  const missingVersion = run(['build', 'book.md', '--yes', '--typograf-profile', 'literary-markdown'], directory);
   expect(missingVersion.status).toBe(1);
   expect(missingVersion.stderr).toContain('пустое поле version');
 
@@ -220,6 +226,9 @@ test.skipIf(!pandoc)('a book builds from Markdown with Pandoc and keeps the sour
   expect(dry.stdout).toBe('');
   expect(existsSync(join(directory, 'build'))).toBe(false);
   expect(readFileSync(join(directory, 'metadata.yaml'), 'utf8')).toBe(metadata);
+  expect(existsSync(join(directory, 'book.formatted.md'))).toBe(false);
+  const rules = JSON.parse(readFileSync(join(directory, 'typograf.rules.json'), 'utf8')) as { enabledRules: string[] };
+  expect(rules.enabledRules.length).toBe(10);
 
   const built = run(['build', 'book.md', '--yes', '--book-version', '0.1.0', '--book-date', '2024-01-02'], directory);
   expect(built.stderr).not.toContain('Ошибка');
@@ -232,21 +241,65 @@ test.skipIf(!pandoc)('a book builds from Markdown with Pandoc and keeps the sour
   expect(updated).toContain('date: "2024-01-02"');
   expect(updated).toContain('  version: "0.1.0"');
   expect(readFileSync(join(directory, 'book.md'), 'utf8')).toBe(manuscript);
+  expect(existsSync(join(directory, 'book.formatted.md'))).toBe(true);
   const html = readFileSync(join(directory, 'build', names[2] ?? ''), 'utf8');
   expect(html).toContain('scene-break');
   expect(html).toContain('Draft version for beta readers.');
   expect(html).toContain('text-indent');
 
+  const formattedBefore = readFileSync(join(directory, 'book.formatted.md'), 'utf8');
   const before = readFileSync(join(directory, 'build', names[0] ?? ''));
   const again = run(['build', 'book.md', '--yes'], directory);
   expect(again.status).toBe(1);
   expect(again.stderr).toContain('--overwrite');
   expect(readFileSync(join(directory, 'build', names[0] ?? ''))).toEqual(before);
+  // The file-exists guard stops the build before Typograf Core runs again, so the formatted file is unchanged.
+  expect(readFileSync(join(directory, 'book.formatted.md'), 'utf8')).toBe(formattedBefore);
 
   const production = run(['build', 'book.md', '--yes', '--mode', 'production', '--formats', 'docx', '--output', 'out'], directory);
   expect(production.status).toBe(0);
   expect(readdirSync(join(directory, 'out'))).toEqual(['Sample book - 0_1_0.docx']);
   expect(readdirSync(tmpdir()).filter((name) => name.startsWith('tx-rebook-') && !name.includes('test'))).toEqual([]);
+});
+
+test.skipIf(!pandoc)('Typograf Core transforms the manuscript before Pandoc reads it, and images still resolve', (t) => {
+  const directory = workspace(t);
+  const raw = '# Chapter\n\nOн посмотрел из за дерева...\n\n![Illustration](images/illustration.png)\n';
+  mkdirSync(join(directory, 'images'));
+  writeFileSync(join(directory, 'images', 'illustration.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]));
+  writeFileSync(join(directory, 'book.md'), raw);
+  expect(run(['init', '--yes', '--title', 'Sample book', '--author', 'Someone', '--lang', 'en-US'], directory).status).toBe(0);
+
+  const built = run(['build', 'book.md', '--typograf-profile', 'default', '--yes', '--book-version', '0.1.0', '--book-date', '2024-01-02', '--formats', 'html'], directory);
+  expect(built.status).toBe(0);
+  expect(readFileSync(join(directory, 'book.md'), 'utf8')).toBe(raw);
+  const formatted = readFileSync(join(directory, 'book.formatted.md'), 'utf8');
+  expect(formatted).toContain('из-за дерева…');
+  expect(formatted).not.toContain('из за дерева...');
+
+  const html = readFileSync(join(directory, 'build', 'Sample book - beta - 0_1_0.html'), 'utf8');
+  expect(html).toContain('из-за дерева…');
+  // Pandoc embeds the relative image as a self-contained data URI, proving resourcePath still resolved it.
+  expect(html).toContain('data:image/png;base64,');
+  expect(built.stderr).not.toContain('not found');
+});
+
+test.skipIf(!pandoc)('an invalid custom whitelist stops the build and leaves an existing formatted manuscript and results untouched', (t) => {
+  const directory = workspace(t);
+  writeFileSync(join(directory, 'book.md'), manuscript);
+  expect(run(['init', '--yes', '--title', 'Sample book', '--author', 'Someone', '--lang', 'en-US'], directory).status).toBe(0);
+
+  const first = run(['build', 'book.md', '--yes', '--typograf-profile', 'default', '--book-version', '0.1.0', '--book-date', '2024-01-02'], directory);
+  expect(first.status).toBe(0);
+  const formattedBefore = readFileSync(join(directory, 'book.formatted.md'), 'utf8');
+  const resultsBefore = readdirSync(join(directory, 'build')).sort();
+
+  writeFileSync(join(directory, 'bad.rules.json'), JSON.stringify({ schemaVersion: 1, locale: 'ru', enabledRules: ['ru/dash/unknownRule'] }));
+  const broken = run(['build', 'book.md', '--yes', '--typograf-rules', 'bad.rules.json', '--overwrite', '--book-version', '0.1.0', '--book-date', '2024-01-02'], directory);
+  expect(broken.status).toBe(1);
+  expect(broken.stderr).toContain('правил');
+  expect(readdirSync(join(directory, 'build')).sort()).toEqual(resultsBefore);
+  expect(readFileSync(join(directory, 'book.formatted.md'), 'utf8')).toBe(formattedBefore);
 });
 
 test.skipIf(!pandoc)('empty metadata fields stop the build before any write', (t) => {
@@ -256,7 +309,7 @@ test.skipIf(!pandoc)('empty metadata fields stop the build before any write', (t
     join(directory, 'metadata.yaml'),
     'title: "T"\nsubtitle: ""\ndate: "2024-01-01"\nversion: "1.0.0"\nlang: "en"\nidentifier:\n  - scheme: URN\n    text: "urn:uuid:2ec0dbf3-baf9-419d-b7e4-525e7d2af23f"\n'
   );
-  const result = run(['build', 'book.md', '--yes'], directory);
+  const result = run(['build', 'book.md', '--yes', '--typograf-profile', 'literary-markdown'], directory);
   expect(result.status).toBe(1);
   expect(result.stderr).toContain('Пустые поля в metadata.yaml: subtitle');
   expect(existsSync(join(directory, 'build'))).toBe(false);
@@ -278,7 +331,7 @@ test.skipIf(!pandoc)('a result never replaces the manuscript, even with --overwr
     join(directory, 'metadata.yaml'),
     'title: "Sample"\ndate: "2024-01-01"\nversion: "1.0.0"\nlang: "en"\nidentifier:\n  - scheme: URN\n    text: "urn:uuid:2ec0dbf3-baf9-419d-b7e4-525e7d2af23f"\n'
   );
-  const result = run(['build', name, '--yes', '--mode', 'production', '--formats', 'markdown', '--output', '.', '--overwrite'], directory);
+  const result = run(['build', name, '--yes', '--mode', 'production', '--formats', 'markdown', '--output', '.', '--overwrite', '--typograf-profile', 'literary-markdown'], directory);
   expect(result.status).toBe(1);
   expect(result.stderr).toContain('совпадает с входным файлом');
   expect(readFileSync(join(directory, name), 'utf8')).toBe(manuscript);
@@ -321,7 +374,7 @@ test.skipIf(!pandoc || process.platform === 'win32')('a metadata link stops a ve
   mkdirSync(join(directory, 'build'));
   const result = join(directory, 'build', 'Sample - 1_1_0.html');
   writeFileSync(result, 'old');
-  const build = run(['build', 'book.md', '--yes', '--mode', 'production', '--formats', 'html', '--book-version', '1.1.0', '--overwrite'], directory);
+  const build = run(['build', 'book.md', '--yes', '--mode', 'production', '--formats', 'html', '--book-version', '1.1.0', '--overwrite', '--typograf-profile', 'literary-markdown'], directory);
   expect(build.status).toBe(1);
   expect(build.stderr).toContain('символическая ссылка');
   expect(readFileSync(result, 'utf8')).toBe('old');
@@ -333,7 +386,7 @@ test.skipIf(!pandoc)('a version change keeps unrelated YAML fields', (t) => {
   writeFileSync(join(directory, 'book.md'), manuscript);
   const metadata = `${plainMetadata}description: |\n  Notes.\n  version: "1.0.0"\ncustom:\n  ibooks:\n    version: "1.0.0"\nibooks:\n  version: "1.0.0"\n  extra:\n    version: "1.0.0"\n`;
   writeFileSync(join(directory, 'metadata.yaml'), metadata);
-  const build = run(['build', 'book.md', '--yes', '--mode', 'production', '--formats', 'html', '--book-version', '1.1.0'], directory);
+  const build = run(['build', 'book.md', '--yes', '--mode', 'production', '--formats', 'html', '--book-version', '1.1.0', '--typograf-profile', 'literary-markdown'], directory);
   expect(build.stderr).not.toContain('Ошибка');
   expect(build.status).toBe(0);
   const lines = readFileSync(join(directory, 'metadata.yaml'), 'utf8').split('\n');
@@ -350,7 +403,7 @@ test.skipIf(!pandoc || process.platform !== 'linux')('an EPUBCheck that cannot r
   // An interpreter that does not exist makes the start fail, as a broken installation does.
   writeFileSync(join(tools, 'epubcheck'), '#!/nonexistent/interpreter\n');
   chmodSync(join(tools, 'epubcheck'), 0o755);
-  const result = spawnSync(process.execPath, [cli, 'build', 'book.md', '--yes', '--formats', 'epub'], {
+  const result = spawnSync(process.execPath, [cli, 'build', 'book.md', '--yes', '--formats', 'epub', '--typograf-profile', 'literary-markdown'], {
     cwd: directory,
     encoding: 'utf8',
     env: { ...process.env, NO_COLOR: '1', PATH: `${tools}:${process.env.PATH ?? ''}` },
@@ -405,6 +458,7 @@ test.skipIf(!pandoc)('a confirmation replaces only the files that the plan showe
       'Тип сборки': 1,
       Оформление: 0,
       'Выходной каталог': out,
+      'Выберите правила типографирования:': 0,
       'Версия книги': '1.0.0',
       'Дата книги (ГГГГ-ММ-ДД)': '2024-01-01',
       'Перезаписать существующие файлы?': true,

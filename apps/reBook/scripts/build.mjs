@@ -7,11 +7,11 @@ import { fileURLToPath } from 'node:url';
 
 import { build as viteBuild } from 'vite';
 
-import viteConfig from '../vite.config.mjs';
+import viteConfig, { modules } from '../vite.config.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const out = join(root, 'dist');
-const runtime = ['book', 'cli', 'flows', 'metadata', 'prompts', 'tools'];
+const runtime = modules;
 const expected = runtime.map((name) => `src/${name}.js`).sort();
 const directories = new Set(['src']);
 

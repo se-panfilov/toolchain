@@ -1,7 +1,9 @@
 # reBook
 
 reBook builds an electronic book from one Markdown manuscript.
-It runs Pandoc and makes EPUB, DOCX, and HTML files.
+Before Pandoc runs, Typograf Core applies a small, explicit set of Russian typography rules to the
+manuscript and writes the result into a sibling `*.formatted.md` file. Pandoc then builds EPUB, DOCX,
+and HTML from that formatted file.
 It also makes a new `metadata.yaml` file for a book.
 The manuscript does not change. The results go into an output directory.
 The user interface uses Russian.
@@ -78,22 +80,24 @@ The program never replaces an existing file.
 
 `tx-rebook build` asks only for the values that the options do not give.
 
-| Option                 | Purpose                                                                            |
-| ---------------------- | ---------------------------------------------------------------------------------- |
-| `FILE`                 | The Markdown manuscript. If the directory has one `.md` file, it is the default.   |
-| `--metadata PATH`      | The metadata file. The default is `metadata.yaml` in the current directory.        |
-| `--output DIRECTORY`   | The output directory. The default is `build`.                                      |
-| `--cover PATH`         | The EPUB cover: JPEG, PNG, GIF, or WebP. Without it, EPUB has no cover.            |
-| `--css PATH`           | A CSS file for EPUB and HTML in place of the default file.                         |
-| `--reference-doc PATH` | A DOCX style template in place of the default `reference.docx`.                    |
-| `--formats LIST`       | Formats with commas: `epub`, `docx` (or `word`), `html`. The default is all three. |
-| `--mode MODE`          | `beta` (default) or `production`.                                                  |
-| `--book-version X`     | The book version in SemVer form.                                                   |
-| `--book-date DATE`     | The book date in `YYYY-MM-DD` form.                                                |
-| `--overwrite`          | Replaces result files that exist.                                                  |
-| `--dry-run`            | Shows the plan and the Pandoc commands in shell quoting. No file is written.       |
-| `-y`, `--yes`          | Runs without questions. `FILE` is necessary.                                       |
-| `--`                   | Ends the options. Use it for a file name that starts with `-`.                     |
+| Option                    | Purpose                                                                                                                                          |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `FILE`                    | The Markdown manuscript. If the directory has one `.md` file, it is the default. A generated `*.formatted.md` file never counts as this default. |
+| `--metadata PATH`         | The metadata file. The default is `metadata.yaml` in the current directory.                                                                      |
+| `--output DIRECTORY`      | The output directory. The default is `build`.                                                                                                    |
+| `--cover PATH`            | The EPUB cover: JPEG, PNG, GIF, or WebP. Without it, EPUB has no cover.                                                                          |
+| `--css PATH`              | A CSS file for EPUB and HTML in place of the default file.                                                                                       |
+| `--reference-doc PATH`    | A DOCX style template in place of the default `reference.docx`.                                                                                  |
+| `--formats LIST`          | Formats with commas: `epub`, `docx` (or `word`), `html`. The default is all three.                                                               |
+| `--mode MODE`             | `beta` (default) or `production`.                                                                                                                |
+| `--book-version X`        | The book version in SemVer form.                                                                                                                 |
+| `--book-date DATE`        | The book date in `YYYY-MM-DD` form.                                                                                                              |
+| `--typograf-rules PATH`   | A Typograf Core whitelist file in place of the one next to the manuscript.                                                                       |
+| `--typograf-profile NAME` | `default` or `literary-markdown`. Used only to build a whitelist that does not exist yet.                                                        |
+| `--overwrite`             | Replaces result files that exist.                                                                                                                |
+| `--dry-run`               | Shows the plan and the Pandoc commands in shell quoting. No file is written.                                                                     |
+| `-y`, `--yes`             | Runs without questions. `FILE` is necessary.                                                                                                     |
+| `--`                      | Ends the options. Use it for a file name that starts with `-`.                                                                                   |
 
 Options accept `--name value` and `--name=value`.
 A repeated, unknown, or empty option stops the program before it reads a file.
@@ -103,25 +107,85 @@ The build does these steps:
 
 1. It reads and checks the metadata with Pandoc.
 2. It asks for the version and the date. The current values are the defaults.
-3. It shows the plan and asks for confirmation.
-4. It makes each format in a private temporary directory.
-5. It runs EPUBCheck on each EPUB file. An EPUBCheck error stops the build.
-6. It puts the results into the output directory.
-7. It writes a new `version`, `ibooks.version`, or `date` into `metadata.yaml`, if they changed.
+3. It finds or builds the Typograf Core whitelist (see below).
+4. It shows the plan and asks for confirmation.
+5. It runs Typograf Core once over the manuscript and writes the result into `*.formatted.md`.
+6. It makes each format from the formatted manuscript in a private temporary directory.
+7. It runs EPUBCheck on each EPUB file. An EPUBCheck error stops the build.
+8. It puts the results into the output directory.
+9. It writes a new `version`, `ibooks.version`, or `date` into `metadata.yaml`, if they changed.
 
-Steps 6 and 7 are one operation. If step 7 fails, the earlier result files come back.
-A failure before step 6 does not change the output directory or `metadata.yaml`.
+Steps 8 and 9 are one operation. If step 9 fails, the earlier result files come back.
+A failure before step 8 does not change the output directory or `metadata.yaml`.
+A Typograf Core error in step 5 stops the build before any format is made and before the formatted file changes.
 In a dry-run without `metadata.yaml`, the program shows the new file and stops. It does not write the file.
 Empty text fields in `metadata.yaml` stop the build. Fill or remove them.
 
 File names have the form `<title> - beta - <version>.<extension>`.
 A production build has no `beta` part. Dots in the version become `_`.
 
+### Typograf Core
+
+Before Pandoc runs, the build applies [Typograf Core](https://github.com/typograf/typograf) 7.9.1 to the
+manuscript text and writes the result into a sibling file: `book.md` becomes `book.formatted.md`.
+Every Typograf Core rule starts disabled. Only the rule names listed in a whitelist file turn on, so an
+update of the dependency cannot silently enable a new rule.
+
+The whitelist is a JSON file, `typograf.rules.json` by default, next to the manuscript:
+
+```json
+{
+  "schemaVersion": 1,
+  "locale": "ru",
+  "enabledRules": ["common/punctuation/hellip", "ru/dash/izpod"]
+}
+```
+
+`--typograf-rules PATH` points to a whitelist file in another place.
+`--typograf-profile default|literary-markdown` builds a whitelist only when one does not exist yet.
+It has no effect on an existing file; the program prints a warning instead of replacing it.
+
+When the manuscript has no whitelist next to it:
+
+- In an interactive run, the program asks the user to choose a profile and writes the file.
+- With `--yes` and `--typograf-profile`, the program writes the file without a question.
+- With `--yes` and no `--typograf-profile`, the build stops with an error. It never guesses a profile.
+
+Two built-in profiles are available:
+
+| Profile             | Rules | Purpose                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ------------------- | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `default`           | 85    | The rules that Typograf Core 7.9.1 enables by default for the `common` and `ru` locales.                                                                                                                                                                                                                                                                                                                             |
+| `literary-markdown` | 10    | A conservative set for Russian fiction: an ellipsis, a UTF-8 BOM removal, a non-breaking space after a word of one or two letters (`в доме`, `и так`), and a small, closed list of Russian dash words (`из-за`, `из-под`, `кое-`, `кто-то`, `как-то`, `-таки`, `-то`). The non-breaking space replaces only one ordinary space between two words. Blank lines, line breaks, indents, and list markers do not change. |
+
+`default` is not aware of Markdown. It can change text inside a fenced or inline code block, a link
+title, or an HTML attribute, because Typograf Core matches text with regular expressions, not a
+Markdown parser. Use `literary-markdown` or a custom whitelist for a manuscript where this risk
+matters. `literary-markdown` has the same limit on a smaller scale: it puts non-breaking spaces into
+inline and fenced code, and it changes a YAML end marker `...` into `…`. End a YAML block with `---`.
+The non-breaking spaces are U+00A0 characters, not `&nbsp;` entities. Neither profile is a full implementation of Russian typography; both only apply the rules
+they name.
+
+The formatted file is always replaced on a successful run, independently of `--overwrite`, which
+only controls the EPUB, DOCX, and HTML result files. A Typograf Core error stops the build before
+the formatted file changes and before any format is made, so an old formatted file is never built
+from a newer, unrelated manuscript, and a failed run never publishes a result from a stale file.
+
+A `*.formatted.md` or `*.formatted.markdown` name is rejected as manuscript input (`FILE` or the
+directory default), so the program cannot read its own generated output as the source by mistake.
+
+Compare the source and the formatted text after a build:
+
+```sh
+git diff --no-index --word-diff=plain manuscript.md manuscript.formatted.md
+```
+
 ### Beta and production
 
 A beta build adds a notice at the start of the book: the title, `Beta <version>`, the build date, and a draft warning.
 The notice uses Russian for a Russian book and English for other languages.
-The beta EPUB has no Pandoc title page.
+The beta EPUB has no Pandoc title page. The notice itself is added after Typograf Core runs, so it is
+never formatted.
 The manuscript does not change. The program writes the changed text into a temporary file.
 
 ### Default styles
@@ -174,17 +238,22 @@ The interlude.
 
 ```sh
 tx-rebook init --yes --title "Title" --author "Author"
-tx-rebook build book.md --yes --book-version 0.1.0 --book-date 2024-01-02 --cover cover.png
+tx-rebook build book.md --yes --book-version 0.1.0 --book-date 2024-01-02 --cover cover.png --typograf-profile literary-markdown
 ```
 
+Without a whitelist next to the manuscript and without `--typograf-profile`, `--yes` stops the build
+with an error instead of asking a question.
+
 Without questions, stdout contains only the paths of the results, one in each line.
-Messages, Pandoc warnings, and errors go to stderr.
+Messages, Pandoc warnings, errors, and the Typograf Core configuration summary go to stderr.
 Without `--book-version` and `--book-date`, the values from `metadata.yaml` are used. An empty value stops the build.
 The program never replaces a result file without `--overwrite`.
 
 ## Results and recovery
 
 - The manuscript, the cover, and the style files do not change.
+- The formatted manuscript, `*.formatted.md`, is replaced on every successful build, independently of
+  `--overwrite`. It is a derived file: review it with `git diff` and do not edit it by hand.
 - The program writes into `metadata.yaml` only `version`, `ibooks.version`, and `date`, and only after a successful build.
   It changes only the top-level `version` and `date` lines and the `version` line directly under a top-level `ibooks:`.
   Each value must be on one line. Pandoc reads the file before and after the change. A change of another field stops the build before it writes files.
@@ -198,15 +267,16 @@ The program never replaces a result file without `--overwrite`.
 
 ## Package structure
 
-| Path              | Content                                             |
-| ----------------- | --------------------------------------------------- |
-| `src/cli.ts`      | Arguments, help, and the menu.                      |
-| `src/flows.ts`    | The `init` and `build` procedures.                  |
-| `src/metadata.ts` | The metadata template, checks, and the update.      |
-| `src/book.ts`     | Formats, file names, Pandoc arguments, and results. |
-| `src/tools.ts`    | Pandoc and EPUBCheck search and start.              |
-| `src/prompts.ts`  | Terminal questions.                                 |
-| `assets/`         | The default CSS, DOCX template, and Lua filter.     |
+| Path              | Content                                                              |
+| ----------------- | -------------------------------------------------------------------- |
+| `src/cli.ts`      | Arguments, help, and the menu.                                       |
+| `src/flows.ts`    | The `init` and `build` procedures.                                   |
+| `src/metadata.ts` | The metadata template, checks, and the update.                       |
+| `src/book.ts`     | Formats, file names, Pandoc arguments, and results.                  |
+| `src/typograf.ts` | Typograf Core profiles, the whitelist, and the formatted manuscript. |
+| `src/tools.ts`    | Pandoc and EPUBCheck search and start.                               |
+| `src/prompts.ts`  | Terminal questions.                                                  |
+| `assets/`         | The default CSS, DOCX template, and Lua filter.                      |
 
 ## Checks
 

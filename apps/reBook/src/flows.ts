@@ -1,4 +1,4 @@
-import { lstatSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 
@@ -47,6 +47,21 @@ import {
 } from '@reBook/metadata';
 import type { Asker, TerminalStyle } from '@reBook/prompts';
 import { findEpubcheck, findPandoc, lastLines, type Pandoc, run, runChecked } from '@reBook/tools';
+import {
+  buildWhitelist,
+  checkWhitelistName,
+  defaultWhitelistPath,
+  formattedManuscriptPath,
+  isFormattedManuscriptName,
+  loadWhitelistFile,
+  parseTypografProfile,
+  profileLabels,
+  typografExecute,
+  type TypografProfileName,
+  type TypografWhitelist,
+  writeFormattedManuscript,
+  writeWhitelistFile
+} from '@reBook/typograf';
 
 export type Say = (text: string, tone?: keyof TerminalStyle) => void;
 /** Result lines for stdout. In the mode without questions, stdout has only result paths. */
@@ -74,6 +89,8 @@ export type BuildOptions = {
   mode: string | undefined;
   bookVersion: string | undefined;
   bookDate: string | undefined;
+  typografRules: string | undefined;
+  typografProfile: string | undefined;
   overwrite: boolean;
   yes: boolean;
   dryRun: boolean;
@@ -169,10 +186,12 @@ export async function runInit(options: InitOptions, ask: Asker | undefined, say:
   return target;
 }
 
-/** A single Markdown file in the directory is a useful default. */
+/** A single Markdown file in the directory is a useful default. A generated `*.formatted.md` does not count. */
 export function defaultInput(cwd: string): string {
   try {
-    const files = readdirSync(cwd, { withFileTypes: true }).filter((entry) => entry.isFile() && /\.(md|markdown)$/i.test(entry.name) && !/^readme\./i.test(entry.name));
+    const files = readdirSync(cwd, { withFileTypes: true }).filter(
+      (entry) => entry.isFile() && /\.(md|markdown)$/i.test(entry.name) && !/^readme\./i.test(entry.name) && !isFormattedManuscriptName(entry.name)
+    );
     return files.length === 1 && files[0] ? files[0].name : '';
   } catch {
     return '';
@@ -200,7 +219,35 @@ type Resolved = {
   referenceDoc: string;
   targets: Target[];
   mode: Mode;
+  typografPath: string;
+  typografWhitelist: TypografWhitelist;
+  typografGenerated: boolean;
 };
+
+/**
+ * Find the Typograf Core whitelist: load an existing file next to the manuscript, or build a new one
+ * from the chosen profile. The profile question runs only when no whitelist exists yet, so a later
+ * build with the same files never asks it again and never overwrites a reviewed configuration.
+ */
+async function resolveTypograf(options: BuildOptions, input: string, ask: Asker | undefined, say: Say, cwd: string): Promise<{ path: string; whitelist: TypografWhitelist; generated: boolean }> {
+  const path = options.typografRules !== undefined ? resolve(cwd, options.typografRules) : defaultWhitelistPath(input);
+  // Check the name and the profile before a question, so a wrong value never leads to a question that is lost.
+  checkWhitelistName(path);
+  let profile: TypografProfileName | undefined = options.typografProfile !== undefined ? parseTypografProfile(options.typografProfile) : undefined;
+  if (exists(path)) {
+    const whitelist = loadWhitelistFile(path);
+    if (profile !== undefined) say(`--typograf-profile действует только при создании файла правил. Используется существующий файл: ${path}`, 'warning');
+    return { path, whitelist, generated: false };
+  }
+  if (profile === undefined) {
+    if (!ask) throw new Error(`Нет файла правил типографирования: ${path}. Укажите --typograf-profile default или --typograf-profile literary-markdown.`);
+    const index = await ask.select('Выберите правила типографирования:', [profileLabels.default, profileLabels['literary-markdown']], 0);
+    profile = index === 0 ? 'default' : 'literary-markdown';
+  }
+  const whitelist = buildWhitelist(profile);
+  if (!options.dryRun) writeWhitelistFile(path, whitelist);
+  return { path, whitelist, generated: true };
+}
 
 async function resolveFiles(options: BuildOptions, ask: Asker | undefined, say: Say, emit: Emit, cwd: string, pandoc: Pandoc): Promise<Resolved | undefined> {
   let inputValue = options.input;
@@ -263,7 +310,8 @@ async function resolveFiles(options: BuildOptions, ask: Asker | undefined, say: 
   if (outputValue === undefined && ask) outputValue = await askValid(ask, 'Выходной каталог', defaultOutput, (value) => (value === '' ? 'Укажите каталог.' : undefined), say);
   const output = resolve(cwd, outputValue ?? defaultOutput);
   checkOutputDirectory(output);
-  return { input, metadata, output, cover, css, referenceDoc, targets, mode };
+  const typograf = await resolveTypograf(options, input, ask, say, cwd);
+  return { input, metadata, output, cover, css, referenceDoc, targets, mode, typografPath: typograf.path, typografWhitelist: typograf.whitelist, typografGenerated: typograf.generated };
 }
 
 function readMetadata(pandoc: Pandoc, path: string, dataDir: string): BookMetadata {
@@ -313,6 +361,7 @@ export async function runBuild(options: BuildOptions, ask: Asker | undefined, sa
     say(options.dryRun ? 'Dry-run: книга не собрана, файлы не изменены.' : 'Отменено.', options.dryRun ? 'success' : undefined);
     return [];
   }
+  const formattedPath = formattedManuscriptPath(files.input);
   // A private directory keeps the temporary input, metadata copies, and unfinished results.
   const work = mkdtempSync(join(tmpdir(), 'tx-rebook-'));
   // Ctrl+C reaches Pandoc too. Without this handler, Node.js would stop before the cleanup.
@@ -354,7 +403,9 @@ export async function runBuild(options: BuildOptions, ask: Asker | undefined, sa
       temporary: join(work, `result-${target.key.replace(/[^a-z0-9]/g, '_')}.${target.extension}`)
     }));
     // A result must never replace an input of the same build.
-    const inputs = new Set([files.input, files.metadata, files.css, files.referenceDoc, files.cover].filter((path) => path !== undefined).map((path) => realpathSync(path)));
+    const protectedInputs = [files.input, files.metadata, files.css, files.referenceDoc, files.cover, files.typografPath].filter((path): path is string => path !== undefined);
+    if (protectedInputs.includes(formattedPath)) throw new Error(`Форматированный манускрипт совпадает с защищённым входным файлом: ${formattedPath}`);
+    const inputs = new Set(protectedInputs.filter((path) => exists(path)).map((path) => realpathSync(path)));
     for (const item of plan)
       if (inputs.has(item.output) || (exists(item.output) && inputs.has(realpathSync(item.output)))) throw new Error(`Файл результата совпадает с входным файлом: ${item.output}`);
     const existing = plan.filter((item) => targetState(item.output) === 'file');
@@ -362,6 +413,8 @@ export async function runBuild(options: BuildOptions, ask: Asker | undefined, sa
     say('');
     say(meta.title, 'strong');
     say(`  Исходник:   ${files.input}`);
+    say(`  Типограф:   ${files.typografPath}${files.typografGenerated ? ' (создан)' : ''}, правил: ${String(files.typografWhitelist.enabledRules.length)}`);
+    say(`  Манускрипт: ${formattedPath}`, 'muted');
     say(`  Метаданные: ${files.metadata}`);
     say(`  Версия:     ${version}${changes.version !== undefined ? ` (было: ${before.version || 'пусто'})` : ''}`);
     say(`  Дата:       ${date}${changes.date !== undefined ? ` (было: ${before.date || 'пусто'})` : ''}`);
@@ -388,7 +441,10 @@ export async function runBuild(options: BuildOptions, ask: Asker | undefined, sa
     if (!options.dryRun) checkTargets(placements);
 
     const buildDate = localDate();
-    const input = files.mode === 'beta' ? join(work, 'beta-input.md') : files.input;
+    // Pandoc reads a private copy of the formatted text, not the file next to the manuscript,
+    // so a change of that file during the build cannot reach the results.
+    const formattedCopy = join(work, 'formatted-input.md');
+    const input = files.mode === 'beta' ? join(work, 'beta-input.md') : formattedCopy;
     const context: PandocContext = {
       dataDir,
       metadata: buildMetadata,
@@ -410,7 +466,19 @@ export async function runBuild(options: BuildOptions, ask: Asker | undefined, sa
       return [];
     }
 
-    if (files.mode === 'beta') writeBetaInput(files.input, betaNotice(meta.title, version, buildDate, meta.lang), work);
+    // Typograf Core runs once over the untouched source. An error here stops the build before Pandoc
+    // runs. The previous formatted manuscript, if any, stays on disk, and the build never reads it.
+    say('Типографирование…', 'accent');
+    let formattedText: string;
+    try {
+      formattedText = typografExecute(readFileSync(files.input, 'utf8'), files.typografWhitelist);
+    } catch (error) {
+      throw new Error(`Typograf не смог обработать манускрипт: ${errorText(error)}. Файлы результата не изменены.`, { cause: error });
+    }
+    writeFileSync(formattedCopy, formattedText, { encoding: 'utf8', flag: 'wx', mode: 0o600 });
+    writeFormattedManuscript(formattedPath, formattedText);
+
+    if (files.mode === 'beta') writeBetaInput(formattedCopy, betaNotice(meta.title, version, buildDate, meta.lang), work);
     for (const item of plan) {
       say(`Сборка ${item.target.label}…`, 'accent');
       const result = run(pandoc.path, pandocArguments(item.target, context, item.temporary), { cwd: dirname(files.input) });
