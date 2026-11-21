@@ -1,4 +1,4 @@
-import { lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { closeSync, constants, fstatSync, lstatSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 
@@ -10,6 +10,7 @@ import {
   checkTargets,
   createOutputDirectory,
   type FileKind,
+  limits,
   type Mode,
   outputStem,
   pandocArguments,
@@ -208,6 +209,20 @@ export function defaultCover(cwd: string): string {
  */
 export function printable(tool: string, args: readonly string[]): string {
   return [tool, ...args].map((part) => (/^[\w@%+=:,./-]+$/.test(part) ? part : `'${part.replaceAll("'", `'\\''`)}'`)).join(' ');
+}
+
+/** Read the manuscript and its permission bits through one file descriptor. */
+function readSource(path: string): { text: string; mode: number } {
+  // O_NONBLOCK keeps a FIFO at the path from blocking the open. fstat then rejects it.
+  const fd = openSync(path, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0));
+  try {
+    const stat = fstatSync(fd);
+    if (!stat.isFile()) throw new Error(`Исходный файл должен быть обычным файлом: ${path}`);
+    if (stat.size > limits.input) throw new Error(`Исходный файл больше ${String(Math.round(limits.input / 1024 / 1024))} МБ: ${path}`);
+    return { text: readFileSync(fd, 'utf8'), mode: stat.mode & 0o777 };
+  } finally {
+    closeSync(fd);
+  }
 }
 
 /** Real path of a file, or of its directory and name when the file does not exist yet. */
@@ -480,11 +495,13 @@ export async function runBuild(options: BuildOptions, ask: Asker | undefined, sa
     // The formatted manuscript and a new whitelist go to disk in the same step as the results, so a
     // cancellation or a failure leaves them unchanged. The formatted file does not depend on --overwrite.
     // It never gets wider permission bits than the manuscript.
+    // One read gives the text for Typograf Core and the mode for the formatted copy, so both come from the same file.
+    const source = readSource(files.input);
     const formattedCopy = join(work, 'formatted-input.md');
     const whitelistCopy = join(work, 'typograf.rules.json');
     const placements: Placement[] = [
       ...plan.map((item) => ({ source: item.temporary, target: item.output, replace: options.overwrite || (confirmed && existing.includes(item)) })),
-      { source: formattedCopy, target: formattedPath, replace: true, mode: statSync(files.input).mode & 0o666 },
+      { source: formattedCopy, target: formattedPath, replace: true, mode: source.mode & 0o666 },
       ...(files.typografGenerated ? [{ source: whitelistCopy, target: files.typografPath, replace: false }] : [])
     ];
     if (!options.dryRun) checkTargets(placements);
@@ -519,7 +536,7 @@ export async function runBuild(options: BuildOptions, ask: Asker | undefined, sa
     say('Типографирование…', 'accent');
     let formattedText: string;
     try {
-      formattedText = typografExecute(readFileSync(files.input, 'utf8'), files.typografWhitelist);
+      formattedText = typografExecute(source.text, files.typografWhitelist);
     } catch (error) {
       throw new Error(`Typograf не смог обработать манускрипт: ${errorText(error)}. Файлы результата не изменены.`, { cause: error });
     }
