@@ -490,19 +490,23 @@ test.skipIf(!pandoc)('a confirmation replaces only the files that the plan showe
   expect(readFileSync(docx, 'utf8')).toBe('new docx from elsewhere');
 });
 
-test.skipIf(!pandoc || process.platform === 'win32')('the formatted manuscript never gets wider permission bits than the source', (t) => {
+test.skipIf(!pandoc || process.platform === 'win32')('the formatted manuscript is private, whatever the source mode and the umask', (t) => {
   const directory = workspace(t);
   writeFileSync(join(directory, 'book.md'), manuscript);
-  chmodSync(join(directory, 'book.md'), 0o600);
+  // A readable source can still have an ACL that the copy cannot get, so the source mode does not count.
+  chmodSync(join(directory, 'book.md'), 0o644);
   writeFileSync(join(directory, 'metadata.yaml'), plainMetadata);
   const args = ['build', 'book.md', '--yes', '--mode', 'production', '--formats', 'html', '--overwrite', '--typograf-profile', 'literary-markdown'];
   expect(run(args, directory).status).toBe(0);
   const formatted = join(directory, 'book.formatted.md');
   expect(statSync(formatted).mode & 0o777).toBe(0o600);
-  // A replaced copy keeps only the bits that both the old copy and the source allow.
+  // A replaced copy keeps only the bits that both the old copy and 0600 allow.
   chmodSync(formatted, 0o644);
   expect(run(args, directory).status).toBe(0);
   expect(statSync(formatted).mode & 0o777).toBe(0o600);
+  chmodSync(formatted, 0o400);
+  expect(run(args, directory).status).toBe(0);
+  expect(statSync(formatted).mode & 0o777).toBe(0o400);
 });
 
 test.skipIf(!pandoc || process.platform === 'win32')('another spelling of the formatted path for --metadata stops the build', (t) => {
@@ -620,8 +624,12 @@ test.skipIf(!pdfPandoc || process.platform === 'win32')('PDF uses typst with the
   const { bin, log } = fakeTypst(directory);
   mkdirSync(join(directory, 'images'));
   writeFileSync(join(directory, 'images', 'picture.png'), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]));
-  writeFileSync(join(directory, 'book.md'), '# Глава\n\nТекст.\n\n![Рисунок](images/picture.png)\n');
-  writeFileSync(join(directory, 'metadata.yaml'), plainMetadata);
+  // Raw Typst code in the manuscript and in the metadata could import packages. The build drops it.
+  writeFileSync(
+    join(directory, 'book.md'),
+    '# Глава\n\nТекст `#import "@preview/inline:0.1.0": *`{=typst}.\n\n```{=typst}\n#import "@preview/block:0.1.0": *\n```\n\n![Рисунок](images/picture.png)\n'
+  );
+  writeFileSync(join(directory, 'metadata.yaml'), `${plainMetadata}subtitle: 'Sub \`#import "@preview/meta:0.1.0": *\`{=typst}'\n`);
   const env = { PATH: `${bin}:${process.env.PATH ?? ''}` };
   const dry = run(['build', 'book.md', '--yes', '--dry-run', '--formats', 'pdf', '--typograf-profile', 'literary-markdown'], directory, env);
   expect(dry.status).toBe(0);
@@ -637,14 +645,17 @@ test.skipIf(!pdfPandoc || process.platform === 'win32')('PDF uses typst with the
   expect(pdf).toContain('paper: "a5"');
   expect(pdf).toContain('image("media/');
   expect(pdf).toContain('Please do not distribute.');
+  expect(pdf).not.toContain('@preview');
+  expect(pdf).not.toContain('#import');
   const [args] = readFileSync(log, 'utf8')
     .trim()
     .split('\n')
     .map((line) => JSON.parse(line) as string[]);
   const root = (args?.[1] ?? '').replace('--root=', '');
-  expect(args?.slice(0, 1)).toEqual(['compile']);
-  expect(args?.[2]).toBe('--');
-  expect(args?.[3]).toBe(join(root, 'book.typ'));
+  const packages = join(dirname(root), 'typst-packages');
+  // Empty private package directories: no local packages of the user, and no writes into the user package cache.
+  expect(args?.slice(0, 5)).toEqual(['compile', `--root=${root}`, `--package-path=${join(packages, 'local')}`, `--package-cache-path=${join(packages, 'cache')}`, '--']);
+  expect(args?.[5]).toBe(join(root, 'book.typ'));
   expect(root.startsWith(directory)).toBe(false);
   // The private directory is gone after the build.
   expect(existsSync(root)).toBe(false);
@@ -707,4 +718,20 @@ test.skipIf(!pandoc || pdfPandoc || process.platform === 'win32')('an old Pandoc
   const fallback = run(['build', 'book.md', '--yes', '--formats', 'fb2', '--typograf-profile', 'literary-markdown'], directory, env);
   expect(fallback.status).toBe(0);
   expect(existsSync(log)).toBe(false);
+});
+
+test.skipIf(!pandoc || process.platform === 'win32' || homebrewTypst)('a typst that cannot run stops only a build that needs PDF', (t) => {
+  const directory = workspace(t);
+  const bin = join(directory, 'tools');
+  mkdirSync(bin);
+  writeFileSync(join(bin, 'typst'), 'not a program', { mode: 0o644 });
+  writeFileSync(join(directory, 'book.md'), '# Chapter\n\nText.\n');
+  writeFileSync(join(directory, 'metadata.yaml'), plainMetadata);
+  const env = { PATH: `${bin}:${process.env.PATH ?? ''}` };
+  const html = run(['build', 'book.md', '--yes', '--formats', 'html', '--typograf-profile', 'literary-markdown'], directory, env);
+  expect(html.stderr).not.toContain('Ошибка');
+  expect(html.status).toBe(0);
+  const pdf = run(['build', 'book.md', '--yes', '--formats', 'pdf', '--overwrite'], directory, env);
+  expect(pdf.status).toBe(1);
+  expect(pdf.stderr).toContain('нельзя запустить');
 });

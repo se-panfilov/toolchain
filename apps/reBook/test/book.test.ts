@@ -153,7 +153,15 @@ test('Pandoc arguments keep paths out of option position', () => {
   expect(pdf?.slice(0, 3)).toEqual(['--data-dir=/work/data', '--metadata-file=/assets/pdf.yaml', '--metadata-file=/work/metadata.yaml']);
   expect(pdf).toEqual(expect.arrayContaining(['--to=typst', '--standalone', '--extract-media=media']));
   expect(pdf?.some((arg) => arg.startsWith('--pdf-engine'))).toBe(false);
-  expect(typstArguments('/work/pdf', '/work/pdf/book.typ', '/work/result.pdf')).toEqual(['compile', '--root=/work/pdf', '--', '/work/pdf/book.typ', '/work/result.pdf']);
+  expect(typstArguments('/work/pdf', '/work/typst-packages', '/work/pdf/book.typ', '/work/result.pdf')).toEqual([
+    'compile',
+    '--root=/work/pdf',
+    '--package-path=/work/typst-packages/local',
+    '--package-cache-path=/work/typst-packages/cache',
+    '--',
+    '/work/pdf/book.typ',
+    '/work/result.pdf'
+  ]);
   expect(pandocArguments({ key: 'odt', label: 'odt', writer: 'odt', extension: 'odt', kind: 'other' }, context, '/o')).toContain('--to=odt');
 });
 

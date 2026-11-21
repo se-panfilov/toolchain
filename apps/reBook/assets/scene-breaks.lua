@@ -233,7 +233,19 @@ local function authors_from_creators(meta)
   return meta
 end
 
+-- Raw Typst code from the manuscript or the metadata never reaches typst. Such code could import
+-- typst packages, which typst downloads from the network and reads outside the PDF directory.
+local function drop_raw_typst(el)
+  if el.format:lower() == "typst" then
+    return {}
+  end
+  return nil
+end
+
 function Pandoc(doc)
+  if FORMAT:match("typst") then
+    doc = doc:walk({ RawBlock = drop_raw_typst, RawInline = drop_raw_typst })
+  end
   doc.meta = authors_from_creators(doc.meta)
   local out = {}
   local first_after_scene_break_pending = false

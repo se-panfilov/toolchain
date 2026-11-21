@@ -130,6 +130,8 @@ mainfont: 'PT Serif'
 
 The fonts built into typst contain Cyrillic letters. `mainfont` selects an installed system font.
 FB2 and PDF have no other style options: `--css` and `--reference-doc` do not apply to them.
+Raw Typst code in the manuscript or in the metadata (`{=typst}`) is removed from the PDF, because it can import typst packages.
+typst needs version 0.11 or later for the `--package-path` and `--package-cache-path` options.
 
 EPUB reads authors from `creator` entries. For FB2 and PDF, the Lua filter copies the `creator` entries
 with the `author` role, or without a role, into `author`, if `metadata.yaml` has no `author` field.
@@ -198,8 +200,9 @@ The non-breaking spaces are U+00A0 characters, not `&nbsp;` entities. Neither pr
 they name.
 
 The formatted file is always replaced on a successful run, independently of `--overwrite`, which
-only controls the result files. It never gets wider permission bits than the
-manuscript: a manuscript with mode `0600` gives a formatted file with mode `0600`.
+only controls the result files. A new formatted file always gets mode `0600`, independently of the
+manuscript mode and the umask. A replaced formatted file keeps only the bits that both the old file and `0600` allow.
+To share the formatted file, change its mode yourself.
 A failed run does not change the formatted file, and the build never reads an old formatted file.
 
 A `*.formatted.md` or `*.formatted.markdown` name is rejected as manuscript input (`FILE` or the

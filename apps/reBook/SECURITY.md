@@ -39,9 +39,9 @@ The program does not send them to a network service.
 - The formatted manuscript (`*.formatted.md`) and a new whitelist use the same placement step as the result files:
   a temporary file in the target directory, a rename or a hard link, and a rollback when a later step fails.
   A link, a directory, or a file with an ACL at the target path stops the build before Pandoc starts.
-- The formatted manuscript never gets wider permission bits than the manuscript. Its temporary file starts with mode `0600`.
-  A new file gets the bits of the manuscript without the execute bits. A replaced file keeps only the bits that
-  both the old file and the manuscript allow.
+- A new formatted manuscript always gets mode `0600`. The copy does not use the manuscript mode, because the
+  manuscript can have an ACL that the copy cannot get, and `chmod` ignores the umask. A replaced file keeps only
+  the bits that both the old file and `0600` allow.
 - Pandoc reads a private copy of the formatted text in the work directory, not the `*.formatted.md` file.
   A change of that file during the build cannot reach the results.
 - No written file can be an input of the same build, and two written files cannot share a path. The check
@@ -61,12 +61,18 @@ The program does not send them to a network service.
 - Pandoc gets an empty private `--data-dir`. User templates, defaults files, filters, and `init.lua` from the Pandoc data directory are not used.
 - Only the packaged Lua filter runs. The program does not accept other filters or Pandoc defaults files.
 - Each tool run has a time limit of 10 minutes.
-- typst is found by the same search as Pandoc. It is necessary only when PDF is in the format list.
-  Without typst, the default format list has no PDF. An explicit PDF request stops the build before Pandoc starts.
+- typst is found by the same search as Pandoc. The search runs only for the default format list and when
+  `--formats` contains PDF. Without typst, the default format list has no PDF. A found `typst` that cannot run
+  leaves PDF out of the default list with a warning. An explicit PDF request stops the build before Pandoc starts.
 - For PDF, Pandoc writes Typst markup into a private `pdf` directory in the work directory and copies the
   images into it (`--extract-media`). typst gets `--root` with that directory, so the markup can read only
   the files in it and cannot read other files of the user. typst writes the PDF into the work directory.
   The typst arguments use `--root=value`, and the input and output paths come after `--`.
+- The Lua filter removes raw Typst code (`{=typst}` blocks and inline code) from the manuscript and the metadata
+  before the Typst writer runs. Pandoc escapes the other text and the metadata values, so the markup has no
+  `#import` or `#include` from the book.
+- typst gets empty private directories for `--package-path` and `--package-cache-path`. It does not read the
+  local packages of the user and does not write into the user package cache. The directories are deleted with the work directory.
 - PDF needs Pandoc 3.2 or later. In earlier versions, `--extract-media` can write files outside the media
   directory (CVE-2023-35936 and CVE-2023-38745, fixed in Pandoc 3.1.6). The check reads only the major and
   minor version, so the limit is 3.2. Other formats keep the Pandoc 3.0 minimum, because they do not use `--extract-media`.
@@ -133,10 +139,9 @@ Questions restore the raw mode and remove their handlers after an answer, a canc
 
 - A manuscript from another person can make Pandoc read local files that it references, or make network requests.
   Check such a manuscript before the build.
-- Raw Typst blocks in the manuscript (` ```{=typst} `) go into the PDF markup without a change.
-  Such a block can import a typst package with `@preview/…`. typst then downloads the package from the
-  typst package registry and runs it inside the typst compiler. Pandoc output without raw Typst blocks has no imports.
-  The `--root` limit still applies: a package cannot read files outside the private PDF directory.
+- The protection from typst packages depends on the removal of raw Typst code and on the escapes of the Pandoc
+  Typst writer. A defect in Pandoc that lets book text become Typst code could import a package. typst would
+  then download it from the typst package registry into the private cache. The program does not block the network for typst.
 - typst reads the installed system fonts. A font selected with `mainfont` must be installed.
 - Another process of the same user can change files during the run. The checks make the time window small but do not remove it.
 - EPUBCheck is optional. Without it, an EPUB file is not validated.
