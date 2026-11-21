@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 import { graphemes } from '@reBook/metadata';
 import { hasAccessControlList } from '@reBook/tools';
+import { isFormattedManuscriptName } from '@reBook/typograf';
 
 export type Kind = 'epub' | 'docx' | 'html' | 'other';
 export type Target = { key: string; label: string; writer: string; extension: string; kind: Kind };
@@ -140,6 +141,7 @@ export function checkFile(path: string, kind: FileKind): string {
   if (kind === 'referenceDoc' && (extension !== '.docx' || !head(real, 4).equals(Buffer.from('PK\x03\x04', 'latin1')))) throw new Error(`${label}: нужен файл .docx: ${path}`);
   if (kind === 'css' && (extension !== '.css' || head(real, 4096).includes(0))) throw new Error(`${label}: нужен текстовый файл .css: ${path}`);
   if (kind === 'input' && head(real, 4096).includes(0)) throw new Error(`${label}: нужен текстовый файл Markdown: ${path}`);
+  if (kind === 'input' && isFormattedManuscriptName(basename(real))) throw new Error(`${label}: файл *.formatted.md создаётся типографированием автоматически, укажите исходный манускрипт: ${path}`);
   return real;
 }
 
