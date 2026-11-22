@@ -142,6 +142,47 @@ It reads only local refs and does not connect to a server.
 A local user can make a remote-tracking ref without a push.
 Remote-tracking refs can be out of date after a server change.
 
+## Period and unattended run controls
+
+A period limits metadata changes to commits with a committer date at or after the period start.
+The engine validates the period start as a Unix time between 1970 and 9999.
+A commit without exactly one valid committer header stops planning.
+Commits outside the period keep their objects, signatures, and metadata.
+A reparented commit keeps its metadata, but loses its signature, because its object ID changes.
+A tag changes only when its target changes. Unchanged tags are not part of the shared-tag check or the push.
+An export rejects a period, because the export manifest describes a complete normalization.
+
+The `--flow` option starts an unattended run without questions and without a TTY.
+It requires a period, so one run cannot change all history without questions.
+The parser rejects options of other flows, missing required values, and a missing backup decision.
+The engine validates flow values again, as for interactive input.
+An unattended run never assumes the permissions of interactive questions:
+
+| Interactive question                     | Unattended run                                                               |
+| ---------------------------------------- | ---------------------------------------------------------------------------- |
+| `Продолжить без копии на сервере?`       | The run stops.                                                               |
+| `Удалить подписи и продолжить?`          | The run stops without `--strip-signatures`.                                  |
+| `Применить изменения?`                   | The command with `--flow` is the permission.                                 |
+| `Сделать push?` and later push questions | No push without `--force-push`. Tags for a separate decision are never sent. |
+
+The `--force-push` option selects the remote before the rewrite and before the interactive confirmation, without network access.
+The order is `--remote`, `branch.<name>.pushRemote`, `remote.pushDefault`, `branch.<name>.remote`, `origin`, and the only remote.
+`refs/remotes/<remote>/<branch>` must point to the current commit. Otherwise the run stops before writes.
+Thus an automatic push never makes a new server branch, and the lease check after the rewrite does not fail because of a local state that is out of date.
+After `preparePush`, a missing server branch stops the push again.
+An ambiguous or missing remote, an unsupported URL, and `http.*` or URL substitution settings stop the run before writes.
+Before the push, the program reads the remote URL again. A changed URL stops the push.
+The push uses the same checks, leases, and atomic transaction as the interactive push.
+A push failure leaves the local rewrite. The next run stops at the remote copy check until a push or fetch.
+
+Risks of regular runs:
+
+- A force push replaces the server branch. Other clones and open pull requests then have a different history.
+- The remote copy check sees only local remote-tracking refs. A scheduler does not fetch.
+- Commits with an incorrect future committer date stay in each later period.
+- Each run with `--backup-branch` keeps old objects. Old backup branches use disk space.
+- SSH configuration and keys of the scheduler user are part of the trust boundary.
+
 ## Input controls
 
 The program validates branch names with Git.
@@ -367,6 +408,23 @@ Large histories, disk limits, and Git memory use can cause an operation to stop.
 Temporary packs use private directories outside the source repository.
 A normal return or handled error removes them.
 An abrupt process termination can leave those private files.
+
+## Period and automatic push security audit
+
+An independent review examined tx-rehistory 3.1.0 before the pull request. It used synthetic repositories and a fake transport, without network access.
+
+| ID  | Severity      | Finding                                                                                                       | Result                                                                                                                                                   |
+| --- | ------------- | ------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| F1  | Medium        | `--force-push` could make a new branch on a remote that did not have it and send all history there.           | Fixed. The remote-tracking ref of the selected remote must point to the current commit. A missing server branch also stops the push after `preparePush`. |
+| F2  | Medium        | The automatic remote selection ignored `branch.<name>.pushRemote` and `remote.pushDefault`.                   | Fixed. The selection uses the `git push` order.                                                                                                          |
+| F3  | Low           | A shared tag that an earlier run did not send stopped the branch push of a later run after the local rewrite. | Fixed. Such a tag is never sent and does not stop the branch.                                                                                            |
+| F4  | Low           | An interactive run with `--force-push` showed the push target only after the confirmation.                    | Fixed. The plan shows the target, and the question names the force push.                                                                                 |
+| F5  | Informational | A server branch behind the local head stopped the push after the rewrite with a general message.              | Fixed by the F1 check before the rewrite.                                                                                                                |
+| F6  | Informational | A backup branch name could start with `-`. A value cannot start with `--`.                                    | Names that start with `-` are rejected. The `--` limit is documented.                                                                                    |
+| F7  | Informational | For `--month` and `--year`, a start time in a daylight saving gap moves forward.                              | Documented.                                                                                                                                              |
+
+Regression tests are in `test/period.test.ts` and `test/flows.test.ts`.
+Not examined: a real server push, macOS and Windows, and a scheduler signal during the push.
 
 ## Push destination security audit: 2026-10-30
 

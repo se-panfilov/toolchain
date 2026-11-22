@@ -8,8 +8,9 @@ import { auditRepository, auditText } from '@reHistory/audit';
 import { runDemo, validateDemoURL } from '@reHistory/demo';
 import { applyPlan, defaultBackupBranch, type Flow, flows, makePlan, mapped, normalizeCommitMessage, type Options, type Plan, Repository, terminalJSON, validateIdentity } from '@reHistory/engine';
 import { exportDestination, exportPlan, verifyExport } from '@reHistory/export';
+import { type Period, periodLabels, periods, periodStart } from '@reHistory/period';
 import { PromptCancelled, TerminalPrompts, terminalStyle } from '@reHistory/prompts';
-import { executePush, preparePush, pushRemotes, type RemoteCopy, remoteCopy, sharedTags, updateTrackingRef } from '@reHistory/remote';
+import { automaticPushRemote, executePush, preparePush, type PushPlan, pushRemotes, type RemoteCopy, remoteCopy, sharedTags, updateTrackingRef } from '@reHistory/remote';
 
 // Git metadata and errors can contain terminal control characters.
 function safe(value: unknown): string {
@@ -34,7 +35,24 @@ Node.js 24.12+, Git 2.39+. Запуск: node /путь/toolchain/apps/reHistory
   --demo-dir NEW_PATH  Новый каталог demo; по умолчанию — системный temp.
   --help               Справка.
 
-Переписывание и экспорт интерактивны. За один запуск выполняется один флоу:
+Период (только переписывание на месте; дата коммитера):
+  --day | --week | --month | --year
+                       Последние 24 часа, 7 дней, календарный месяц или год.
+                       Остальные коммиты не меняются; потомки получают новых родителей.
+  --force-push         После переписывания push ветки и её тегов без вопросов,
+                       с точными force-with-lease. Общие и новые теги не отправляются.
+  --remote NAME        Remote для --force-push (по умолчанию upstream, origin или единственный).
+
+Без вопросов, для запуска по расписанию (требует период):
+  --flow dates|authors|messages
+  dates:    [--date ГГГГ-ММ-ДД] [--time ЧЧ:ММ[:СС][+ЧЧ:ММ|Z]] [--interval СЕК]
+            [--tag-dates normalize|preserve]  (по умолчанию: сегодня, 00:00:00, 1, normalize)
+  authors:  --name ИМЯ --email EMAIL [--tag-author same|keep]
+  messages: --message ТЕКСТ
+  --backup-branch NAME | --no-backup   Обязательно одно из двух.
+  --strip-signatures   Разрешить удаление подписей коммитов и тегов периода.
+
+Без --flow переписывание и экспорт интерактивны. За один запуск выполняется один флоу:
 время, авторы или сообщения коммитов. Переписывание на месте требует, чтобы
 коммиты ветки были в remote-ветках (refs/remotes/*). После переписывания можно
 отдельно подтвердить push ветки и её тегов с точными force-with-lease. По умолчанию push выключен.
@@ -107,7 +125,23 @@ export type Arguments = {
   verify: string | undefined;
   remote: string | undefined;
   demoDir: string | undefined;
+  /** Limit the metadata change to commits of this period. */
+  period: Period | undefined;
+  /** Push the branch and its tags with exact force-with-lease after the rewrite, without questions. */
+  forcePush: boolean;
+  /** Remote for --force-push. Without it, the branch upstream remote or origin is used. */
+  pushRemote: string | undefined;
+  /** A flow selected with --flow. The run is then not interactive and uses only command-line values. */
+  flow: Flow | undefined;
+  values: Partial<Record<FlowValue, string>>;
+  backupBranch: string | undefined;
+  noBackup: boolean;
+  stripSignatures: boolean;
 };
+const flowValues = { dates: ['--date', '--time', '--interval', '--tag-dates'], authors: ['--name', '--email', '--tag-author'], messages: ['--message'] } as const;
+type FlowValue = (typeof flowValues)[Flow][number];
+const allFlowValues: readonly string[] = Object.values(flowValues).flat();
+const valueOptions = ['--repo', '--export', '--verify-export', '--demo-remote', '--demo-dir', '--remote', '--flow', '--backup-branch', ...allFlowValues];
 export function parseArguments(args: string[]): Arguments {
   let path = process.cwd();
   let dryRun = false;
@@ -118,36 +152,100 @@ export function parseArguments(args: string[]): Arguments {
   let verify: string | undefined;
   let remote: string | undefined;
   let demoDir: string | undefined;
+  let period: Period | undefined;
+  let forcePush = false;
+  let pushRemote: string | undefined;
+  let flow: Flow | undefined;
+  const values: Partial<Record<FlowValue, string>> = {};
+  let backupBranch: string | undefined;
+  let noBackup = false;
+  let stripSignatures = false;
   let explicitRepo = false;
   const seen = new Set<string>();
   for (let i = 0; i < args.length; i++) {
     const arg = args[i] ?? '';
     if (seen.has(arg)) throw new Error(`Параметр указан повторно: ${arg}`);
     seen.add(arg);
-    if (['--repo', '--export', '--verify-export', '--demo-remote', '--demo-dir'].includes(arg)) {
+    if (valueOptions.includes(arg)) {
       const value = args[++i];
       if (!value || value.startsWith('--')) throw new Error(`Отсутствует значение ${arg}.`);
       if (arg === '--repo') {
         path = value;
         explicitRepo = true;
-      }
-      if (arg === '--export') destination = value;
-      if (arg === '--verify-export') verify = value;
-      if (arg === '--demo-remote') remote = value;
-      if (arg === '--demo-dir') demoDir = value;
+      } else if (arg === '--export') destination = value;
+      else if (arg === '--verify-export') verify = value;
+      else if (arg === '--demo-remote') remote = value;
+      else if (arg === '--demo-dir') demoDir = value;
+      else if (arg === '--remote') pushRemote = value;
+      else if (arg === '--backup-branch') backupBranch = value;
+      else if (arg === '--flow') {
+        if (!(flows as readonly string[]).includes(value)) throw new Error(`--flow: ${flows.join(', ')}.`);
+        flow = value as Flow;
+      } else values[arg as FlowValue] = value;
     } else if (arg === '--dry-run') dryRun = true;
     else if (arg === '--audit') audit = true;
     else if (arg === '--json') json = true;
     else if (arg === '--demo') demo = true;
-    else throw new Error(`Неизвестный аргумент: ${arg}. Используйте --help.`);
+    else if (arg === '--force-push') forcePush = true;
+    else if (arg === '--no-backup') noBackup = true;
+    else if (arg === '--strip-signatures') stripSignatures = true;
+    else if ((periods as readonly string[]).includes(arg.slice(2)) && arg.startsWith('--')) {
+      if (period) throw new Error('Укажите один период: --day, --week, --month или --year.');
+      period = arg.slice(2) as Period;
+    } else throw new Error(`Неизвестный аргумент: ${arg}. Используйте --help.`);
   }
   if ([audit, Boolean(destination), Boolean(verify), demo].filter(Boolean).length > 1) throw new Error('Выберите один режим: --audit, --export, --verify-export или --demo.');
   if (json && !audit && !verify) throw new Error('--json допустим только для аудита/проверки экспорта.');
   if (dryRun && (audit || verify || demo)) throw new Error('--dry-run допустим только для обычного режима и экспорта.');
   if (!demo && (remote || demoDir)) throw new Error('--demo-remote и --demo-dir требуют --demo.');
   if ((demo || verify) && explicitRepo) throw new Error('--repo не используется вместе с demo/проверкой экспорта.');
+  const special = audit || Boolean(destination) || Boolean(verify) || demo;
+  if (special && (period || forcePush || flow)) throw new Error('Период, --flow и --force-push допустимы только для переписывания на месте.');
+  if (forcePush && dryRun) throw new Error('--force-push несовместим с --dry-run.');
+  if (pushRemote !== undefined && !forcePush) throw new Error('--remote требует --force-push.');
+  if (flow) {
+    // An unattended run must stay small: it changes only commits of a selected period.
+    if (!period) throw new Error('--flow требует период: --day, --week, --month или --year.');
+    const allowed: readonly string[] = flowValues[flow];
+    const extra = Object.keys(values).filter((key) => !allowed.includes(key));
+    if (extra.length) throw new Error(`Параметры не относятся к флоу ${flow}: ${extra.join(', ')}.`);
+    if (flow === 'authors' && (!values['--name'] || !values['--email'])) throw new Error('Флоу authors требует --name и --email.');
+    if (flow === 'messages' && !values['--message']) throw new Error('Флоу messages требует --message.');
+    if (values['--tag-dates'] && !['normalize', 'preserve'].includes(values['--tag-dates'])) throw new Error('--tag-dates: normalize или preserve.');
+    if (values['--tag-author'] && !['same', 'keep'].includes(values['--tag-author'])) throw new Error('--tag-author: same или keep.');
+    if (Boolean(backupBranch) === noBackup) throw new Error('Без интерактива укажите --backup-branch NAME или --no-backup.');
+  } else if (Object.keys(values).length || backupBranch || noBackup || stripSignatures) {
+    throw new Error('Значения флоу, --backup-branch, --no-backup и --strip-signatures требуют --flow.');
+  }
   if (demo) remote = validateDemoURL(remote);
-  return { path, dryRun, audit, json, demo, destination, verify, remote, demoDir };
+  return { path, dryRun, audit, json, demo, destination, verify, remote, demoDir, period, forcePush, pushRemote, flow, values, backupBranch, noBackup, stripSignatures };
+}
+
+/** Build flow options from command-line values. Defaults match the interactive defaults. */
+export function optionsFromArguments(mode: Arguments, now = new Date()): Options {
+  const { values } = mode;
+  if (mode.flow === 'dates') {
+    const text = values['--interval'] ?? '1';
+    const interval = Number(text);
+    if (!/^\d+$/.test(text) || !Number.isSafeInteger(interval) || interval < 1 || interval > 31536000) throw new Error('--interval: целое число 1–31536000.');
+    const date = values['--date'] ?? localDate(now);
+    const start = parseStart(date, values['--time'] ?? '00:00:00');
+    return { flow: 'dates', start, interval, tagPolicy: values['--tag-dates'] === 'preserve' ? 'preserve' : 'normalize' };
+  }
+  if (mode.flow === 'authors') {
+    const identity = { name: values['--name'] ?? '', email: values['--email'] ?? '' };
+    validateIdentity(identity.name, identity.email);
+    return { flow: 'authors', identity, tagIdentity: values['--tag-author'] === 'keep' ? undefined : identity };
+  }
+  if (mode.flow === 'messages') {
+    const commitMessage = values['--message'] ?? '';
+    normalizeCommitMessage(commitMessage);
+    return { flow: 'messages', commitMessage };
+  }
+  throw new Error('Не выбран флоу переписывания.');
+}
+function localDate(now: Date): string {
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 }
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
@@ -181,16 +279,24 @@ async function main(): Promise<void> {
     if (!report.complete) process.exitCode = 2;
     return;
   }
-  if (!stdin.isTTY || !stdout.isTTY) throw new Error('Нужен интерактивный терминал (TTY).');
+  const since = mode.period ? periodStart(mode.period) : undefined;
+  const unattended = mode.flow !== undefined;
+  if (!unattended && (!stdin.isTTY || !stdout.isTTY)) throw new Error('Нужен интерактивный терминал (TTY). Для запуска по расписанию используйте --flow с периодом.');
   const state = repo.inspect();
   if (mode.destination) exportDestination(repo, mode.destination);
-  print(`reHistory · ${mode.destination ? 'экспорт' : 'переписывание'}${mode.dryRun ? ' · dry-run' : ''}`, 'accent');
+  print(`reHistory · ${mode.destination ? 'экспорт' : 'переписывание'}${unattended ? ' · без вопросов' : ''}${mode.dryRun ? ' · dry-run' : ''}`, 'accent');
   print(`${repo.path} · ${state.head.slice(11)}`, 'muted');
+  if (mode.period && since !== undefined) print(`Период: ${periodLabels[mode.period]} · коммиты с датой коммитера от ${new Date(since * 1000).toISOString()}`, 'muted');
   if (state.refs.some((r) => r.name.startsWith('refs/codex/'))) print('refs/codex/* сохраняют старую историю; в экспорт не входят.', 'warning');
   print('Не запускайте другие операции Git до завершения.', 'warning');
-  const prompts = new TerminalPrompts();
-  const ask = (question: string, initial?: string): Promise<string> => prompts.text(question, initial);
-  const choose = (question: string, defaultYes: boolean): Promise<boolean> => prompts.confirm(question, defaultYes);
+  const prompts = unattended ? undefined : new TerminalPrompts();
+  // An unattended run never asks. A code path that needs consent there is a defect, so stop it.
+  const interactive = (): TerminalPrompts => {
+    if (!prompts) throw new Error('Внутренняя ошибка: вопрос в запуске без интерактива.');
+    return prompts;
+  };
+  const ask = (question: string, initial?: string): Promise<string> => interactive().text(question, initial);
+  const choose = (question: string, defaultYes: boolean): Promise<boolean> => interactive().confirm(question, defaultYes);
   async function newIdentity(): Promise<{ name: string; email: string }> {
     for (;;) {
       const name = await ask('Имя');
@@ -203,6 +309,41 @@ async function main(): Promise<void> {
       }
     }
   }
+  function showPush(push: PushPlan): void {
+    print(`Push → ${push.remote} · ${push.url}`, 'accent');
+    for (const ref of push.refs) print(`${ref.destination}: ${ref.expected ? ref.expected.slice(0, 12) : 'новая ссылка'} → ${ref.oid.slice(0, 12)}`);
+    if (push.blocked.length) print(`Теги с неизвестными изменениями на сервере не отправляются: ${push.blocked.map((ref) => ref.destination).join(', ')}`, 'warning');
+  }
+  function finishPush(push: PushPlan, includeOptional: boolean): void {
+    executePush(push, undefined, includeOptional);
+    if (push.optional.length && !includeOptional) print(`Не отправлены теги: ${push.optional.length}. Локально они уже переписаны.`, 'warning');
+    print('✓ Push выполнен.', 'success');
+    try {
+      const tracking = updateTrackingRef(push);
+      if (tracking) print(`Remote-ветка обновлена: ${tracking}`, 'muted');
+      else print('Remote-ветка не обновлена локально. Перед следующим флоу выполните git fetch.', 'warning');
+    } catch (error) {
+      print(`Remote-ветка не обновлена локально. Перед следующим флоу выполните git fetch.\n${error instanceof Error ? error.message : String(error)}`, 'warning');
+    }
+  }
+  /**
+   * --force-push: send the branch and the tags that need no separate decision, with exact force-with-lease.
+   * Tags that are shared with other branches, new on the server or unverified are never sent automatically.
+   */
+  function forcePush(plan: Plan, target: { remote: string; url: string }): void {
+    try {
+      // The remote was selected before the rewrite. Its URL must stay the same.
+      if (automaticPushRemote(repo, plan.head, plan.headOid, target.remote).url !== target.url) throw new Error('URL remote изменился после проверки.');
+      const push = preparePush(plan, target.remote);
+      // Defense in depth: never create a server branch without questions.
+      if (!push.refs.find((ref) => ref.local === plan.head)?.expected) throw new Error('Ветки нет на сервере.');
+      showPush(push);
+      if (push.optional.length) print(`Теги, которые требуют отдельного решения, не отправляются: ${push.optional.length}.`, 'warning');
+      finishPush(push, false);
+    } catch (error) {
+      throw new Error(`Локальная история уже переписана. Push не выполнен; проверьте remote и отправьте ветку вручную.\n${error instanceof Error ? error.message : String(error)}`, { cause: error });
+    }
+  }
   async function offerPush(plan: Plan): Promise<void> {
     try {
       if (!(await choose('Сделать push?', false))) return;
@@ -211,10 +352,9 @@ async function main(): Promise<void> {
         print('Remote не настроен. Локальная история сохранена.', 'warning');
         return;
       }
-      const index = remotes.names.length === 1 ? 0 : await prompts.select('Remote для push', remotes.names, remotes.initial);
+      const index = remotes.names.length === 1 ? 0 : await interactive().select('Remote для push', remotes.names, remotes.initial);
       const push = preparePush(plan, remotes.names[index] ?? '');
-      print(`Push → ${push.remote} · ${push.url}`, 'accent');
-      for (const ref of push.refs) print(`${ref.destination}: ${ref.expected ? ref.expected.slice(0, 12) : 'новая ссылка'} → ${ref.oid.slice(0, 12)}`);
+      showPush(push);
       let includeOptional = false;
       if (push.optional.length) {
         print(`Теги, которые требуют отдельного решения: ${push.optional.length}`, 'warning');
@@ -229,16 +369,7 @@ async function main(): Promise<void> {
         print('Push пропущен.');
         return;
       }
-      executePush(push, undefined, includeOptional);
-      if (push.optional.length && !includeOptional) print(`Не отправлены теги: ${push.optional.length}. Локально они уже переписаны.`, 'warning');
-      print('✓ Push выполнен.', 'success');
-      try {
-        const tracking = updateTrackingRef(push);
-        if (tracking) print(`Remote-ветка обновлена: ${tracking}`, 'muted');
-        else print('Remote-ветка не обновлена локально. Перед следующим флоу выполните git fetch.', 'warning');
-      } catch (error) {
-        print(`Remote-ветка не обновлена локально. Перед следующим флоу выполните git fetch.\n${error instanceof Error ? error.message : String(error)}`, 'warning');
-      }
+      finishPush(push, includeOptional);
     } catch (error) {
       if (error instanceof PromptCancelled) {
         print('Push отменён. Локальная история сохранена.');
@@ -256,11 +387,9 @@ async function main(): Promise<void> {
       if (/^\d+$/.test(value) && Number.isSafeInteger(interval) && interval >= 1 && interval <= 31536000) break;
       print('Целое число: 1–31536000.');
     }
-    const today = new Date();
-    const dateDefault = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
     let date: string;
     for (;;) {
-      date = await ask('Дата первого коммита', dateDefault);
+      date = await ask('Дата первого коммита', localDate(new Date()));
       try {
         if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('Дата: ГГГГ-ММ-ДД.');
         parseDate(`${date}T00:00:00Z`);
@@ -299,10 +428,12 @@ async function main(): Promise<void> {
     }
   }
   function describe(options: Options, plan: Plan): void {
-    const tags = plan.selected.filter((r) => r.name.startsWith('refs/tags/')).length;
+    const tags = plan.selected.filter((r) => r.name.startsWith('refs/tags/') && plan.mapping.get(r.oid) !== r.oid).length;
     print(`Флоу: ${flowLabels[options.flow]} · коммиты: ${plan.commits} · теги: ${tags}`);
+    if (plan.reparented) print(`Коммиты вне периода с новыми родителями (метаданные без изменений): ${plan.reparented}`, 'warning');
     if (options.flow === 'dates') {
-      print(`${new Date(options.start * 1000).toISOString()} → ${new Date((options.start + (plan.commits - 1) * options.interval) * 1000).toISOString()} · шаг: ${options.interval} с`);
+      if (plan.commits)
+        print(`${new Date(options.start * 1000).toISOString()} → ${new Date((options.start + (plan.commits - 1) * options.interval) * 1000).toISOString()} · шаг: ${options.interval} с`);
       print(`Даты тегов: ${options.tagPolicy === 'preserve' ? 'сохранить исходными' : 'нормализовать'}`);
       print('Авторы и сообщения: без изменений', 'muted');
     } else if (options.flow === 'authors') {
@@ -314,6 +445,13 @@ async function main(): Promise<void> {
       print('Даты, авторы и теги: без изменений', 'muted');
     }
   }
+  function checkBackupName(candidate: string): void {
+    // A name with a leading dash looks like a Git option in later manual commands.
+    if (candidate.startsWith('-')) throw new Error('Имя бекап-ветки не может начинаться с «-».');
+    repo.git(['check-ref-format', `refs/heads/${candidate}`]);
+    // Stop if the name exists. Do not add a suffix or overwrite the branch.
+    if (repo.refs().some((r) => r.name === `refs/heads/${candidate}`)) throw new Error('Бекап-ветка уже существует.');
+  }
   try {
     // Rewrite in place only after the current history has a remote copy. Run one flow, push, then run the next flow.
     let gate: ReturnType<typeof remoteGate> = 'ok';
@@ -324,44 +462,58 @@ async function main(): Promise<void> {
       if (gate === 'block') throw new Error(unpushed);
       if (gate === 'warn') print(`${unpushed} Без dry-run запуск будет остановлен.`, 'warning');
       if (gate === 'confirm' || gate === 'notice') print('Нет remote-веток (refs/remotes/*): копия истории на сервере не найдена.', 'warning');
+      // Without a TTY nobody can give this consent. Never assume it.
+      if (gate === 'confirm' && unattended) throw new Error('Без копии на сервере запуск без интерактива остановлен.');
       if (gate === 'confirm' && !(await choose('Продолжить без копии на сервере?', false))) {
         print('Отменено.');
         return;
       }
     }
-    const flow =
-      flows[
-        await prompts.select(
-          'Что переписать?',
-          flows.map((item) => flowLabels[item]),
-          0
-        )
-      ];
     let backupBranch: string | undefined;
-    if (!mode.destination) {
-      if (await choose('Создать бекап?', true)) {
-        for (;;) {
-          const candidate = await ask('Ветка бекапа', defaultBackupBranch);
-          try {
-            repo.git(['check-ref-format', `refs/heads/${candidate}`]);
-          } catch (error) {
-            print(error instanceof Error ? error.message : error);
-            continue;
-          }
-          // Stop if the name exists. Do not add a suffix or overwrite the branch.
-          if (repo.refs().some((r) => r.name === `refs/heads/${candidate}`)) throw new Error('Бекап-ветка уже существует.');
-          backupBranch = candidate;
-          break;
-        }
+    let flowOptions: Options;
+    if (unattended) {
+      flowOptions = optionsFromArguments(mode);
+      if (mode.backupBranch) {
+        checkBackupName(mode.backupBranch);
+        backupBranch = mode.backupBranch;
       } else print('Без бекапа восстановление не гарантируется.', 'warning');
-    } else print(`Экспорт → ${mode.destination}`, 'muted');
-    const options: Options = { ...(flow === 'dates' ? await askDates() : flow === 'authors' ? await askAuthors() : await askMessages()), backupBranch };
+    } else {
+      const flow =
+        flows[
+          await interactive().select(
+            'Что переписать?',
+            flows.map((item) => flowLabels[item]),
+            0
+          )
+        ];
+      if (!mode.destination) {
+        if (await choose('Создать бекап?', true)) {
+          for (;;) {
+            const candidate = await ask('Ветка бекапа', defaultBackupBranch);
+            try {
+              repo.git(['check-ref-format', `refs/heads/${candidate}`]);
+            } catch (error) {
+              print(error instanceof Error ? error.message : error);
+              continue;
+            }
+            checkBackupName(candidate);
+            backupBranch = candidate;
+            break;
+          }
+        } else print('Без бекапа восстановление не гарантируется.', 'warning');
+      } else print(`Экспорт → ${mode.destination}`, 'muted');
+      flowOptions = flow === 'dates' ? await askDates() : flow === 'authors' ? await askAuthors() : await askMessages();
+    }
+    const options: Options = { ...flowOptions, backupBranch, since };
     print('Готовлю план…');
     const plan = makePlan(repo, options);
     print('\nПлан', 'accent');
     describe(options, plan);
     print(mode.destination ? 'Исходник сохранится.' : `Бекап: ${backupBranch || 'нет'}`, 'muted');
-    for (const ref of plan.selected) print(`  ${ref.name}  ${ref.oid.slice(0, 12)} → ${mapped(plan.mapping, ref.oid).slice(0, 12)}`, 'muted');
+    for (const ref of plan.selected) {
+      const next = mapped(plan.mapping, ref.oid);
+      if (next !== ref.oid) print(`  ${ref.name}  ${ref.oid.slice(0, 12)} → ${next.slice(0, 12)}`, 'muted');
+    }
     if (plan.stripped) {
       print(`Подписи и mergetag к удалению: ${plan.stripped}`, 'warning');
       print('Новые коммиты и теги нельзя подписать заново. Без удаления подписей переписывание невозможно.', 'warning');
@@ -370,20 +522,28 @@ async function main(): Promise<void> {
     if (shared) print(`Теги, которые есть и в других ветках: ${shared}. Локально они разойдутся с этими ветками. Push — только после отдельного подтверждения.`, 'warning');
     if (options.flow === 'dates') print('Даты условные; старые копии сохраняют исходную историю.', 'muted');
     if (!mode.destination && plan.selected.every((ref) => plan.mapping.get(ref.oid) === ref.oid)) {
-      print('Изменений нет: история уже соответствует параметрам.', 'success');
+      print(since === undefined ? 'Изменений нет: история уже соответствует параметрам.' : 'Изменений нет: в периоде нет коммитов для изменения.', 'success');
       return;
     }
     if (mode.dryRun) {
       print('Dry-run завершён. Без изменений.', 'success');
       return;
     }
-    if (plan.stripped && !(await choose('Удалить подписи и продолжить?', false))) {
-      print('Отменено: подписи сохранены, история не изменена.');
-      return;
-    }
-    if (!(await choose(mode.destination ? 'Создать экспорт?' : 'Применить изменения?', false))) {
-      print('Отменено.');
-      return;
+    // Check the --force-push remote before the rewrite and the confirmation: a missing or ambiguous remote must not leave an unpushed rewrite.
+    const pushTarget = mode.forcePush && !mode.destination ? automaticPushRemote(repo, plan.head, plan.headOid, mode.pushRemote) : undefined;
+    if (pushTarget) print(`После переписывания: force push → ${pushTarget.remote} · ${pushTarget.url}`, 'warning');
+    if (unattended) {
+      // Command-line flags are the consent of an unattended run. Signature removal needs its own flag.
+      if (plan.stripped && !mode.stripSignatures) throw new Error('Нужно удалить подписи коммитов или тегов. История не изменена. Добавьте --strip-signatures, чтобы разрешить это.');
+    } else {
+      if (plan.stripped && !(await choose('Удалить подписи и продолжить?', false))) {
+        print('Отменено: подписи сохранены, история не изменена.');
+        return;
+      }
+      if (!(await choose(mode.destination ? 'Создать экспорт?' : pushTarget ? 'Применить изменения и сделать force push?' : 'Применить изменения?', false))) {
+        print('Отменено.');
+        return;
+      }
     }
     if (mode.destination) {
       const result = exportPlan(plan, mode.destination);
@@ -394,7 +554,7 @@ async function main(): Promise<void> {
       const recheck = remoteGate(remoteCopy(repo, plan.headOid), false);
       if (recheck === 'block' || (recheck === 'confirm' && gate !== 'confirm')) throw new Error('Ветка или remote-ссылки изменились после проверки. Запустите скрипт заново.');
       const result = applyPlan(plan);
-      print(`✓ Готово · коммиты: ${plan.commits}`, 'success');
+      print(`✓ Готово · коммиты: ${plan.commits}${plan.reparented ? ` · с новыми родителями: ${plan.reparented}` : ''}`, 'success');
       print(`Восстановление: ${result.recovery}${result.backupPrefix ? `\nБекап-ссылки: ${result.backupPrefix}` : ''}`, 'muted');
       // A confirmation can resume from poll. Two check phases include the next poll.
       await nextTurn();
@@ -404,10 +564,12 @@ async function main(): Promise<void> {
         process.exitCode = 130;
         return;
       }
-      await offerPush(plan);
+      if (pushTarget) forcePush(plan, pushTarget);
+      else if (!unattended) await offerPush(plan);
+      else print('Push не выполнялся: --force-push не указан.', 'muted');
     }
   } finally {
-    prompts.close();
+    prompts?.close();
   }
 }
 // An npm bin can be a symbolic link. Compare the real paths.

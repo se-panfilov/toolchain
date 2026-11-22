@@ -694,6 +694,118 @@ It keeps their values and includes them in the audit.
 These refs can keep the initial history.
 The export excludes these refs.
 
+## Period procedure
+
+A period option limits the change to recent commits.
+Use it for regular runs, for example from a scheduler.
+
+| Option    | Commits that the run changes                                                  |
+| --------- | ----------------------------------------------------------------------------- |
+| `--day`   | The committer date is in the last 24 hours.                                   |
+| `--week`  | The committer date is in the last 168 hours.                                  |
+| `--month` | The committer date is at or after the same local time one calendar month ago. |
+| `--year`  | The committer date is at or after the same local time one calendar year ago.  |
+
+For `--month` and `--year`, a missing day changes to the last day of the month.
+If the local time does not exist on the start day because of a daylight saving change, the start moves forward by the time change.
+For example, the month before 31 March starts on the last day of February.
+A commit with a future committer date is also in the period.
+The program uses Node.js date functions and has no date library dependency.
+
+The flow changes only the metadata of commits in the period.
+Other commits keep their object IDs, signatures, and metadata.
+A commit outside the period that follows a changed commit is a reparented commit.
+It keeps its metadata, but it gets a new parent link and a new object ID.
+Its signature is removed, because the signature becomes incorrect.
+The plan shows the number of reparented commits.
+
+A tag changes only when its target commit changes.
+Tag dates and the tag identity change only for targets in the period.
+A tag of a reparented commit gets only the new target.
+The dates flow counts its steps only for commits in the period. The first commit in the period gets the start date.
+
+A period works with the interactive flows and with an unattended run.
+It does not work with `--export`, `--audit`, `--verify-export`, or `--demo`.
+If the period has no commits to change, the program writes nothing and gives the exit code `0`.
+
+### Unattended run
+
+**CAUTION: An unattended run with `--force-push` replaces the server branch without questions. Other clones of the branch then have a different history.**
+
+The `--flow` option starts an unattended run.
+The run asks no questions and does not need a TTY.
+All values come from command options.
+An unattended run requires a period option.
+
+| Flow       | Options                                                             | Default values                                |
+| ---------- | ------------------------------------------------------------------- | --------------------------------------------- |
+| `dates`    | `--date`, `--time`, `--interval`, `--tag-dates normalize\|preserve` | The current day, `00:00:00`, `1`, `normalize` |
+| `authors`  | `--name`, `--email`, `--tag-author same\|keep`                      | `same`                                        |
+| `messages` | `--message`                                                         | None                                          |
+
+The `authors` flow requires `--name` and `--email`.
+The `messages` flow requires `--message`.
+Options of a different flow stop the run before a Git operation.
+The `--date` and `--time` values use the same format as the interactive questions.
+An option value cannot start with `--`. For example, a message that starts with `--` is not possible.
+
+Give one of these options:
+
+- `--backup-branch NAME` makes a backup branch with this name. An existing branch or a name that starts with `-` stops the run.
+- `--no-backup` makes no backup branch.
+
+A scheduler repeats the same command. Thus, put a unique name in `--backup-branch` for each run.
+The recovery file is always written.
+Remove old backup branches when you do not need them.
+The scheduler environment must have Git in an absolute `PATH` directory.
+
+An unattended run never gives a permission that a question gives in an interactive run:
+
+- Unpushed commits stop the run, as in an interactive run.
+- Without remote-tracking refs, the run stops.
+- If the plan removes commit or tag signatures, the run stops. Add `--strip-signatures` to permit the removal.
+- Without `--force-push`, the run does not push.
+
+Example for a daily run that changes the authors of the last 24 hours and pushes the result:
+
+```sh
+node /path/to/toolchain/apps/reHistory/dist/src/cli.js --repo /path/to/project \
+  --flow authors --day --name "Name" --email name@example.org \
+  --backup-branch "rehistory-backup/$(date +%Y%m%d%H%M%S)" --force-push
+```
+
+Do a check with `--dry-run` before you add the command to a scheduler.
+The `--dry-run` option does not work together with `--force-push`.
+
+### Automatic push
+
+The `--force-push` option pushes the result after a successful local rewrite.
+It works in an interactive run and in an unattended run.
+The program does not ask the push questions.
+In an interactive run, the plan shows the push target before the question `Применить изменения и сделать force push?`.
+
+1. Before the rewrite, the program selects the remote without network access. It uses the first available item:
+   - The `--remote NAME` option.
+   - `branch.<name>.pushRemote`, then `remote.pushDefault`, then `branch.<name>.remote`, as `git push` does.
+   - `origin`, then the only remote.
+2. The remote-tracking ref `refs/remotes/<remote>/<branch>` must point to the current commit of the branch. Otherwise the run stops before the rewrite.
+3. After the rewrite, the program does the same checks as the optional push procedure, with the same leases.
+4. The program sends the branch and its tags that need no separate decision.
+
+The check in step 2 prevents a new server branch and a push to a server branch that has unknown commits.
+Run `git push` or `git fetch` for the remote before a scheduled run if this check stops the run.
+
+Tags that need a separate decision are not sent.
+The program shows their number. They stay rewritten in the local repository.
+A tag that the period does not change is not sent.
+A tag that needs a separate decision and has an unknown server value is never sent. It does not stop the branch push.
+This occurs when an earlier run did not send the tag.
+
+If the push fails, the local rewrite stays.
+The program gives the exit code `1`.
+The next run stops, because the rewritten commits are unpushed commits.
+Examine the server, then push the branch manually or with an interactive run.
+
 ## Exit codes
 
 | Code  | Meaning                                           |

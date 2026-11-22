@@ -417,6 +417,8 @@ function manifestPolicy(plan: Plan): DatesPolicy | AuthorsPolicy | MessagesPolic
 
 export function exportPlan(plan: Plan, destination: string): ExportReport {
   const { repo } = plan;
+  // An export normalizes the full history. A partial plan reuses original objects, which the export manifest does not describe.
+  if (plan.options.since !== undefined) throw new Error('Период не поддерживается для экспорта.');
   const target = exportDestination(repo, destination);
   const sourceBefore = repo.inspect();
   if (JSON.stringify(sourceBefore.refs) !== JSON.stringify(plan.refs) || sourceBefore.head !== plan.head || sourceBefore.headOid !== plan.headOid)
