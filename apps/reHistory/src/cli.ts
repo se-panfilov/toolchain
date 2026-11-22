@@ -312,6 +312,7 @@ async function main(): Promise<void> {
   function showPush(push: PushPlan): void {
     print(`Push → ${push.remote} · ${push.url}`, 'accent');
     for (const ref of push.refs) print(`${ref.destination}: ${ref.expected ? ref.expected.slice(0, 12) : 'новая ссылка'} → ${ref.oid.slice(0, 12)}`);
+    if (push.blocked.length) print(`Теги с неизвестными изменениями на сервере не отправляются: ${push.blocked.map((ref) => ref.destination).join(', ')}`, 'warning');
   }
   function finishPush(push: PushPlan, includeOptional: boolean): void {
     executePush(push, undefined, includeOptional);
@@ -332,8 +333,10 @@ async function main(): Promise<void> {
   function forcePush(plan: Plan, target: { remote: string; url: string }): void {
     try {
       // The remote was selected before the rewrite. Its URL must stay the same.
-      if (automaticPushRemote(repo, plan.head, target.remote).url !== target.url) throw new Error('URL remote изменился после проверки.');
+      if (automaticPushRemote(repo, plan.head, plan.headOid, target.remote).url !== target.url) throw new Error('URL remote изменился после проверки.');
       const push = preparePush(plan, target.remote);
+      // Defense in depth: never create a server branch without questions.
+      if (!push.refs.find((ref) => ref.local === plan.head)?.expected) throw new Error('Ветки нет на сервере.');
       showPush(push);
       if (push.optional.length) print(`Теги, которые требуют отдельного решения, не отправляются: ${push.optional.length}.`, 'warning');
       finishPush(push, false);
@@ -443,6 +446,8 @@ async function main(): Promise<void> {
     }
   }
   function checkBackupName(candidate: string): void {
+    // A name with a leading dash looks like a Git option in later manual commands.
+    if (candidate.startsWith('-')) throw new Error('Имя бекап-ветки не может начинаться с «-».');
     repo.git(['check-ref-format', `refs/heads/${candidate}`]);
     // Stop if the name exists. Do not add a suffix or overwrite the branch.
     if (repo.refs().some((r) => r.name === `refs/heads/${candidate}`)) throw new Error('Бекап-ветка уже существует.');
@@ -524,6 +529,9 @@ async function main(): Promise<void> {
       print('Dry-run завершён. Без изменений.', 'success');
       return;
     }
+    // Check the --force-push remote before the rewrite and the confirmation: a missing or ambiguous remote must not leave an unpushed rewrite.
+    const pushTarget = mode.forcePush && !mode.destination ? automaticPushRemote(repo, plan.head, plan.headOid, mode.pushRemote) : undefined;
+    if (pushTarget) print(`После переписывания: force push → ${pushTarget.remote} · ${pushTarget.url}`, 'warning');
     if (unattended) {
       // Command-line flags are the consent of an unattended run. Signature removal needs its own flag.
       if (plan.stripped && !mode.stripSignatures) throw new Error('Нужно удалить подписи коммитов или тегов. История не изменена. Добавьте --strip-signatures, чтобы разрешить это.');
@@ -532,7 +540,7 @@ async function main(): Promise<void> {
         print('Отменено: подписи сохранены, история не изменена.');
         return;
       }
-      if (!(await choose(mode.destination ? 'Создать экспорт?' : 'Применить изменения?', false))) {
+      if (!(await choose(mode.destination ? 'Создать экспорт?' : pushTarget ? 'Применить изменения и сделать force push?' : 'Применить изменения?', false))) {
         print('Отменено.');
         return;
       }
@@ -543,9 +551,6 @@ async function main(): Promise<void> {
       print(result.repository, 'muted');
     } else {
       // Repeat the remote copy check for the planned head. Plan application then rejects any later ref change.
-      // Check the --force-push remote before the rewrite: a missing or ambiguous remote must not leave an unpushed rewrite.
-      const pushTarget = mode.forcePush ? automaticPushRemote(repo, plan.head, mode.pushRemote) : undefined;
-      if (pushTarget) print(`Push после переписывания → ${pushTarget.remote} · ${pushTarget.url}`, 'muted');
       const recheck = remoteGate(remoteCopy(repo, plan.headOid), false);
       if (recheck === 'block' || (recheck === 'confirm' && gate !== 'confirm')) throw new Error('Ветка или remote-ссылки изменились после проверки. Запустите скрипт заново.');
       const result = applyPlan(plan);

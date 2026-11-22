@@ -707,6 +707,7 @@ Use it for regular runs, for example from a scheduler.
 | `--year`  | The committer date is at or after the same local time one calendar year ago.  |
 
 For `--month` and `--year`, a missing day changes to the last day of the month.
+If the local time does not exist on the start day because of a daylight saving change, the start moves forward by the time change.
 For example, the month before 31 March starts on the last day of February.
 A commit with a future committer date is also in the period.
 The program uses Node.js date functions and has no date library dependency.
@@ -746,10 +747,11 @@ The `authors` flow requires `--name` and `--email`.
 The `messages` flow requires `--message`.
 Options of a different flow stop the run before a Git operation.
 The `--date` and `--time` values use the same format as the interactive questions.
+An option value cannot start with `--`. For example, a message that starts with `--` is not possible.
 
 Give one of these options:
 
-- `--backup-branch NAME` makes a backup branch with this name. An existing branch stops the run.
+- `--backup-branch NAME` makes a backup branch with this name. An existing branch or a name that starts with `-` stops the run.
 - `--no-backup` makes no backup branch.
 
 A scheduler repeats the same command. Thus, put a unique name in `--backup-branch` for each run.
@@ -780,17 +782,24 @@ The `--dry-run` option does not work together with `--force-push`.
 The `--force-push` option pushes the result after a successful local rewrite.
 It works in an interactive run and in an unattended run.
 The program does not ask the push questions.
+In an interactive run, the plan shows the push target before the question `Применить изменения и сделать force push?`.
 
-1. Before the rewrite, the program selects the remote without network access.
-   - `--remote NAME` selects the remote.
-   - Without `--remote`, the program uses the upstream remote of the branch, then `origin`, then the only remote.
-   - Other conditions stop the run before the rewrite.
-2. The program does the same checks as the optional push procedure, with the same leases.
-3. The program sends the branch and its tags that need no separate decision.
+1. Before the rewrite, the program selects the remote without network access. It uses the first available item:
+   - The `--remote NAME` option.
+   - `branch.<name>.pushRemote`, then `remote.pushDefault`, then `branch.<name>.remote`, as `git push` does.
+   - `origin`, then the only remote.
+2. The remote-tracking ref `refs/remotes/<remote>/<branch>` must point to the current commit of the branch. Otherwise the run stops before the rewrite.
+3. After the rewrite, the program does the same checks as the optional push procedure, with the same leases.
+4. The program sends the branch and its tags that need no separate decision.
+
+The check in step 2 prevents a new server branch and a push to a server branch that has unknown commits.
+Run `git push` or `git fetch` for the remote before a scheduled run if this check stops the run.
 
 Tags that need a separate decision are not sent.
 The program shows their number. They stay rewritten in the local repository.
 A tag that the period does not change is not sent.
+A tag that needs a separate decision and has an unknown server value is never sent. It does not stop the branch push.
+This occurs when an earlier run did not send the tag.
 
 If the push fails, the local rewrite stays.
 The program gives the exit code `1`.

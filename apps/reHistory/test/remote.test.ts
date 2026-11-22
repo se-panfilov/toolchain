@@ -197,7 +197,7 @@ test('an upstream with another name is not the destination, as with push.default
   git(['--git-dir', server, 'update-ref', 'refs/heads/trunk', first]);
   const plan = makePlan(repo, settings);
   applyPlan(plan);
-  assert.deepEqual(pushRemotes(repo, plan.head), { names: ['origin'], initial: 0, preferred: 'origin' });
+  assert.deepEqual(pushRemotes(repo, plan.head), { names: ['origin'], initial: 0 });
   const push = preparePush(plan, 'origin', connection);
   assert.equal(push.refs.find((ref) => ref.local === plan.head)?.destination, 'refs/heads/main');
   executePush(push, connection);

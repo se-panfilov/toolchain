@@ -77,19 +77,14 @@ function rejectNetworkConfiguration(config: Configuration): void {
   if (keys.some((key) => /^url\.[\s\S]*\.(?:insteadof|pushinsteadof)$/i.test(key))) throw new Error('URL-подстановки Git не поддерживаются для push. Выполните отправку вручную.');
 }
 
-/**
- * `initial` is the default choice of a question. `preferred` is set only for a clear choice without a question:
- * the upstream remote of the branch, or origin when the branch has no upstream remote.
- */
-export function pushRemotes(repo: Repository, head: string): { names: string[]; initial: number; preferred: string | undefined } {
+export function pushRemotes(repo: Repository, head: string): { names: string[]; initial: number } {
   const names = repo.text(['remote']).split('\n').filter(Boolean);
   for (const name of names) repo.git(['check-ref-format', `refs/remotes/${name}/probe`]);
-  const upstream = configuration(repo)
+  const preferred = configuration(repo)
     .values.get(`branch.${head.slice(11)}.remote`)
     ?.at(-1);
-  const initial = Math.max(0, names.indexOf(upstream ?? 'origin'));
-  const candidate = upstream ?? 'origin';
-  return { names, initial, preferred: names.includes(candidate) ? candidate : undefined };
+  const initial = Math.max(0, names.indexOf(preferred ?? 'origin'));
+  return { names, initial };
 }
 
 export type PushTransport = {
@@ -117,6 +112,8 @@ export type PushPlan = {
   refs: PushRef[];
   /** Tags that need a separate user choice. They are not sent by default. */
   optional: (PushRef & { reasons: OptionalTagReason[] })[];
+  /** Tags that need a separate choice and have unknown server values. They are never sent. */
+  blocked: PushRef[];
 };
 
 function checkLocal(rewrite: Plan): void {
@@ -163,13 +160,23 @@ function pushURL(repo: Repository, config: Configuration, remote: string): strin
  * Select the remote for an automatic push before any local write, without network access.
  * An explicit name wins. Otherwise use the upstream remote of the branch, origin, or the only remote.
  */
-export function automaticPushRemote(repo: Repository, head: string, explicit?: string): { remote: string; url: string } {
+export function automaticPushRemote(repo: Repository, head: string, headOid: string, explicit?: string): { remote: string; url: string } {
   const remotes = pushRemotes(repo, head);
   if (!remotes.names.length) throw new Error('Remote не настроен.');
-  const remote = explicit ?? remotes.preferred ?? (remotes.names.length === 1 ? remotes.names[0] : undefined);
+  const config = configuration(repo);
+  const branch = `branch.${head.slice(11)}`;
+  // Use the order of git push: branch.<name>.pushRemote, remote.pushDefault, branch.<name>.remote, origin, the only remote.
+  // git config --list gives section and key names in lowercase.
+  const configured = [config.values.get(`${branch}.pushremote`)?.at(-1), config.values.get('remote.pushdefault')?.at(-1), config.values.get(`${branch}.remote`)?.at(-1)].find(Boolean);
+  const remote = explicit ?? configured ?? (remotes.names.includes('origin') ? 'origin' : remotes.names.length === 1 ? remotes.names[0] : undefined);
   if (!remote) throw new Error('Не удалось однозначно выбрать remote. Укажите --remote NAME.');
   if (!remotes.names.includes(remote)) throw new Error(`Remote не найден: ${remote}.`);
-  return { remote, url: pushURL(repo, configuration(repo), remote) };
+  // Without questions, push only a branch that the server already has at the current head.
+  // This prevents a new public branch on a wrong remote and a push over server commits that the local repository does not know.
+  const tracking = `refs/remotes/${remote}/${head.slice(11)}`;
+  const current = repo.refs().find((ref) => ref.name === tracking && !ref.symbolic);
+  if (current?.oid !== headOid) throw new Error(`Для --force-push ${tracking} должна указывать на текущий коммит ветки. Выполните git push или git fetch для ${remote}.`);
+  return { remote, url: pushURL(repo, config, remote) };
 }
 
 /** Read the selected server only after the user opts in. Never fetch. */
@@ -206,15 +213,13 @@ export function preparePush(rewrite: Plan, remote: string, connection: PushTrans
   const shared = sharedTags(rewrite, { remote, destination, tips });
   const refs: PushPlan['refs'] = [];
   const optional: PushPlan['optional'] = [];
+  const blocked: PushPlan['blocked'] = [];
   for (const ref of rewrite.selected) {
     const target = ref.name === rewrite.head ? destination : ref.name;
     const oid = mapped(rewrite.mapping, ref.oid);
     const expected = server.get(target) ?? '';
     // Outside the period, a tag keeps its object. Do not publish or move it. The branch is always checked.
     if (ref.name !== rewrite.head && oid === ref.oid) continue;
-    if (expected && expected !== oid && (ref.name === rewrite.head ? !oldCommits.has(expected) : expected !== ref.oid)) {
-      throw new Error(`На сервере есть неизвестные изменения: ${target}. Push отменён.`);
-    }
     const item = { local: ref.name, destination: target, oid, expected };
     const reasons: OptionalTagReason[] = [];
     if (ref.name !== rewrite.head) {
@@ -222,12 +227,20 @@ export function preparePush(rewrite: Plan, remote: string, connection: PushTrans
       else if (unverified) reasons.push('unverified');
       if (!expected) reasons.push('new');
     }
+    if (expected && expected !== oid && (ref.name === rewrite.head ? !oldCommits.has(expected) : expected !== ref.oid)) {
+      // A tag that needs a separate decision was possibly not sent by an earlier run. Never send it, but do not block the branch.
+      if (reasons.length) {
+        blocked.push(item);
+        continue;
+      }
+      throw new Error(`На сервере есть неизвестные изменения: ${target}. Push отменён.`);
+    }
     if (reasons.length) optional.push({ ...item, reasons });
     else refs.push(item);
   }
   if (configuration(repo).digest !== config.digest) throw new Error('Настройки Git изменились. Push отменён.');
   checkLocal(rewrite);
-  return { rewrite, remote, url, configDigest: config.digest, refs, optional };
+  return { rewrite, remote, url, configDigest: config.digest, refs, optional, blocked };
 }
 
 /** Send the required refs. Optional tags are sent only when the user selected them separately. */

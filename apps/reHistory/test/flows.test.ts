@@ -369,3 +369,28 @@ test.skipIf(process.platform === 'win32')('CLI объясняет, что без
   assert.equal(run.asked.at(-1), 'Удалить подписи и продолжить?');
   assert.equal(repo.text(['rev-parse', 'HEAD']), oid);
 });
+
+test.skipIf(process.platform === 'win32')('an interactive run with a period asks the same questions and stops when the period has no commits', (t) => {
+  const root = temp(t);
+  const repo = fixture(t);
+  repo.git(['update-ref', 'refs/remotes/origin/main', repo.text(['rev-parse', 'HEAD'])]);
+  const before = commits(repo);
+  const run = runCli(root, repo, { 'Что переписать?': 2, 'Создать бекап?': false, 'Новое сообщение': 'New' }, ['--day']);
+  assert.equal(run.status, 0, run.output);
+  assert.deepEqual(run.asked, ['Что переписать?', 'Создать бекап?', 'Новое сообщение']);
+  assert.match(run.output, /в периоде нет коммитов/);
+  assert.deepEqual(commits(repo), before);
+});
+
+test.skipIf(process.platform === 'win32')('an interactive run with --force-push shows the push target before the confirmation', (t) => {
+  const root = temp(t);
+  const repo = fixture(t);
+  repo.git(['remote', 'add', 'origin', 'https://example.org/owner/repo.git']);
+  repo.git(['update-ref', 'refs/remotes/origin/main', repo.text(['rev-parse', 'HEAD'])]);
+  const before = commits(repo);
+  const run = runCli(root, repo, { 'Что переписать?': 2, 'Создать бекап?': false, 'Новое сообщение': 'New', 'Применить изменения и сделать force push?': false }, ['--force-push']);
+  assert.equal(run.status, 0, run.output);
+  assert.deepEqual(run.asked, ['Что переписать?', 'Создать бекап?', 'Новое сообщение', 'Применить изменения и сделать force push?']);
+  assert.match(run.output, /После переписывания: force push → origin · https:\/\/example\.org\/owner\/repo\.git/);
+  assert.deepEqual(commits(repo), before);
+});

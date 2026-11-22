@@ -9,7 +9,7 @@ import { optionsFromArguments, parseArguments } from '@reHistory/cli';
 import { applyPlan, makePlan, Repository, runGit } from '@reHistory/engine';
 import { exportPlan } from '@reHistory/export';
 import { periodStart } from '@reHistory/period';
-import { preparePush, type PushTransport, sharedTags } from '@reHistory/remote';
+import { automaticPushRemote, preparePush, type PushTransport, sharedTags } from '@reHistory/remote';
 import { test } from 'vitest';
 
 type Context = { onTestFinished: (fn: () => void) => void };
@@ -303,4 +303,62 @@ test.skipIf(process.platform === 'win32')('--force-push stops without a clear re
   assert.match(local.output, /HTTPS\/SSH/);
   // Every check above runs before the rewrite.
   assert.equal(second.text(['log', '-1', '--format=%s']), 'today two');
+});
+
+test('the automatic push remote follows the git push order and needs the branch at the current head', (t) => {
+  const { repo } = history(t);
+  const head = repo.text(['rev-parse', 'HEAD']);
+  for (const name of ['origin', 'fork', 'other']) repo.git(['remote', 'add', name, `https://example.org/owner/${name}.git`]);
+  // The server branch is unknown for origin: no new branch without questions.
+  assert.throws(() => automaticPushRemote(repo, 'refs/heads/main', head), /refs\/remotes\/origin\/main/);
+  repo.git(['update-ref', 'refs/remotes/origin/main', head]);
+  assert.equal(automaticPushRemote(repo, 'refs/heads/main', head).remote, 'origin');
+  repo.git(['config', 'branch.main.remote', 'other']);
+  assert.throws(() => automaticPushRemote(repo, 'refs/heads/main', head), /refs\/remotes\/other\/main/);
+  repo.git(['config', 'remote.pushDefault', 'fork']);
+  repo.git(['config', 'branch.main.pushRemote', 'fork']);
+  repo.git(['update-ref', 'refs/remotes/fork/main', repo.text(['rev-parse', 'HEAD~1'])]);
+  // A server branch behind the local head stops the run: the lease would reject it after the rewrite.
+  assert.throws(() => automaticPushRemote(repo, 'refs/heads/main', head), /refs\/remotes\/fork\/main/);
+  repo.git(['update-ref', 'refs/remotes/fork/main', head]);
+  assert.deepEqual(automaticPushRemote(repo, 'refs/heads/main', head), { remote: 'fork', url: 'https://example.org/owner/fork.git' });
+  assert.equal(automaticPushRemote(repo, 'refs/heads/main', head, 'origin').remote, 'origin');
+});
+
+test('a tag for a separate decision with an unknown server value is never sent and does not block the branch', (t) => {
+  const { repo, oldTag } = history(t);
+  repo.git(['remote', 'add', 'origin', 'https://example.org/owner/repo.git']);
+  const head = repo.text(['rev-parse', 'HEAD']);
+  // v2 is also in another branch, so it needs a separate decision.
+  repo.git(['branch', 'other', 'v2']);
+  const plan = makePlan(repo, { flow: 'messages', commitMessage: 'x', since });
+  applyPlan(plan);
+  const connection: PushTransport = {
+    refs: () => [`${head}\trefs/heads/main`, `${oldTag}\trefs/tags/v1`, `${'1'.repeat(40)}\trefs/tags/v2`].join('\n'),
+    push: () => undefined
+  };
+  const push = preparePush(plan, 'origin', connection);
+  assert.deepEqual(
+    push.refs.map((ref) => ref.destination),
+    ['refs/heads/main']
+  );
+  assert.deepEqual(
+    push.blocked.map((ref) => ref.destination),
+    ['refs/tags/v2']
+  );
+  assert.equal(push.optional.length, 0);
+});
+
+test.skipIf(process.platform === 'win32')('--force-push stops before the rewrite when the selected remote does not have the branch', (t) => {
+  const { repo } = recent(t);
+  repo.git(['remote', 'add', 'origin', 'https://example.org/public/repo.git']);
+  repo.git(['remote', 'add', 'backup', 'https://example.org/private/repo.git']);
+  repo.git(['update-ref', 'refs/remotes/backup/main', repo.text(['rev-parse', 'HEAD'])]);
+  const result = run(repo, [...messages, '--no-backup', '--force-push']);
+  assert.equal(result.status, 1);
+  assert.match(result.output, /refs\/remotes\/origin\/main/);
+  assert.equal(repo.text(['log', '-1', '--format=%s']), 'today two');
+  const dash = run(repo, [...messages, '--backup-branch', '-x']);
+  assert.equal(dash.status, 1);
+  assert.match(dash.output, /не может начинаться/);
 });
