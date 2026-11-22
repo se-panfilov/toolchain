@@ -156,36 +156,65 @@ function pushURL(repo: Repository, config: Configuration, remote: string): strin
   return validateRemoteURL(urls[0] ?? '');
 }
 
+/** A remote and its push URL, fixed before the rewrite. The automatic push uses only this URL. */
+export type PushTarget = { remote: string; url: string };
+
 /**
  * Select the remote for an automatic push before any local write, without network access.
- * An explicit name wins. Otherwise use the upstream remote of the branch, origin, or the only remote.
+ * reHistory ignores global and system Git config, so it cannot follow remote.pushDefault there.
+ * Thus, with more than one remote, only an explicit name is accepted.
  */
-export function automaticPushRemote(repo: Repository, head: string, headOid: string, explicit?: string): { remote: string; url: string } {
+export function automaticPushRemote(repo: Repository, head: string, headOid: string, explicit?: string): PushTarget {
   const remotes = pushRemotes(repo, head);
   if (!remotes.names.length) throw new Error('Remote не настроен.');
-  const config = configuration(repo);
-  const branch = `branch.${head.slice(11)}`;
-  // Use the order of git push: branch.<name>.pushRemote, remote.pushDefault, branch.<name>.remote, origin, the only remote.
-  // git config --list gives section and key names in lowercase.
-  const configured = [config.values.get(`${branch}.pushremote`)?.at(-1), config.values.get('remote.pushdefault')?.at(-1), config.values.get(`${branch}.remote`)?.at(-1)].find(Boolean);
-  const remote = explicit ?? configured ?? (remotes.names.includes('origin') ? 'origin' : remotes.names.length === 1 ? remotes.names[0] : undefined);
-  if (!remote) throw new Error('Не удалось однозначно выбрать remote. Укажите --remote NAME.');
+  const remote = explicit ?? (remotes.names.length === 1 ? remotes.names[0] : undefined);
+  if (!remote) throw new Error('Remote больше одного. Укажите --remote NAME.');
   if (!remotes.names.includes(remote)) throw new Error(`Remote не найден: ${remote}.`);
-  // Without questions, push only a branch that the server already has at the current head.
-  // This prevents a new public branch on a wrong remote and a push over server commits that the local repository does not know.
+  // Without questions, push only a branch that the local copy shows at the current head.
+  // The server check before the rewrite then compares the actual server value.
   const tracking = `refs/remotes/${remote}/${head.slice(11)}`;
   const current = repo.refs().find((ref) => ref.name === tracking && !ref.symbolic);
   if (current?.oid !== headOid) throw new Error(`Для --force-push ${tracking} должна указывать на текущий коммит ветки. Выполните git push или git fetch для ${remote}.`);
-  return { remote, url: pushURL(repo, config, remote) };
+  return { remote, url: pushURL(repo, configuration(repo), remote) };
+}
+
+function advertisedRefs(repo: Repository, url: string, width: number, connection: PushTransport): Map<string, string> {
+  const server = new Map<string, string>();
+  for (const line of connection.refs(repo, url).split('\n').filter(Boolean)) {
+    const [, oid, name] = /^([a-f0-9]{40}|[a-f0-9]{64})\t(refs\/[^\s]+)$/.exec(line) ?? [];
+    if (oid === undefined || name === undefined || oid.length !== width || server.has(name)) throw new Error('Некорректный ответ сервера. Push отменён.');
+    server.set(name, oid);
+  }
+  return server;
+}
+
+/** Use the fixed URL. Stop if the configured push URL is now different. */
+function pinnedURL(repo: Repository, target: PushTarget): void {
+  if (pushURL(repo, configuration(repo), target.remote) !== target.url) throw new Error('URL remote изменился после проверки. Push отменён.');
+}
+
+/**
+ * Before the rewrite, read the server branch through the fixed URL. It must be exactly the local head.
+ * A server branch that is behind, for example after a deliberate rollback, or ahead stops the run before writes.
+ */
+export function checkServerHead(repo: Repository, target: PushTarget, head: string, headOid: string, connection: PushTransport = transport): void {
+  pinnedURL(repo, target);
+  const actual = advertisedRefs(repo, target.url, headOid.length, connection).get(head) ?? '';
+  if (actual !== headOid) throw new Error(`Ветка на сервере (${actual ? actual.slice(0, 12) : 'нет'}) не совпадает с локальной (${headOid.slice(0, 12)}). Выполните git fetch и проверьте историю.`);
 }
 
 /** Read the selected server only after the user opts in. Never fetch. */
-export function preparePush(rewrite: Plan, remote: string, connection: PushTransport = transport): PushPlan {
+/**
+ * `pinned` is for an automatic push: use only the fixed URL, and accept only the initial head as the server branch value.
+ */
+export function preparePush(rewrite: Plan, remote: string, connection: PushTransport = transport, pinned?: PushTarget): PushPlan {
   const { repo } = rewrite;
   checkLocal(rewrite);
   if (!pushRemotes(repo, rewrite.head).names.includes(remote)) throw new Error('Remote не найден. Push отменён.');
+  if (pinned && pinned.remote !== remote) throw new Error('Remote изменился после проверки. Push отменён.');
   const config = configuration(repo);
   const url = pushURL(repo, config, remote);
+  if (pinned && url !== pinned.url) throw new Error('URL remote изменился после проверки. Push отменён.');
   const branch = `branch.${rewrite.head.slice(11)}`;
   const merges = config.values.get(`${branch}.merge`) ?? [];
   if (config.values.get(`${branch}.remote`)?.at(-1) === remote && merges.length > 1) throw new Error('У ветки несколько upstream-ссылок. Push отменён.');
@@ -193,14 +222,9 @@ export function preparePush(rewrite: Plan, remote: string, connection: PushTrans
   // An upstream with another name, for example master of a feature branch, is never a destination.
   const destination = rewrite.head;
   repo.git(['check-ref-format', destination]);
-  const advertised = connection.refs(repo, url);
-  const server = new Map<string, string>();
-  const width = rewrite.headOid.length;
-  for (const line of advertised.split('\n').filter(Boolean)) {
-    const [, oid, name] = /^([a-f0-9]{40}|[a-f0-9]{64})\t(refs\/[^\s]+)$/.exec(line) ?? [];
-    if (oid === undefined || name === undefined || oid.length !== width || server.has(name)) throw new Error('Некорректный ответ сервера. Push отменён.');
-    server.set(name, oid);
-  }
+  const server = advertisedRefs(repo, url, rewrite.headOid.length, connection);
+  // An automatic push accepts only the initial head. Another old commit on the server can be a deliberate rollback.
+  if (pinned && server.get(destination) !== rewrite.headOid) throw new Error(`Ветка на сервере изменилась после проверки: ${destination}. Push отменён.`);
   const newCommits = new Set(rewrite.objects.filter((object) => object.type === 'commit').map((object) => object.oid));
   const oldCommits = new Set([...rewrite.mapping].filter(([, oid]) => newCommits.has(oid)).map(([oid]) => oid));
   // Local refs can omit other server branches, for example in a single-branch clone.
@@ -301,8 +325,11 @@ export function updateTrackingRef(plan: PushPlan): string | undefined {
   repo.git(['check-ref-format', tracking]);
   const current = repo.refs().find((ref) => ref.name === tracking);
   if (current?.symbolic) return undefined;
-  // A missing ref must stay missing until this create. An existing ref must keep its value until this update.
-  const expected = current?.oid ?? '0'.repeat(branch.oid.length);
+  if (current?.oid === branch.oid) return tracking;
+  // Compare with the value of the plan snapshot. A parallel fetch can have recorded a newer server value. Keep that value.
+  const zero = '0'.repeat(branch.oid.length);
+  const expected = plan.rewrite.refs.find((ref) => ref.name === tracking && !ref.symbolic)?.oid ?? zero;
+  if ((current?.oid ?? zero) !== expected) return undefined;
   repo.git(['update-ref', '--no-deref', '-m', 'reHistory: push', tracking, branch.oid, expected]);
   return tracking;
 }

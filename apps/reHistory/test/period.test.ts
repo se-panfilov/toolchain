@@ -9,7 +9,7 @@ import { optionsFromArguments, parseArguments } from '@reHistory/cli';
 import { applyPlan, makePlan, Repository, runGit } from '@reHistory/engine';
 import { exportPlan } from '@reHistory/export';
 import { periodStart } from '@reHistory/period';
-import { automaticPushRemote, preparePush, type PushTransport, sharedTags } from '@reHistory/remote';
+import { automaticPushRemote, checkServerHead, preparePush, type PushTransport, sharedTags, updateTrackingRef } from '@reHistory/remote';
 import { test } from 'vitest';
 
 type Context = { onTestFinished: (fn: () => void) => void };
@@ -204,7 +204,6 @@ test('command-line arguments for an unattended run are complete and belong to on
     ['--strip-signatures'],
     ['--no-backup'],
     ['--remote', 'origin'],
-    ['--force-push', '--dry-run'],
     ['--day', '--export', '/tmp/x'],
     ['--force-push', '--audit'],
     ['--flow', 'messages', '--day', '--message', '--force-push', '--no-backup']
@@ -305,24 +304,140 @@ test.skipIf(process.platform === 'win32')('--force-push stops without a clear re
   assert.equal(second.text(['log', '-1', '--format=%s']), 'today two');
 });
 
-test('the automatic push remote follows the git push order and needs the branch at the current head', (t) => {
+test('the automatic push remote needs an explicit name with more than one remote and the branch at the current head', (t) => {
   const { repo } = history(t);
   const head = repo.text(['rev-parse', 'HEAD']);
-  for (const name of ['origin', 'fork', 'other']) repo.git(['remote', 'add', name, `https://example.org/owner/${name}.git`]);
+  repo.git(['remote', 'add', 'origin', 'https://example.org/owner/origin.git']);
   // The server branch is unknown for origin: no new branch without questions.
   assert.throws(() => automaticPushRemote(repo, 'refs/heads/main', head), /refs\/remotes\/origin\/main/);
+  repo.git(['update-ref', 'refs/remotes/origin/main', repo.text(['rev-parse', 'HEAD~1'])]);
+  assert.throws(() => automaticPushRemote(repo, 'refs/heads/main', head), /refs\/remotes\/origin\/main/);
   repo.git(['update-ref', 'refs/remotes/origin/main', head]);
-  assert.equal(automaticPushRemote(repo, 'refs/heads/main', head).remote, 'origin');
-  repo.git(['config', 'branch.main.remote', 'other']);
-  assert.throws(() => automaticPushRemote(repo, 'refs/heads/main', head), /refs\/remotes\/other\/main/);
-  repo.git(['config', 'remote.pushDefault', 'fork']);
-  repo.git(['config', 'branch.main.pushRemote', 'fork']);
-  repo.git(['update-ref', 'refs/remotes/fork/main', repo.text(['rev-parse', 'HEAD~1'])]);
-  // A server branch behind the local head stops the run: the lease would reject it after the rewrite.
-  assert.throws(() => automaticPushRemote(repo, 'refs/heads/main', head), /refs\/remotes\/fork\/main/);
+  assert.deepEqual(automaticPushRemote(repo, 'refs/heads/main', head), { remote: 'origin', url: 'https://example.org/owner/origin.git' });
+  // Global remote.pushDefault is not visible to reHistory. Thus local settings cannot select one of several remotes.
+  repo.git(['remote', 'add', 'fork', 'https://example.org/owner/fork.git']);
   repo.git(['update-ref', 'refs/remotes/fork/main', head]);
-  assert.deepEqual(automaticPushRemote(repo, 'refs/heads/main', head), { remote: 'fork', url: 'https://example.org/owner/fork.git' });
-  assert.equal(automaticPushRemote(repo, 'refs/heads/main', head, 'origin').remote, 'origin');
+  repo.git(['config', 'remote.pushDefault', 'fork']);
+  repo.git(['config', 'branch.main.remote', 'origin']);
+  assert.throws(() => automaticPushRemote(repo, 'refs/heads/main', head), /--remote NAME/);
+  assert.equal(automaticPushRemote(repo, 'refs/heads/main', head, 'fork').remote, 'fork');
+  assert.throws(() => automaticPushRemote(repo, 'refs/heads/main', head, 'missing'), /Remote не найден: missing/);
+});
+
+test('the automatic push accepts only the initial head on the server and only the fixed URL', (t) => {
+  const { repo, old } = history(t);
+  repo.git(['remote', 'add', 'origin', 'https://example.org/owner/repo.git']);
+  const head = repo.text(['rev-parse', 'HEAD']);
+  const parent = repo.text(['rev-parse', 'HEAD~1']);
+  repo.git(['update-ref', 'refs/remotes/origin/main', head]);
+  const target = automaticPushRemote(repo, 'refs/heads/main', head);
+  let server = parent;
+  let reads = 0;
+  const pushes: string[][] = [];
+  const connection: PushTransport = {
+    refs: () => {
+      reads++;
+      return `${server}\trefs/heads/main`;
+    },
+    push: (_repo, _url, args) => {
+      pushes.push(args);
+    }
+  };
+  // A maintainer rolled the server branch back after the last fetch. Stop before the rewrite.
+  assert.throws(() => checkServerHead(repo, target, 'refs/heads/main', head, connection), /не совпадает/);
+  server = old[1] ?? '';
+  assert.throws(() => checkServerHead(repo, target, 'refs/heads/main', head, connection), /не совпадает/);
+  server = head;
+  checkServerHead(repo, target, 'refs/heads/main', head, connection);
+  const plan = makePlan(repo, { flow: 'messages', commitMessage: 'x', since });
+  applyPlan(plan);
+  // The rollback happens between the check and the push. The rolled-back commit is part of the plan, but it is not the initial head.
+  server = parent;
+  assert.throws(() => preparePush(plan, 'origin', connection, target), /изменилась после проверки/);
+  // Without the fixed target, the interactive push keeps its rule: an old commit of the plan is accepted.
+  assert.equal(preparePush(plan, 'origin', connection).refs[0]?.expected, parent);
+  server = head;
+  const before = reads;
+  repo.git(['remote', 'set-url', 'origin', 'https://example.org/other/repo.git']);
+  assert.throws(() => checkServerHead(repo, target, 'refs/heads/main', head, connection), /URL remote изменился/);
+  assert.throws(() => preparePush(plan, 'origin', connection, target), /URL remote изменился/);
+  assert.equal(reads, before);
+  repo.git(['remote', 'set-url', 'origin', target.url]);
+  const push = preparePush(plan, 'origin', connection, target);
+  assert.equal(push.url, target.url);
+  assert.equal(push.refs[0]?.expected, head);
+  assert.equal(pushes.length, 0);
+});
+
+test('a repeated period run keeps a signed commit and a signed tag that already have the requested data', (t) => {
+  const repo = init(t);
+  commit(repo, 'old', 1600000000);
+  commit(repo, 'Done', 1700000000);
+  const signedCommit = Buffer.from(raw(repo, 'HEAD').replace(/\n\n/, '\ngpgsig -----BEGIN PGP SIGNATURE-----\n fake\n -----END PGP SIGNATURE-----\n\n') + '\n');
+  const commitOid = repo.text(['hash-object', '-w', '-t', 'commit', '--stdin'], signedCommit);
+  repo.git(['update-ref', 'refs/heads/main', commitOid]);
+  const tagData = Buffer.from(
+    `object ${commitOid}\ntype commit\ntag signed\ntagger Old Author <old@example.org> 1700000100 +0100\n\nRelease\n-----BEGIN PGP SIGNATURE-----\nfake\n-----END PGP SIGNATURE-----\n`
+  );
+  const tagOid = repo.text(['hash-object', '-w', '-t', 'tag', '--stdin'], tagData);
+  repo.git(['update-ref', 'refs/tags/signed', tagOid]);
+  for (const options of [
+    { flow: 'messages' as const, commitMessage: 'Done' },
+    { flow: 'authors' as const, identity: { name: 'Old Author', email: 'old@example.org' }, tagIdentity: { name: 'Old Author', email: 'old@example.org' } }
+  ]) {
+    const plan = makePlan(repo, { ...options, since, until: 1800000000 });
+    assert.equal(plan.stripped, 0, options.flow);
+    assert.equal(plan.objects.length, 0, options.flow);
+    assert.equal(plan.mapping.get(commitOid), commitOid);
+    assert.equal(plan.mapping.get(tagOid), tagOid);
+  }
+  // A real change still removes both signatures.
+  const changed = makePlan(repo, { flow: 'messages', commitMessage: 'Other', since, until: 1800000000 });
+  assert.equal(changed.stripped, 2);
+});
+
+test('a commit with a committer date after the run time is outside the period', (t) => {
+  const repo = init(t);
+  commit(repo, 'old', 1600000000);
+  commit(repo, 'now', 1700000000);
+  const future = commit(repo, 'future', 1700100000);
+  const plan = makePlan(repo, { flow: 'messages', commitMessage: 'x', since, until: 1700000000 });
+  assert.equal(plan.commits, 1);
+  assert.equal(plan.reparented, 1);
+  applyPlan(plan);
+  assert.deepEqual(repo.text(['log', '--format=%s']).split('\n'), ['future', 'x', 'old']);
+  assert.notEqual(repo.text(['rev-parse', 'HEAD']), future);
+  // Only a future commit: nothing changes.
+  const only = init(t);
+  commit(only, 'old', 1600000000);
+  commit(only, 'future', 1700100000);
+  assert.equal(makePlan(only, { flow: 'messages', commitMessage: 'x', since, until: 1700000000 }).objects.length, 0);
+  assert.throws(() => makePlan(only, { flow: 'messages', commitMessage: 'x', since, until: since - 1 }), /Конец периода/);
+  assert.throws(() => makePlan(only, { flow: 'messages', commitMessage: 'x', until: since }), /Конец периода/);
+});
+
+test('the remote-tracking ref update keeps the value of a parallel fetch', (t) => {
+  const { repo } = history(t);
+  repo.git(['remote', 'add', 'origin', 'https://example.org/owner/repo.git']);
+  const head = repo.text(['rev-parse', 'HEAD']);
+  repo.git(['update-ref', 'refs/remotes/origin/main', head]);
+  const plan = makePlan(repo, { flow: 'messages', commitMessage: 'x', since });
+  applyPlan(plan);
+  const connection: PushTransport = { refs: () => `${head}\trefs/heads/main`, push: () => undefined };
+  const push = preparePush(plan, 'origin', connection);
+  const newHead = repo.text(['rev-parse', 'HEAD']);
+  // A parallel fetch records another server value after the plan snapshot.
+  const fetched = repo.text(['rev-parse', 'HEAD~1']);
+  repo.git(['update-ref', 'refs/remotes/origin/main', fetched]);
+  assert.equal(updateTrackingRef(push), undefined);
+  assert.equal(repo.text(['rev-parse', 'refs/remotes/origin/main']), fetched);
+  // The expected result is already present: success without a write.
+  repo.git(['update-ref', 'refs/remotes/origin/main', newHead]);
+  assert.equal(updateTrackingRef(push), 'refs/remotes/origin/main');
+  // The snapshot value is present: update it.
+  repo.git(['update-ref', 'refs/remotes/origin/main', head]);
+  assert.equal(updateTrackingRef(push), 'refs/remotes/origin/main');
+  assert.equal(repo.text(['rev-parse', 'refs/remotes/origin/main']), newHead);
 });
 
 test('a tag for a separate decision with an unknown server value is never sent and does not block the branch', (t) => {
@@ -354,7 +469,10 @@ test.skipIf(process.platform === 'win32')('--force-push stops before the rewrite
   repo.git(['remote', 'add', 'origin', 'https://example.org/public/repo.git']);
   repo.git(['remote', 'add', 'backup', 'https://example.org/private/repo.git']);
   repo.git(['update-ref', 'refs/remotes/backup/main', repo.text(['rev-parse', 'HEAD'])]);
-  const result = run(repo, [...messages, '--no-backup', '--force-push']);
+  const ambiguous = run(repo, [...messages, '--no-backup', '--force-push']);
+  assert.equal(ambiguous.status, 1);
+  assert.match(ambiguous.output, /--remote NAME/);
+  const result = run(repo, [...messages, '--no-backup', '--force-push', '--remote', 'origin']);
   assert.equal(result.status, 1);
   assert.match(result.output, /refs\/remotes\/origin\/main/);
   assert.equal(repo.text(['log', '-1', '--format=%s']), 'today two');

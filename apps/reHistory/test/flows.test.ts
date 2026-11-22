@@ -382,15 +382,17 @@ test.skipIf(process.platform === 'win32')('an interactive run with a period asks
   assert.deepEqual(commits(repo), before);
 });
 
-test.skipIf(process.platform === 'win32')('an interactive run with --force-push shows the push target before the confirmation', (t) => {
+test.skipIf(process.platform === 'win32')('an interactive run with --force-push checks the push target before the confirmation', (t) => {
   const root = temp(t);
   const repo = fixture(t);
+  // Two remotes without --remote: the check stops the run before the confirmation and without network access.
   repo.git(['remote', 'add', 'origin', 'https://example.org/owner/repo.git']);
+  repo.git(['remote', 'add', 'fork', 'https://example.org/owner/fork.git']);
   repo.git(['update-ref', 'refs/remotes/origin/main', repo.text(['rev-parse', 'HEAD'])]);
   const before = commits(repo);
-  const run = runCli(root, repo, { 'Что переписать?': 2, 'Создать бекап?': false, 'Новое сообщение': 'New', 'Применить изменения и сделать force push?': false }, ['--force-push']);
-  assert.equal(run.status, 0, run.output);
-  assert.deepEqual(run.asked, ['Что переписать?', 'Создать бекап?', 'Новое сообщение', 'Применить изменения и сделать force push?']);
-  assert.match(run.output, /После переписывания: force push → origin · https:\/\/example\.org\/owner\/repo\.git/);
+  const run = runCli(root, repo, { 'Что переписать?': 2, 'Создать бекап?': false, 'Новое сообщение': 'New' }, ['--force-push']);
+  assert.equal(run.status, 1, run.output);
+  assert.deepEqual(run.asked, ['Что переписать?', 'Создать бекап?', 'Новое сообщение']);
+  assert.match(run.output, /Remote больше одного/);
   assert.deepEqual(commits(repo), before);
 });

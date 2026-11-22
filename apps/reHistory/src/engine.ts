@@ -13,10 +13,11 @@ export const flows = ['dates', 'authors', 'messages'] as const;
 export type Flow = (typeof flows)[number];
 /** Each run changes one kind of metadata. Other commit and tag data stay unchanged. */
 /**
- * `since` limits the metadata change to commits with a committer date at or after this Unix time.
+ * `since` and `until` limit the metadata change to commits with a committer date in this closed range of Unix times.
  * Descendants of changed commits get new parent IDs, but keep their metadata.
+ * With a period, a commit or tag whose data stays the same keeps its original object and signature.
  */
-type Common = { backupBranch?: string | undefined; since?: number | undefined };
+type Common = { backupBranch?: string | undefined; since?: number | undefined; until?: number | undefined };
 export type Options =
   | ({ flow: 'dates'; start: number; interval: number; tagPolicy?: 'normalize' | 'preserve' | undefined } & Common)
   | ({ flow: 'authors'; identity: Identity; tagIdentity?: Identity | undefined } & Common)
@@ -312,7 +313,7 @@ function person(header: Buffer, change: { timestamp?: number | undefined; identi
 }
 
 function exactOptionKeys(options: Record<string, unknown>, keys: string[]): void {
-  const allowed = new Set(['flow', 'backupBranch', 'since', ...keys]);
+  const allowed = new Set(['flow', 'backupBranch', 'since', 'until', ...keys]);
   const extra = Object.keys(options).filter((key) => !allowed.has(key) && options[key] !== undefined);
   if (extra.length) throw new Error(`Параметры не относятся к выбранному флоу: ${extra.join(', ')}.`);
 }
@@ -323,6 +324,8 @@ export function validateOptions(options: Options): void {
   if (options.backupBranch !== undefined && typeof options.backupBranch !== 'string') throw new Error('Некорректное имя бекап-ветки.');
   if (options.since !== undefined && (!Number.isSafeInteger(options.since) || options.since < 0 || options.since > 253402300799))
     throw new Error('Начало периода должно находиться между 1970 и 9999 годом.');
+  if (options.until !== undefined && (options.since === undefined || !Number.isSafeInteger(options.until) || options.until < options.since || options.until > 253402300799))
+    throw new Error('Конец периода должен быть не раньше его начала и не позже 9999 года.');
   if (options.flow === 'dates') {
     exactOptionKeys(record, ['start', 'interval', 'tagPolicy']);
     if (!Number.isSafeInteger(options.interval) || options.interval < 1 || options.interval > 31536000) throw new Error('Интервал: целое число от 1 до 31536000 секунд.');
@@ -463,7 +466,7 @@ export function makePlan(repo: Repository, options: Options): Plan {
     .split('\n')
     .filter(Boolean);
   if (!commits.length) throw new Error('Нет коммитов для переписывания.');
-  const since = options.since;
+  const { since, until } = options;
   const dateOf = (index: number | undefined): number | undefined => (dates && index !== undefined ? dates.start + index * dates.interval : undefined);
   const format = objectFormat(repo);
   const mapping = new Map<string, string>();
@@ -491,7 +494,8 @@ export function makePlan(repo: Repository, options: Options): Plan {
       const committer = headers.filter((h) => field(h) === 'committer');
       const time = committer.length === 1 ? /^committer .* (-?\d+) [+-]\d{4}$/.exec(committer[0]?.toString('latin1') ?? '')?.[1] : undefined;
       if (time === undefined || !Number.isSafeInteger(Number(time))) throw new Error(`Коммит ${old}: некорректная дата коммитера. Период нельзя определить.`);
-      const inPeriod = Number(time) >= since;
+      // A future committer date is outside the period. Such a commit changes only as a descendant of a changed commit.
+      const inPeriod = Number(time) >= since && (until === undefined || Number(time) <= until);
       const parentsChanged = headers.some((h) => field(h) === 'parent' && mapping.get(h.subarray(7).toString('ascii')) !== h.subarray(7).toString('ascii'));
       if (!inPeriod && !parentsChanged) {
         // Keep the original object. Its ID, signature and metadata stay unchanged.
@@ -503,12 +507,15 @@ export function makePlan(repo: Repository, options: Options): Plan {
     } else changed.set(old, changed.size);
     const index = changed.get(old);
     const updated: Buffer[] = [];
+    const unsigned: Buffer[] = [];
+    let signatures = 0;
     for (const h of headers) {
       const key = field(h);
       if (['gpgsig', 'gpgsig-sha256', 'mergetag'].includes(key)) {
-        stripped++;
+        signatures++;
         continue;
       }
+      unsigned.push(h);
       if (index !== undefined && replacementMessage !== undefined && key === 'encoding') continue;
       if (key === 'tree') trees.add(h.subarray(5).toString('ascii'));
       if (key === 'parent') {
@@ -519,7 +526,14 @@ export function makePlan(repo: Repository, options: Options): Plan {
         updated.push(person(h, { timestamp: dateOf(index), identity: authors?.identity }));
       } else updated.push(h);
     }
-    add(old, 'commit', assemble(updated, index !== undefined && replacementMessage !== undefined ? replacementMessage : message));
+    const data = assemble(updated, index !== undefined && replacementMessage !== undefined ? replacementMessage : message);
+    // A repeated run of a period can request the data that a commit already has. Keep the original object and its signature then.
+    if (since !== undefined && data.equals(assemble(unsigned, message))) {
+      mapping.set(old, old);
+      continue;
+    }
+    stripped += signatures;
+    add(old, 'commit', data);
   }
   if (dates && changed.size) {
     const last = dates.start + (changed.size - 1) * dates.interval;
@@ -556,13 +570,18 @@ export function makePlan(repo: Repository, options: Options): Plan {
       mapping.set(old, old);
       return old;
     }
-    const signature = stripTagSignature(message);
-    if (signature.stripped) stripped++;
     const updated = headers.map((h) => {
       if (field(h) === 'object') return Buffer.from(`object ${rewritten}`);
       if (field(h) !== 'tagger' || position === undefined) return h;
       return person(h, { timestamp: dates && dates.tagPolicy !== 'preserve' ? dateOf(position) : undefined, identity: authors?.tagIdentity });
     });
+    // With a period, a tag with the same target and tagger keeps its original object and signature.
+    if (since !== undefined && updated.every((h, i) => h.equals(headers[i] ?? Buffer.alloc(0)))) {
+      mapping.set(old, old);
+      return old;
+    }
+    const signature = stripTagSignature(message);
+    if (signature.stripped) stripped++;
     return add(old, 'tag', assemble(updated, signature.message));
   }
   for (const ref of selected) if (!mapping.has(ref.oid)) rewriteTag(ref.oid);
