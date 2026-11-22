@@ -10,7 +10,19 @@ import { applyPlan, defaultBackupBranch, type Flow, flows, makePlan, mapped, nor
 import { exportDestination, exportPlan, verifyExport } from '@reHistory/export';
 import { type Period, periodLabels, periods, periodStart } from '@reHistory/period';
 import { PromptCancelled, TerminalPrompts, terminalStyle } from '@reHistory/prompts';
-import { automaticPushRemote, executePush, preparePush, type PushPlan, pushRemotes, type RemoteCopy, remoteCopy, sharedTags, updateTrackingRef } from '@reHistory/remote';
+import {
+  automaticPushRemote,
+  checkServerHead,
+  executePush,
+  preparePush,
+  type PushPlan,
+  pushRemotes,
+  type PushTarget,
+  type RemoteCopy,
+  remoteCopy,
+  sharedTags,
+  updateTrackingRef
+} from '@reHistory/remote';
 
 // Git metadata and errors can contain terminal control characters.
 function safe(value: unknown): string {
@@ -37,11 +49,13 @@ Node.js 24.12+, Git 2.39+. Запуск: node /путь/toolchain/apps/reHistory
 
 Период (только переписывание на месте; дата коммитера):
   --day | --week | --month | --year
-                       Последние 24 часа, 7 дней, календарный месяц или год.
-                       Остальные коммиты не меняются; потомки получают новых родителей.
+                       Последние 24 часа, 7 дней, календарный месяц или год до запуска.
+                       Будущие даты в период не входят. Остальные коммиты не меняются;
+                       потомки получают новых родителей.
   --force-push         После переписывания push ветки и её тегов без вопросов,
                        с точными force-with-lease. Общие и новые теги не отправляются.
-  --remote NAME        Remote для --force-push (по умолчанию upstream, origin или единственный).
+                       До записи проверяет ветку на сервере; с --dry-run только проверяет.
+  --remote NAME        Remote для --force-push. Обязателен, если remote больше одного.
 
 Без вопросов, для запуска по расписанию (требует период):
   --flow dates|authors|messages
@@ -129,7 +143,7 @@ export type Arguments = {
   period: Period | undefined;
   /** Push the branch and its tags with exact force-with-lease after the rewrite, without questions. */
   forcePush: boolean;
-  /** Remote for --force-push. Without it, the branch upstream remote or origin is used. */
+  /** Remote for --force-push. Required when there is more than one remote. */
   pushRemote: string | undefined;
   /** A flow selected with --flow. The run is then not interactive and uses only command-line values. */
   flow: Flow | undefined;
@@ -201,7 +215,6 @@ export function parseArguments(args: string[]): Arguments {
   if ((demo || verify) && explicitRepo) throw new Error('--repo не используется вместе с demo/проверкой экспорта.');
   const special = audit || Boolean(destination) || Boolean(verify) || demo;
   if (special && (period || forcePush || flow)) throw new Error('Период, --flow и --force-push допустимы только для переписывания на месте.');
-  if (forcePush && dryRun) throw new Error('--force-push несовместим с --dry-run.');
   if (pushRemote !== undefined && !forcePush) throw new Error('--remote требует --force-push.');
   if (flow) {
     // An unattended run must stay small: it changes only commits of a selected period.
@@ -279,14 +292,18 @@ async function main(): Promise<void> {
     if (!report.complete) process.exitCode = 2;
     return;
   }
-  const since = mode.period ? periodStart(mode.period) : undefined;
+  // Fix the run time once. The period ends at this time, so future committer dates are outside it.
+  const now = new Date();
+  const since = mode.period ? periodStart(mode.period, now) : undefined;
+  const until = since === undefined ? undefined : Math.floor(now.getTime() / 1000);
   const unattended = mode.flow !== undefined;
   if (!unattended && (!stdin.isTTY || !stdout.isTTY)) throw new Error('Нужен интерактивный терминал (TTY). Для запуска по расписанию используйте --flow с периодом.');
   const state = repo.inspect();
   if (mode.destination) exportDestination(repo, mode.destination);
   print(`reHistory · ${mode.destination ? 'экспорт' : 'переписывание'}${unattended ? ' · без вопросов' : ''}${mode.dryRun ? ' · dry-run' : ''}`, 'accent');
   print(`${repo.path} · ${state.head.slice(11)}`, 'muted');
-  if (mode.period && since !== undefined) print(`Период: ${periodLabels[mode.period]} · коммиты с датой коммитера от ${new Date(since * 1000).toISOString()}`, 'muted');
+  if (mode.period && since !== undefined && until !== undefined)
+    print(`Период: ${periodLabels[mode.period]} · дата коммитера ${new Date(since * 1000).toISOString()} — ${new Date(until * 1000).toISOString()}`, 'muted');
   if (state.refs.some((r) => r.name.startsWith('refs/codex/'))) print('refs/codex/* сохраняют старую историю; в экспорт не входят.', 'warning');
   print('Не запускайте другие операции Git до завершения.', 'warning');
   const prompts = unattended ? undefined : new TerminalPrompts();
@@ -330,18 +347,24 @@ async function main(): Promise<void> {
    * --force-push: send the branch and the tags that need no separate decision, with exact force-with-lease.
    * Tags that are shared with other branches, new on the server or unverified are never sent automatically.
    */
-  function forcePush(plan: Plan, target: { remote: string; url: string }): void {
+  function forcePush(plan: Plan, target: PushTarget): void {
+    let push: PushPlan;
     try {
-      // The remote was selected before the rewrite. Its URL must stay the same.
-      if (automaticPushRemote(repo, plan.head, plan.headOid, target.remote).url !== target.url) throw new Error('URL remote изменился после проверки.');
-      const push = preparePush(plan, target.remote);
-      // Defense in depth: never create a server branch without questions.
-      if (!push.refs.find((ref) => ref.local === plan.head)?.expected) throw new Error('Ветки нет на сервере.');
+      // Use the URL fixed before the rewrite. The server branch must still have the initial head.
+      push = preparePush(plan, target.remote, undefined, target);
       showPush(push);
       if (push.optional.length) print(`Теги, которые требуют отдельного решения, не отправляются: ${push.optional.length}.`, 'warning');
-      finishPush(push, false);
     } catch (error) {
       throw new Error(`Локальная история уже переписана. Push не выполнен; проверьте remote и отправьте ветку вручную.\n${error instanceof Error ? error.message : String(error)}`, { cause: error });
+    }
+    try {
+      finishPush(push, false);
+    } catch (error) {
+      // The server can accept an atomic push before its response is lost. Do not say that nothing was sent.
+      throw new Error(
+        `Локальная история уже переписана. Результат push неизвестен: сверьте OID ветки и тегов на сервере (git ls-remote) перед повтором.\n${error instanceof Error ? error.message : String(error)}`,
+        { cause: error }
+      );
     }
   }
   async function offerPush(plan: Plan): Promise<void> {
@@ -504,7 +527,7 @@ async function main(): Promise<void> {
       } else print(`Экспорт → ${mode.destination}`, 'muted');
       flowOptions = flow === 'dates' ? await askDates() : flow === 'authors' ? await askAuthors() : await askMessages();
     }
-    const options: Options = { ...flowOptions, backupBranch, since };
+    const options: Options = { ...flowOptions, backupBranch, since, until };
     print('Готовлю план…');
     const plan = makePlan(repo, options);
     print('\nПлан', 'accent');
@@ -525,13 +548,19 @@ async function main(): Promise<void> {
       print(since === undefined ? 'Изменений нет: история уже соответствует параметрам.' : 'Изменений нет: в периоде нет коммитов для изменения.', 'success');
       return;
     }
+    // Check the --force-push target before the rewrite and the confirmation, also in a dry-run.
+    // A missing, ambiguous or changed server branch must not leave an unpushed rewrite.
+    let pushTarget: PushTarget | undefined;
+    if (mode.forcePush && !mode.destination) {
+      pushTarget = automaticPushRemote(repo, plan.head, plan.headOid, mode.pushRemote);
+      print(`Force push → ${pushTarget.remote} · ${pushTarget.url}`, 'warning');
+      checkServerHead(repo, pushTarget, plan.head, plan.headOid);
+      print('Ветка на сервере совпадает с исходной локальной веткой.', 'muted');
+    }
     if (mode.dryRun) {
       print('Dry-run завершён. Без изменений.', 'success');
       return;
     }
-    // Check the --force-push remote before the rewrite and the confirmation: a missing or ambiguous remote must not leave an unpushed rewrite.
-    const pushTarget = mode.forcePush && !mode.destination ? automaticPushRemote(repo, plan.head, plan.headOid, mode.pushRemote) : undefined;
-    if (pushTarget) print(`После переписывания: force push → ${pushTarget.remote} · ${pushTarget.url}`, 'warning');
     if (unattended) {
       // Command-line flags are the consent of an unattended run. Signature removal needs its own flag.
       if (plan.stripped && !mode.stripSignatures) throw new Error('Нужно удалить подписи коммитов или тегов. История не изменена. Добавьте --strip-signatures, чтобы разрешить это.');

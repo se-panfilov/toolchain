@@ -144,12 +144,15 @@ Remote-tracking refs can be out of date after a server change.
 
 ## Period and unattended run controls
 
-A period limits metadata changes to commits with a committer date at or after the period start.
-The engine validates the period start as a Unix time between 1970 and 9999.
+A period limits metadata changes to commits with a committer date from the period start to the start time of the run.
+The engine validates both limits as Unix times between 1970 and 9999. The end must not be before the start.
+A commit with a future committer date is not in the period.
 A commit without exactly one valid committer header stops planning.
 Commits outside the period keep their objects, signatures, and metadata.
 A reparented commit keeps its metadata, but loses its signature, because its object ID changes.
-A tag changes only when its target changes. Unchanged tags are not part of the shared-tag check or the push.
+A tag changes only when its target or tagger changes. Unchanged tags are not part of the shared-tag check or the push.
+With a period, a commit or tag in the period that already has the requested data keeps its object and signature.
+The plan then does not count a signature removal for it.
 An export rejects a period, because the export manifest describes a complete normalization.
 
 The `--flow` option starts an unattended run without questions and without a TTY.
@@ -165,21 +168,26 @@ An unattended run never assumes the permissions of interactive questions:
 | `Применить изменения?`                   | The command with `--flow` is the permission.                                 |
 | `Сделать push?` and later push questions | No push without `--force-push`. Tags for a separate decision are never sent. |
 
-The `--force-push` option selects the remote before the rewrite and before the interactive confirmation, without network access.
-The order is `--remote`, `branch.<name>.pushRemote`, `remote.pushDefault`, `branch.<name>.remote`, `origin`, and the only remote.
-`refs/remotes/<remote>/<branch>` must point to the current commit. Otherwise the run stops before writes.
-Thus an automatic push never makes a new server branch, and the lease check after the rewrite does not fail because of a local state that is out of date.
-After `preparePush`, a missing server branch stops the push again.
-An ambiguous or missing remote, an unsupported URL, and `http.*` or URL substitution settings stop the run before writes.
-Before the push, the program reads the remote URL again. A changed URL stops the push.
+The `--force-push` option selects the remote before the rewrite and before the interactive confirmation.
+With more than one remote, `--remote` is necessary. reHistory ignores global and system Git config, so it cannot follow a global `remote.pushDefault`.
+`refs/remotes/<remote>/<branch>` must point to the current commit.
+The program then fixes the push URL and reads the server branch through it. The server branch must point to the current commit.
+These checks occur before writes, also in a dry-run with `--force-push`. A dry-run does not push.
+An automatic push accepts only the initial head as the server branch value. An older commit of the plan is not accepted, because it can be a deliberate rollback.
+The interactive push keeps its rule: an old commit of the rewritten history is an accepted lease value after an explicit confirmation.
+Before the server read and before the push, a changed push URL stops the operation.
+An unsupported URL and `http.*` or URL substitution settings stop the run before writes.
 The push uses the same checks, leases, and atomic transaction as the interactive push.
 A push failure leaves the local rewrite. The next run stops at the remote copy check until a push or fetch.
+An error before the push gives `Push не выполнен`. An error during the push gives `Результат push неизвестен`.
+The remote-tracking ref update compares with the plan snapshot. A newer value from a parallel fetch stays.
 
 Risks of regular runs:
 
 - A force push replaces the server branch. Other clones and open pull requests then have a different history.
 - The remote copy check sees only local remote-tracking refs. A scheduler does not fetch.
-- Commits with an incorrect future committer date stay in each later period.
+- A commit with an incorrect future committer date enters a later period when that date is in the past.
+- A server change between the last server read and the push stops the atomic push. The program does not fix the result automatically.
 - Each run with `--backup-branch` keeps old objects. Old backup branches use disk space.
 - SSH configuration and keys of the scheduler user are part of the trust boundary.
 
@@ -408,6 +416,24 @@ Large histories, disk limits, and Git memory use can cause an operation to stop.
 Temporary packs use private directories outside the source repository.
 A normal return or handled error removes them.
 An abrupt process termination can leave those private files.
+
+## Period and automatic push security audit: second review
+
+A second independent review examined tx-rehistory 3.1.0 after the merge. It found one high, four medium, and two low findings.
+
+| ID  | Severity | Finding                                                                                                                | Result                                                                                    |
+| --- | -------- | ---------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| R1  | High     | An automatic push accepted any old commit of the plan as the server branch value. It could undo a deliberate rollback. | Fixed. The server branch must be the initial head before the rewrite and before the push. |
+| R2  | Medium   | The automatic remote selection used only local config. Git can select a different remote from global config.           | Fixed. With more than one remote, `--remote` is necessary.                                |
+| R3  | Medium   | A repeated run removed signatures of commits and tags that already had the requested data.                             | Fixed. With a period, such objects stay unchanged.                                        |
+| R4  | Medium   | A period included commits with future committer dates.                                                                 | Fixed. The period ends at the start time of the run.                                      |
+| R5  | Medium   | The automatic push read the push URL again after the check. A parallel config change could change the destination.     | Fixed. The URL is fixed before the rewrite and compared before each server access.        |
+| R6  | Low      | The remote-tracking ref update could replace the value of a parallel fetch.                                            | Fixed. The update compares with the plan snapshot.                                        |
+| R7  | Low      | After an error during the push, the program reported that the push did not occur.                                      | Fixed. The message says that the result is unknown.                                       |
+
+The review also showed that a dry-run could not check the push target. A dry-run with `--force-push` now does the server read without writes.
+Regression tests are in `test/period.test.ts` and `test/flows.test.ts`. They use a fake transport.
+Not examined: a real server push, a lost server response, and a parallel config change on a real system.
 
 ## Period and automatic push security audit
 

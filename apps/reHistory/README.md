@@ -706,14 +706,19 @@ Use it for regular runs, for example from a scheduler.
 | `--month` | The committer date is at or after the same local time one calendar month ago. |
 | `--year`  | The committer date is at or after the same local time one calendar year ago.  |
 
+Each period ends at the start time of the run. The program reads the current time one time per run.
+
 For `--month` and `--year`, a missing day changes to the last day of the month.
 If the local time does not exist on the start day because of a daylight saving change, the start moves forward by the time change.
 For example, the month before 31 March starts on the last day of February.
-A commit with a future committer date is also in the period.
+A commit with a committer date after the start time of the run is not in the period.
+It changes only when it follows a changed commit. Then it is a reparented commit.
 The program uses Node.js date functions and has no date library dependency.
 
 The flow changes only the metadata of commits in the period.
 Other commits keep their object IDs, signatures, and metadata.
+A commit or tag in the period that already has the requested data keeps its object and its signature.
+Thus a repeated run does not remove signatures without a change.
 A commit outside the period that follows a changed commit is a reparented commit.
 It keeps its metadata, but it gets a new parent link and a new object ID.
 Its signature is removed, because the signature becomes incorrect.
@@ -775,7 +780,7 @@ node /path/to/toolchain/apps/reHistory/dist/src/cli.js --repo /path/to/project \
 ```
 
 Do a check with `--dry-run` before you add the command to a scheduler.
-The `--dry-run` option does not work together with `--force-push`.
+With `--force-push`, the dry-run also selects the remote and reads the server branch. It does not write or push.
 
 ### Automatic push
 
@@ -784,16 +789,22 @@ It works in an interactive run and in an unattended run.
 The program does not ask the push questions.
 In an interactive run, the plan shows the push target before the question `Применить изменения и сделать force push?`.
 
-1. Before the rewrite, the program selects the remote without network access. It uses the first available item:
-   - The `--remote NAME` option.
-   - `branch.<name>.pushRemote`, then `remote.pushDefault`, then `branch.<name>.remote`, as `git push` does.
-   - `origin`, then the only remote.
-2. The remote-tracking ref `refs/remotes/<remote>/<branch>` must point to the current commit of the branch. Otherwise the run stops before the rewrite.
-3. After the rewrite, the program does the same checks as the optional push procedure, with the same leases.
-4. The program sends the branch and its tags that need no separate decision.
+1. Before the rewrite, the program selects the remote without network access.
+   - With one remote, the program uses it.
+   - With more than one remote, `--remote NAME` is necessary.
+2. The remote-tracking ref `refs/remotes/<remote>/<branch>` must point to the current commit of the branch.
+3. The program fixes the push URL of the remote. It reads the server branch through this URL.
+   The server branch must point to the current commit of the branch.
+4. After the rewrite, the program reads the server refs again through the same URL.
+   The server branch must still point to the initial commit.
+5. The program sends the branch and its tags that need no separate decision. The lease of the branch is the initial commit.
 
-The check in step 2 prevents a new server branch and a push to a server branch that has unknown commits.
-Run `git push` or `git fetch` for the remote before a scheduled run if this check stops the run.
+The program stops before the rewrite if a check in steps 1 to 3 fails.
+These checks prevent a new server branch, a push to a different remote, and a push over server changes.
+For example, a maintainer can move the server branch back after your last fetch. The run then stops and does not push the removed commits again.
+reHistory ignores global and system Git config. Thus it does not use `remote.pushDefault` or `branch.<name>.pushRemote` from there.
+Run `git fetch` for the remote, examine the history, and start the run again if a check stops the run.
+A change of the remote URL after step 3 stops the push.
 
 Tags that need a separate decision are not sent.
 The program shows their number. They stay rewritten in the local repository.
@@ -804,7 +815,15 @@ This occurs when an earlier run did not send the tag.
 If the push fails, the local rewrite stays.
 The program gives the exit code `1`.
 The next run stops, because the rewritten commits are unpushed commits.
-Examine the server, then push the branch manually or with an interactive run.
+
+- `Push не выполнен` means that the program did not start to send data.
+- `Результат push неизвестен` means that the error occurred during the push. The server can have accepted the push before the response was lost.
+
+In both cases, compare the server refs with `git ls-remote` before another attempt.
+Then push the branch manually or with an interactive run.
+
+After a successful push, the program updates the remote-tracking branch only from the value of the plan.
+If a parallel fetch recorded a different value, the program keeps that value and shows a warning.
 
 ## Exit codes
 
