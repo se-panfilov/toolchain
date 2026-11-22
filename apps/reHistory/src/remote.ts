@@ -77,14 +77,19 @@ function rejectNetworkConfiguration(config: Configuration): void {
   if (keys.some((key) => /^url\.[\s\S]*\.(?:insteadof|pushinsteadof)$/i.test(key))) throw new Error('URL-подстановки Git не поддерживаются для push. Выполните отправку вручную.');
 }
 
-export function pushRemotes(repo: Repository, head: string): { names: string[]; initial: number } {
+/**
+ * `initial` is the default choice of a question. `preferred` is set only for a clear choice without a question:
+ * the upstream remote of the branch, or origin when the branch has no upstream remote.
+ */
+export function pushRemotes(repo: Repository, head: string): { names: string[]; initial: number; preferred: string | undefined } {
   const names = repo.text(['remote']).split('\n').filter(Boolean);
   for (const name of names) repo.git(['check-ref-format', `refs/remotes/${name}/probe`]);
-  const preferred = configuration(repo)
+  const upstream = configuration(repo)
     .values.get(`branch.${head.slice(11)}.remote`)
     ?.at(-1);
-  const initial = Math.max(0, names.indexOf(preferred ?? 'origin'));
-  return { names, initial };
+  const initial = Math.max(0, names.indexOf(upstream ?? 'origin'));
+  const candidate = upstream ?? 'origin';
+  return { names, initial, preferred: names.includes(candidate) ? candidate : undefined };
 }
 
 export type PushTransport = {
@@ -139,10 +144,32 @@ export function sharedTags(rewrite: Plan, push?: { remote: string; destination: 
   if (!tips.length) return shared;
   const reachable = new Set(repo.text(['rev-list', '--stdin'], tips.join('\n') + '\n').split('\n'));
   for (const ref of rewrite.selected) {
-    if (!ref.name.startsWith('refs/tags/')) continue;
+    // A tag outside the period keeps its object and does not move away from other branches.
+    if (!ref.name.startsWith('refs/tags/') || rewrite.mapping.get(ref.oid) === ref.oid) continue;
     if (reachable.has(repo.text(['rev-parse', '--verify', `${ref.oid}^{commit}`]))) shared.add(ref.name);
   }
   return shared;
+}
+
+function pushURL(repo: Repository, config: Configuration, remote: string): string {
+  // Explicit destinations must not be silently redirected by a second URL rewrite.
+  rejectNetworkConfiguration(config);
+  const urls = repo.text(['remote', 'get-url', '--push', '--all', '--', remote]).split('\n').filter(Boolean);
+  if (urls.length !== 1) throw new Error('Для push нужен remote с одним URL отправки.');
+  return validateRemoteURL(urls[0] ?? '');
+}
+
+/**
+ * Select the remote for an automatic push before any local write, without network access.
+ * An explicit name wins. Otherwise use the upstream remote of the branch, origin, or the only remote.
+ */
+export function automaticPushRemote(repo: Repository, head: string, explicit?: string): { remote: string; url: string } {
+  const remotes = pushRemotes(repo, head);
+  if (!remotes.names.length) throw new Error('Remote не настроен.');
+  const remote = explicit ?? remotes.preferred ?? (remotes.names.length === 1 ? remotes.names[0] : undefined);
+  if (!remote) throw new Error('Не удалось однозначно выбрать remote. Укажите --remote NAME.');
+  if (!remotes.names.includes(remote)) throw new Error(`Remote не найден: ${remote}.`);
+  return { remote, url: pushURL(repo, configuration(repo), remote) };
 }
 
 /** Read the selected server only after the user opts in. Never fetch. */
@@ -151,11 +178,7 @@ export function preparePush(rewrite: Plan, remote: string, connection: PushTrans
   checkLocal(rewrite);
   if (!pushRemotes(repo, rewrite.head).names.includes(remote)) throw new Error('Remote не найден. Push отменён.');
   const config = configuration(repo);
-  // Explicit destinations must not be silently redirected by a second URL rewrite.
-  rejectNetworkConfiguration(config);
-  const urls = repo.text(['remote', 'get-url', '--push', '--all', '--', remote]).split('\n').filter(Boolean);
-  if (urls.length !== 1) throw new Error('Для push нужен remote с одним URL отправки.');
-  const url = validateRemoteURL(urls[0] ?? '');
+  const url = pushURL(repo, config, remote);
   const branch = `branch.${rewrite.head.slice(11)}`;
   const merges = config.values.get(`${branch}.merge`) ?? [];
   if (config.values.get(`${branch}.remote`)?.at(-1) === remote && merges.length > 1) throw new Error('У ветки несколько upstream-ссылок. Push отменён.');
@@ -187,6 +210,8 @@ export function preparePush(rewrite: Plan, remote: string, connection: PushTrans
     const target = ref.name === rewrite.head ? destination : ref.name;
     const oid = mapped(rewrite.mapping, ref.oid);
     const expected = server.get(target) ?? '';
+    // Outside the period, a tag keeps its object. Do not publish or move it. The branch is always checked.
+    if (ref.name !== rewrite.head && oid === ref.oid) continue;
     if (expected && expected !== oid && (ref.name === rewrite.head ? !oldCommits.has(expected) : expected !== ref.oid)) {
       throw new Error(`На сервере есть неизвестные изменения: ${target}. Push отменён.`);
     }

@@ -203,6 +203,7 @@ The table does not change the approved general meanings in the STE dictionary.
 | parent link             | An object ID in a commit parent header.                                              |
 | partial clone           | A repository that can require objects from a remote server.                          |
 | PATH                    | The environment variable that selects executable search directories.                 |
+| period                  | The time range of commits that a run can change, measured by the committer date.     |
 | PID                     | The operating system identifier of a process.                                        |
 | pipe                    | A software channel between program input and output.                                 |
 | placeholder             | Example text that the user must replace with an correct value.                       |
@@ -215,6 +216,7 @@ The table does not change the approved general meanings in the STE dictionary.
 | radio button            | A terminal control that shows the one selected answer of a choice question.          |
 | raw mode                | A terminal state that gives individual keys directly to the program.                 |
 | rebase                  | A Git operation that makes new commits on another base.                              |
+| reparented commit       | A commit outside the period that keeps its metadata but gets a new parent link.      |
 | recovery transaction    | A ref transaction that restores initial ref values.                                  |
 | recovery file           | The JSON file with initial and specified new refs.                                   |
 | ref                     | A Git reference that identifies an object or another ref.                            |
@@ -226,6 +228,7 @@ The table does not change the approved general meanings in the STE dictionary.
 | remote-tracking ref     | A local ref that records a remote branch state.                                      |
 | remote copy             | A remote-tracking ref that contains all commits of the current branch.               |
 | unpushed commit         | A commit of the current branch that no remote-tracking ref contains.                 |
+| unattended run          | A run without questions that gets all values from command options.                   |
 | repository              | A Git object store, refs, and related config.                                        |
 | revert                  | A Git operation that makes a commit to reverse another change.                       |
 | runtime                 | The environment in which a program operates.                                         |

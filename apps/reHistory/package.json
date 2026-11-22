@@ -1,6 +1,6 @@
 {
   "name": "tx-rehistory",
-  "version": "3.0.6",
+  "version": "3.1.0",
   "description": "Interactive rewrite of Git commit dates, authors or messages, with audit and verifiable export",
   "private": false,
   "type": "module",
@@ -19,6 +19,7 @@
     "dist/src/demo.js",
     "dist/src/prompts.js",
     "dist/src/remote.js",
+    "dist/src/period.js",
     "README.md",
     "SECURITY.md",
     "TERMINOLOGY.md",

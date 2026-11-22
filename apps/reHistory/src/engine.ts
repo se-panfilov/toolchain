@@ -12,10 +12,15 @@ export type Identity = { name: string; email: string };
 export const flows = ['dates', 'authors', 'messages'] as const;
 export type Flow = (typeof flows)[number];
 /** Each run changes one kind of metadata. Other commit and tag data stay unchanged. */
+/**
+ * `since` limits the metadata change to commits with a committer date at or after this Unix time.
+ * Descendants of changed commits get new parent IDs, but keep their metadata.
+ */
+type Common = { backupBranch?: string | undefined; since?: number | undefined };
 export type Options =
-  | { flow: 'dates'; start: number; interval: number; tagPolicy?: 'normalize' | 'preserve' | undefined; backupBranch?: string | undefined }
-  | { flow: 'authors'; identity: Identity; tagIdentity?: Identity | undefined; backupBranch?: string | undefined }
-  | { flow: 'messages'; commitMessage: string; backupBranch?: string | undefined };
+  | ({ flow: 'dates'; start: number; interval: number; tagPolicy?: 'normalize' | 'preserve' | undefined } & Common)
+  | ({ flow: 'authors'; identity: Identity; tagIdentity?: Identity | undefined } & Common)
+  | ({ flow: 'messages'; commitMessage: string } & Common);
 export type ObjectData = { type: 'commit' | 'tag'; data: Buffer; oid: string };
 export type Plan = {
   repo: Repository;
@@ -24,7 +29,10 @@ export type Plan = {
   selected: Ref[];
   objects: ObjectData[];
   mapping: Map<string, string>;
+  /** Commits with new metadata. Without `since`, this is every commit of the history. */
   commits: number;
+  /** Commits that keep their metadata but get new parent IDs. */
+  reparented: number;
   stripped: number;
   head: string;
   headOid: string;
@@ -304,7 +312,7 @@ function person(header: Buffer, change: { timestamp?: number | undefined; identi
 }
 
 function exactOptionKeys(options: Record<string, unknown>, keys: string[]): void {
-  const allowed = new Set(['flow', 'backupBranch', ...keys]);
+  const allowed = new Set(['flow', 'backupBranch', 'since', ...keys]);
   const extra = Object.keys(options).filter((key) => !allowed.has(key) && options[key] !== undefined);
   if (extra.length) throw new Error(`Параметры не относятся к выбранному флоу: ${extra.join(', ')}.`);
 }
@@ -313,6 +321,8 @@ export function validateOptions(options: Options): void {
   if (!options || typeof options !== 'object') throw new Error('Не выбран флоу переписывания.');
   const record = options as Record<string, unknown>;
   if (options.backupBranch !== undefined && typeof options.backupBranch !== 'string') throw new Error('Некорректное имя бекап-ветки.');
+  if (options.since !== undefined && (!Number.isSafeInteger(options.since) || options.since < 0 || options.since > 253402300799))
+    throw new Error('Начало периода должно находиться между 1970 и 9999 годом.');
   if (options.flow === 'dates') {
     exactOptionKeys(record, ['start', 'interval', 'tagPolicy']);
     if (!Number.isSafeInteger(options.interval) || options.interval < 1 || options.interval > 31536000) throw new Error('Интервал: целое число от 1 до 31536000 секунд.');
@@ -453,11 +463,8 @@ export function makePlan(repo: Repository, options: Options): Plan {
     .split('\n')
     .filter(Boolean);
   if (!commits.length) throw new Error('Нет коммитов для переписывания.');
-  if (dates) {
-    const last = dates.start + (commits.length - 1) * dates.interval;
-    if (!Number.isSafeInteger(last) || last > 253402300799) throw new Error('Даты должны находиться между 1970 и 9999 годом.');
-  }
-  const dateOf = (index: number): number | undefined => (dates ? dates.start + index * dates.interval : undefined);
+  const since = options.since;
+  const dateOf = (index: number | undefined): number | undefined => (dates && index !== undefined ? dates.start + index * dates.interval : undefined);
   const format = objectFormat(repo);
   const mapping = new Map<string, string>();
   const objects: ObjectData[] = [];
@@ -473,10 +480,28 @@ export function makePlan(repo: Repository, options: Options): Plan {
     return oid;
   };
   const trees = new Set<string>();
-  for (const [index, old, type, raw] of readMetadataBatches(repo, commits)) {
+  // Index of each commit with new metadata, in parent-first order. The dates flow counts its steps from it.
+  const changed = new Map<string, number>();
+  let reparented = 0;
+  for (const [, old, type, raw] of readMetadataBatches(repo, commits)) {
     if (type !== 'commit') throw new Error('Ожидался объект коммита.');
     if (raw.includes(0)) throw new Error(`Коммит ${old} содержит NUL в метаданных. История не поддерживается; исходные данные не изменены.`);
     const { headers, message } = parts(raw);
+    if (since !== undefined) {
+      const committer = headers.filter((h) => field(h) === 'committer');
+      const time = committer.length === 1 ? /^committer .* (-?\d+) [+-]\d{4}$/.exec(committer[0]?.toString('latin1') ?? '')?.[1] : undefined;
+      if (time === undefined || !Number.isSafeInteger(Number(time))) throw new Error(`Коммит ${old}: некорректная дата коммитера. Период нельзя определить.`);
+      const inPeriod = Number(time) >= since;
+      const parentsChanged = headers.some((h) => field(h) === 'parent' && mapping.get(h.subarray(7).toString('ascii')) !== h.subarray(7).toString('ascii'));
+      if (!inPeriod && !parentsChanged) {
+        // Keep the original object. Its ID, signature and metadata stay unchanged.
+        mapping.set(old, old);
+        continue;
+      }
+      if (inPeriod) changed.set(old, changed.size);
+      else reparented++;
+    } else changed.set(old, changed.size);
+    const index = changed.get(old);
     const updated: Buffer[] = [];
     for (const h of headers) {
       const key = field(h);
@@ -484,21 +509,25 @@ export function makePlan(repo: Repository, options: Options): Plan {
         stripped++;
         continue;
       }
-      if (replacementMessage !== undefined && key === 'encoding') continue;
+      if (index !== undefined && replacementMessage !== undefined && key === 'encoding') continue;
       if (key === 'tree') trees.add(h.subarray(5).toString('ascii'));
       if (key === 'parent') {
         const parent = mapping.get(h.subarray(7).toString('ascii'));
         if (!parent) throw new Error('Родитель коммита отсутствует в плане.');
         updated.push(Buffer.from(`parent ${parent}`));
-      } else if (key === 'author' || key === 'committer') {
+      } else if (index !== undefined && (key === 'author' || key === 'committer')) {
         updated.push(person(h, { timestamp: dateOf(index), identity: authors?.identity }));
       } else updated.push(h);
     }
-    add(old, 'commit', assemble(updated, replacementMessage ?? message));
+    add(old, 'commit', assemble(updated, index !== undefined && replacementMessage !== undefined ? replacementMessage : message));
+  }
+  if (dates && changed.size) {
+    const last = dates.start + (changed.size - 1) * dates.interval;
+    if (!Number.isSafeInteger(last) || last > 253402300799) throw new Error('Даты должны находиться между 1970 и 9999 годом.');
   }
   assertTreesPresent(repo, [...trees]);
-  // Map each commit and tag to the index of its final commit.
-  const positions = new Map(commits.map((old, index) => [old, index]));
+  // Map each commit and tag to the final commit. Only a commit with new metadata has a position for tag dates.
+  const finals = new Map(commits.map((old) => [old, old]));
   const active = new Set<string>();
   function rewriteTag(old: string): string {
     const known = mapping.get(old);
@@ -515,23 +544,29 @@ export function makePlan(repo: Repository, options: Options): Plan {
       .toString('ascii');
     if (!target) throw new Error('Тег без object.');
     const rewritten = rewriteTag(target);
+    const final = finals.get(target);
+    if (final === undefined) throw new Error('Не удалось определить конечный коммит тега.');
+    if (!headers.some((h) => field(h) === 'tagger')) throw new Error('Annotated-тег без tagger: обработка остановлена.');
+    finals.set(old, final);
+    active.delete(old);
+    // A reparented commit keeps its metadata, so its tags keep the tagger too.
+    const position = changed.get(final);
+    if (rewritten === target && position === undefined) {
+      // The target is outside the period and keeps its ID. The tag and its signature stay unchanged.
+      mapping.set(old, old);
+      return old;
+    }
     const signature = stripTagSignature(message);
     if (signature.stripped) stripped++;
-    const position = positions.get(target);
-    if (position === undefined) throw new Error('Не удалось определить конечный коммит тега.');
-    if (!headers.some((h) => field(h) === 'tagger')) throw new Error('Annotated-тег без tagger: обработка остановлена.');
     const updated = headers.map((h) => {
       if (field(h) === 'object') return Buffer.from(`object ${rewritten}`);
-      if (field(h) !== 'tagger') return h;
+      if (field(h) !== 'tagger' || position === undefined) return h;
       return person(h, { timestamp: dates && dates.tagPolicy !== 'preserve' ? dateOf(position) : undefined, identity: authors?.tagIdentity });
     });
-    const result = add(old, 'tag', assemble(updated, signature.message));
-    positions.set(old, position);
-    active.delete(old);
-    return result;
+    return add(old, 'tag', assemble(updated, signature.message));
   }
   for (const ref of selected) if (!mapping.has(ref.oid)) rewriteTag(ref.oid);
-  return { repo, options, refs, selected, objects, mapping, commits: commits.length, stripped, head, headOid, commitOrder: commits.map((old) => mapped(mapping, old)) };
+  return { repo, options, refs, selected, objects, mapping, commits: changed.size, reparented, stripped, head, headOid, commitOrder: commits.map((old) => mapped(mapping, old)) };
 }
 
 // Multiple synchronous applications can finish before queued signals are delivered.

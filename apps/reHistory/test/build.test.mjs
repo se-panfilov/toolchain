@@ -10,7 +10,7 @@ import { test } from 'vitest';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const workspaceRoot = fileURLToPath(new URL('../../../', import.meta.url));
 const metadata = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
-const modules = ['engine', 'audit', 'export', 'demo', 'prompts', 'cli', 'remote', 'engine.test', 'features.test', 'prompts.test'];
+const modules = ['engine', 'audit', 'export', 'demo', 'prompts', 'cli', 'remote', 'period', 'engine.test', 'features.test', 'prompts.test'];
 function fixture(t) {
   const workspace = mkdtempSync(join(tmpdir(), 'tx-rehistory-compiler-test-'));
   t.onTestFinished(() => rmSync(workspace, { recursive: true, force: true }));

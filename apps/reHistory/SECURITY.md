@@ -142,6 +142,44 @@ It reads only local refs and does not connect to a server.
 A local user can make a remote-tracking ref without a push.
 Remote-tracking refs can be out of date after a server change.
 
+## Period and unattended run controls
+
+A period limits metadata changes to commits with a committer date at or after the period start.
+The engine validates the period start as a Unix time between 1970 and 9999.
+A commit without exactly one valid committer header stops planning.
+Commits outside the period keep their objects, signatures, and metadata.
+A reparented commit keeps its metadata, but loses its signature, because its object ID changes.
+A tag changes only when its target changes. Unchanged tags are not part of the shared-tag check or the push.
+An export rejects a period, because the export manifest describes a complete normalization.
+
+The `--flow` option starts an unattended run without questions and without a TTY.
+It requires a period, so one run cannot change all history without questions.
+The parser rejects options of other flows, missing required values, and a missing backup decision.
+The engine validates flow values again, as for interactive input.
+An unattended run never assumes the permissions of interactive questions:
+
+| Interactive question                     | Unattended run                                                               |
+| ---------------------------------------- | ---------------------------------------------------------------------------- |
+| `Продолжить без копии на сервере?`       | The run stops.                                                               |
+| `Удалить подписи и продолжить?`          | The run stops without `--strip-signatures`.                                  |
+| `Применить изменения?`                   | The command with `--flow` is the permission.                                 |
+| `Сделать push?` and later push questions | No push without `--force-push`. Tags for a separate decision are never sent. |
+
+The `--force-push` option selects the remote before the rewrite, without network access.
+An explicit `--remote` name, the branch upstream remote, `origin`, or the only remote is permitted.
+An ambiguous or missing remote, an unsupported URL, and `http.*` or URL substitution settings stop the run before writes.
+Before the push, the program reads the remote URL again. A changed URL stops the push.
+The push uses the same checks, leases, and atomic transaction as the interactive push.
+A push failure leaves the local rewrite. The next run stops at the remote copy check until a push or fetch.
+
+Risks of regular runs:
+
+- A force push replaces the server branch. Other clones and open pull requests then have a different history.
+- The remote copy check sees only local remote-tracking refs. A scheduler does not fetch.
+- Commits with an incorrect future committer date stay in each later period.
+- Each run with `--backup-branch` keeps old objects. Old backup branches use disk space.
+- SSH configuration and keys of the scheduler user are part of the trust boundary.
+
 ## Input controls
 
 The program validates branch names with Git.
